@@ -18,7 +18,7 @@ import {
  * `--full` returns raw DOM), per the PRD "Testing Decisions".
  *
  * Shared-write isolation: every launch points its profile root at a per-test
- * temp dir; nothing here ever touches the real `~/.my-browser-controller`.
+ * temp dir; nothing here ever touches the real `~/.webhands`.
  */
 describe('snapshot verb (real browser, local fixture, seam)', () => {
 	let server: FixtureServer;

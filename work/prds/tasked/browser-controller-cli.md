@@ -13,7 +13,7 @@ The naive approaches fail: copying a cookie into a fetch breaks because clearanc
 
 ## Solution
 
-A pnpm-monorepo TypeScript project producing a CLI, `my-browser-controller`, built with `incur` so the same binary is also an MCP server and agent-discoverable skill set. It drives a real browser via Playwright in two modes:
+A pnpm-monorepo TypeScript project producing a CLI, `webhands`, built with `incur` so the same binary is also an MCP server and agent-discoverable skill set. It drives a real browser via Playwright in two modes:
 
 - **launch** — the CLI spawns a browser (headed or headless) against a **dedicated profile directory** it owns (never the user's daily Chrome profile, which Chrome policy refuses to automate). State persists across runs.
 - **attach** — the CLI connects (`connectOverCDP`, Chromium-only) to a browser the user already started with remote debugging enabled, reusing their live logged-in tabs.
@@ -24,7 +24,7 @@ The code is split: **`packages/core`** holds the browser-control logic behind a 
 
 ## User Stories
 
-1. As a user, I want to run `my-browser-controller setup-profile` and have a visible browser open on a dedicated profile, so I can log into a site (and pass any anti-bot challenge) once.
+1. As a user, I want to run `webhands setup-profile` and have a visible browser open on a dedicated profile, so I can log into a site (and pass any anti-bot challenge) once.
 2. As a user, I want that profile's cookies/state to persist on disk, so later headless runs reuse my logged-in session without re-login.
 3. As an agent, I want to run `launch --headless` against the saved profile, so I can operate the site unattended after the human did the one-time login.
 4. As an agent, I want `launch --headed` so a human can watch/intervene during development or a tricky flow.
@@ -53,9 +53,9 @@ The code is split: **`packages/core`** holds the browser-control logic behind a 
 
 - **Monorepo from `template-typescript-lib`**: pnpm workspace (`packages/*`), ESM, `tsc` build, `vitest`, `prettier`, changesets, `ldenv`, tabs indentation. Two packages: `packages/core`, `packages/cli`.
 - **`core`** exposes a `Driver`/`Transport` interface (the seam): `open(profile|attachTarget) → Session`, and a `Page` abstraction with the verb operations. v1 concrete transport = Playwright. The interface is defined in terms of high-level verbs (navigate, snapshot, click, type, eval, wait, cookies), NOT in terms of CDP, so an extension transport or a Firefox transport can implement it. **Element addressing is a raw Playwright locator string** resolved by the active transport (per `docs/adr/0004`): "transport-neutral" means Playwright-equivalent addressing, not a reduced selector subset — the no-CDP-leak rule of `docs/adr/0003` is unchanged.
-- **Profile management**: a dedicated user-data dir under a config location (e.g. `~/.my-browser-controller/profiles/<name>`), launched via Playwright `launchPersistentContext`. Never point at the OS default Chrome profile (Chrome policy refuses it).
+- **Profile management**: a dedicated user-data dir under a config location (e.g. `~/.webhands/profiles/<name>`), launched via Playwright `launchPersistentContext`. Never point at the OS default Chrome profile (Chrome policy refuses it).
 - **attach** = Playwright `chromium.connectOverCDP(endpoint)`, reusing `browser.contexts()[0]` (the existing authenticated context) — NOT `newContext()`. Chromium-only; documented as such.
-- **`cli`** = `incur` `Cli.create('my-browser-controller', …).command(…).serve()`, one command per verb plus `setup-profile`/`launch`/`attach`, each with a zod `args`/`options`/`output` schema. MCP and skills come from incur for free.
+- **`cli`** = `incur` `Cli.create('webhands', …).command(…).serve()`, one command per verb plus `setup-profile`/`launch`/`attach`, each with a zod `args`/`options`/`output` schema. MCP and skills come from incur for free.
 - **Stealth posture**: rely on being a *real* browser/profile/IP rather than fingerprint-spoofing. Note in docs that the classic CDP "console getter" detection broke in V8 (May 2025), so CDP-attach is currently low-risk, but multi-layer detection still exists; the extension transport is the future stronger-stealth path.
 - **A session/daemon question** is implicit: verbs need a persistent browser between CLI invocations. Likely a long-lived `core` browser process the CLI talks to (incur can also serve the CLI over fetch, exposing the verbs as an HTTP/MCP endpoint, which naturally hosts the long-lived browser). Exact mechanism (background daemon vs. `incur` serve) is a task-level design decision seeded here.
 

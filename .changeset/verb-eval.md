@@ -1,5 +1,5 @@
 ---
-'@my-browser-controller/core': minor
+'@webhands/core': minor
 ---
 
 Refine and fully test the `eval` verb (the escape hatch) at the `core` Driver seam.

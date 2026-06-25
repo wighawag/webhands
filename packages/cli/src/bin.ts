@@ -2,7 +2,7 @@
 import {createCli} from './cli.js';
 
 /**
- * The executable entry for the `my-browser-controller` binary. It builds the
+ * The executable entry for the `webhands` binary. It builds the
  * `incur` CLI (with its default, real-browser session provider) and serves it:
  * `serve()` parses argv, runs the matched command, writes the structured output
  * envelope, and handles `--mcp` / `--llms` / `mcp add` / `skills add` for free.

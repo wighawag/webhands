@@ -1,7 +1,7 @@
-import type {Driver} from '@my-browser-controller/core';
+import type {Driver} from '@webhands/core';
 
 /**
- * The `incur`-based CLI wrapper around `core` (the `my-browser-controller`
+ * The `incur`-based CLI wrapper around `core` (the `webhands`
  * binary). It binds ONE `incur` command per verb (`goto`, `snapshot`, `click`,
  * `type`, `eval`, `wait`, `cookies`) plus `setup-profile`/`launch`/`attach`,
  * each with a zod `args`/`options`/`output` schema, returns the structured

@@ -28,7 +28,7 @@ import {
  * plain `Error`, no Playwright/CDP type leak, ADR-0003).
  *
  * Shared-write isolation: every launch points its profile root at a per-test
- * temp dir; nothing here ever touches the real `~/.my-browser-controller`.
+ * temp dir; nothing here ever touches the real `~/.webhands`.
  */
 describe('eval verb (real browser, local fixture, seam)', () => {
 	let server: FixtureServer;

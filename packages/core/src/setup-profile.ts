@@ -24,7 +24,7 @@ import type {Session, Transport} from './seam.js';
  * which is why the launch transport defers it here. So this flow:
  *
  * 1. resolves the dedicated profile dir (isolated to a temp root in tests,
- *    never the real `~/.my-browser-controller`),
+ *    never the real `~/.webhands`),
  * 2. CREATES it if absent (the one place a profile dir is created), so the
  *    profile is now "set up" for later launches,
  * 3. opens it HEADED through the launch transport, and
@@ -118,7 +118,7 @@ export async function setupProfile(
  */
 export function buildPrompt(location: ProfileLocation): string {
 	return [
-		`Setting up the "${location.profile}" profile for my-browser-controller.`,
+		`Setting up the "${location.profile}" profile for webhands.`,
 		`Profile directory: ${location.profileDir}`,
 		'',
 		'A browser window is now open. In that window:',

@@ -5,7 +5,7 @@ import {join} from 'node:path';
  * Where the controller's dedicated profiles (and other config state) live.
  *
  * This is a SHARED/GLOBAL, per-user location: by default
- * `~/.my-browser-controller`. Profiles are dedicated browser user-data dirs
+ * `~/.webhands`. Profiles are dedicated browser user-data dirs
  * under `<root>/profiles/<name>` (PRD "Profile management"; ADR-0002: never the
  * OS default Chrome profile). The endpoint file from ADR-0005 also lives under
  * this root, owned by a later task.
@@ -18,14 +18,14 @@ import {join} from 'node:path';
  */
 
 /** The directory name appended to the user's home for the default root. */
-export const DEFAULT_HOME_DIRNAME = '.my-browser-controller';
+export const DEFAULT_HOME_DIRNAME = '.webhands';
 
 /**
  * Environment variable that overrides the controller home root. Set this (to a
  * temp dir) in tests, or to relocate state in production. When set to a
- * non-empty value it fully replaces the `~/.my-browser-controller` default.
+ * non-empty value it fully replaces the `~/.webhands` default.
  */
-export const CONTROLLER_HOME_ENV = 'MY_BROWSER_CONTROLLER_HOME';
+export const CONTROLLER_HOME_ENV = 'WEBHANDS_HOME';
 
 /** The subdirectory under the home root that holds dedicated profiles. */
 export const PROFILES_DIRNAME = 'profiles';
@@ -34,7 +34,7 @@ export const PROFILES_DIRNAME = 'profiles';
 export interface ProfileLocationOptions {
 	/**
 	 * Explicit home root, highest precedence. When omitted, falls back to the
-	 * {@link CONTROLLER_HOME_ENV} env var, then `~/.my-browser-controller`.
+	 * {@link CONTROLLER_HOME_ENV} env var, then `~/.webhands`.
 	 */
 	readonly root?: string;
 	/** Environment to read the override from. Defaults to `process.env`. */
@@ -43,7 +43,7 @@ export interface ProfileLocationOptions {
 
 /** A resolved set of controller paths for a given profile name. */
 export interface ProfileLocation {
-	/** The controller home root (e.g. `~/.my-browser-controller`). */
+	/** The controller home root (e.g. `~/.webhands`). */
 	readonly homeRoot: string;
 	/** The directory holding all dedicated profiles (`<homeRoot>/profiles`). */
 	readonly profilesRoot: string;
@@ -57,7 +57,7 @@ export interface ProfileLocation {
  * Resolve the controller home root. Precedence:
  * 1. an explicit `options.root`,
  * 2. the {@link CONTROLLER_HOME_ENV} env var (if non-empty),
- * 3. `~/.my-browser-controller`.
+ * 3. `~/.webhands`.
  */
 export function resolveHomeRoot(options: ProfileLocationOptions = {}): string {
 	if (options.root !== undefined && options.root !== '') {

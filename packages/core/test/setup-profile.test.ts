@@ -23,7 +23,7 @@ import {
  * asserted here (that is the manual Kayak smoke). No credential is touched.
  *
  * Shared-write isolation: every run points its profile root at a per-test temp
- * dir; nothing here ever touches the real `~/.my-browser-controller`.
+ * dir; nothing here ever touches the real `~/.webhands`.
  */
 describe('setupProfile (real headed browser, local fixture)', () => {
 	let server: FixtureServer;
@@ -188,7 +188,7 @@ describe('setupProfile (real headed browser, local fixture)', () => {
 		expect(second.location.profileDir).toBe(first.location.profileDir);
 	});
 
-	it('leaves the real ~/.my-browser-controller location UNTOUCHED', async () => {
+	it('leaves the real ~/.webhands location UNTOUCHED', async () => {
 		const realHome = join(homedir(), DEFAULT_HOME_DIRNAME);
 		const before = existsSync(realHome);
 

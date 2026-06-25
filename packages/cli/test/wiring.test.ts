@@ -10,7 +10,7 @@ import {
 	type OpenTarget,
 	type RunningSessionServer,
 	type Session,
-} from '@my-browser-controller/core';
+} from '@webhands/core';
 import {
 	createCli,
 	CLI_NAME,

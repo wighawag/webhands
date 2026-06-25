@@ -1,5 +1,5 @@
 ---
-'@my-browser-controller/core': minor
+'@webhands/core': minor
 ---
 
 Implement and fully test the `click` and `type` verbs at the `core` Driver seam.

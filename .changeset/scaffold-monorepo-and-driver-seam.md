@@ -1,6 +1,6 @@
 ---
-'@my-browser-controller/core': minor
-'my-browser-controller': minor
+'@webhands/core': minor
+'webhands': minor
 ---
 
 Scaffold the pnpm monorepo with `core` and `cli` packages and the verb-level `Driver`/`Transport` seam.

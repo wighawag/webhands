@@ -10,7 +10,7 @@ import type {Session} from './seam.js';
  * A client-side {@link Session} that drives a session living in a SEPARATE
  * long-lived `serve` process over HTTP (ADR-0005).
  *
- * Each `my-browser-controller <verb>` is a thin client: it cannot hold a JS
+ * Each `webhands <verb>` is a thin client: it cannot hold a JS
  * reference to the server's live page, so this proxy turns every {@link Page}
  * verb into a session-RPC call to the running server (see `session-rpc.ts`) and
  * returns the result. The verb command code is UNCHANGED — it still calls

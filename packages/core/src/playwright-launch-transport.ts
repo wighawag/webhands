@@ -34,7 +34,7 @@ import type {
  * in one transport is what ADR-0003's seam exists to avoid.
  *
  * Profile location is resolved from the constructor options (or the
- * `MY_BROWSER_CONTROLLER_HOME` env var, or `~/.my-browser-controller`). See
+ * `WEBHANDS_HOME` env var, or `~/.webhands`). See
  * {@link resolveProfileLocation}. Because that is a SHARED location, tests pass
  * a temp `root` (or set the env var) and assert the real home is untouched.
  */
@@ -43,7 +43,7 @@ export class PlaywrightLaunchTransport implements Transport {
 
 	/**
 	 * @param location overrides for where profiles live (a `root` dir and/or an
-	 *   `env`). Omit in production to use `~/.my-browser-controller`; pass a temp
+	 *   `env`). Omit in production to use `~/.webhands`; pass a temp
 	 *   `root` in tests to isolate the shared profile location.
 	 */
 	constructor(location: ProfileLocationOptions = {}) {

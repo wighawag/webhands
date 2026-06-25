@@ -9,7 +9,7 @@ import {
  * Cross-invocation session DISCOVERY (ADR-0005).
  *
  * The long-lived `incur serve` process owns the one live browser session; each
- * `my-browser-controller <verb>` is a thin client that must FIND that running
+ * `webhands <verb>` is a thin client that must FIND that running
  * server. The server advertises itself by writing a small endpoint file under
  * the controller home root (the same SHARED location profiles live under, see
  * {@link resolveHomeRoot}); client verbs read it to learn where to send their
@@ -17,7 +17,7 @@ import {
  * with "run `serve` first" rather than auto-spawning a browser (ADR-0005:
  * lifecycle is EXPLICIT in v1).
  *
- * Because this writes under the real `~/.my-browser-controller` by default,
+ * Because this writes under the real `~/.webhands` by default,
  * TESTS MUST override the root to a temp dir (via {@link ProfileLocationOptions})
  * and assert the real location is untouched, exactly as the profile location
  * does.

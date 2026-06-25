@@ -1,5 +1,5 @@
 ---
-'@my-browser-controller/core': minor
+'@webhands/core': minor
 ---
 
 Implement and fully test the `goto` (navigate) and `wait` verbs at the `core` Driver seam.

@@ -1,5 +1,5 @@
 {
-  "name": "my-browser-controller-monorepo",
+  "name": "webhands-monorepo",
   "private": true,
   "type": "module",
   "devDependencies": {

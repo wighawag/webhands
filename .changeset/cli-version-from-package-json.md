@@ -1,5 +1,5 @@
 ---
-'my-browser-controller': patch
+'webhands': patch
 ---
 
 Wire `--version` (and the help header + MCP server version) to the package's real

@@ -4,7 +4,7 @@ import {
 	readSessionEndpoint,
 	type OpenTarget,
 	type Session,
-} from '@my-browser-controller/core';
+} from '@webhands/core';
 
 /**
  * How a CLI verb command obtains a live {@link Session} to run against.
@@ -34,7 +34,7 @@ export type SessionProvider = (target: OpenTarget) => Promise<Session>;
 
 /** Overrides for where the default provider discovers the running server (tests pass a temp root). */
 export interface DefaultSessionProviderOptions {
-	/** Explicit controller home root. Omit to use `~/.my-browser-controller`. */
+	/** Explicit controller home root. Omit to use `~/.webhands`. */
 	readonly root?: string;
 	/** Environment to read the home override from. Defaults to `process.env`. */
 	readonly env?: NodeJS.ProcessEnv;

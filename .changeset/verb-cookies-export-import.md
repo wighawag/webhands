@@ -1,5 +1,5 @@
 ---
-'@my-browser-controller/core': minor
+'@webhands/core': minor
 ---
 
 Implement and test the `cookies export` / `cookies import` verb at the `core` Driver seam (PRD story 11).

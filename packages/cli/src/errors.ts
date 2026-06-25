@@ -8,7 +8,7 @@ import {
 	SessionAlreadyActiveError,
 	type ControllerError,
 	type ControllerErrorCode,
-} from '@my-browser-controller/core';
+} from '@webhands/core';
 
 /**
  * Map a TYPED `core` error condition into the user-facing message + the EXACT

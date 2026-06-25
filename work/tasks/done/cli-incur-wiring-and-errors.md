@@ -9,7 +9,7 @@ covers: [12, 13, 14, 17]
 ## What to build
 
 The `cli` package: wrap `core` with `incur`
-(`Cli.create('my-browser-controller', …).command(…).serve()`), one command per
+(`Cli.create('webhands', …).command(…).serve()`), one command per
 verb plus `setup-profile` / `launch` / `attach`, each with a zod `args`/`options`/
 `output` schema. Because it is built on `incur`, the same binary is also an MCP
 server (`--mcp` / `mcp add`) and emits a skills / `--llms` manifest with NO

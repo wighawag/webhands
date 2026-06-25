@@ -1,5 +1,5 @@
 ---
-'@my-browser-controller/core': minor
+'@webhands/core': minor
 ---
 
 Implement the `snapshot` verb: a token-cheap structured page view with stable refs.

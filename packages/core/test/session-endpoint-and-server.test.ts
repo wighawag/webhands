@@ -24,7 +24,7 @@ import {
  * seam test; this one nails the deterministic edges without launching Chromium.
  *
  * Every test points its config root at a temp dir, so the real
- * `~/.my-browser-controller` is never touched.
+ * `~/.webhands` is never touched.
  */
 describe('session endpoint discovery + served RPC (stub transport)', () => {
 	const tempRoots: string[] = [];

@@ -23,7 +23,7 @@ import {
  * The "separate CLI invocations" are modelled by TWO independent
  * `connectRemoteSession` clients made against the one running server: each is a
  * distinct connection that opens, runs a verb, and closes — exactly what two
- * separate `my-browser-controller <verb>` processes do. The proof of
+ * separate `webhands <verb>` processes do. The proof of
  * persistence is that LIVE page state set through client #1 (a navigation, an
  * in-page mutation) is observed through client #2, which is only possible if
  * the browser launched ONCE in the server and was never re-launched per call
@@ -31,7 +31,7 @@ import {
  *
  * Shared-write isolation: the server's config root (where the endpoint file
  * lives) and the profile root are both pointed at a per-test temp dir; the test
- * asserts the real `~/.my-browser-controller` is untouched.
+ * asserts the real `~/.webhands` is untouched.
  */
 describe('cross-invocation session persistence (real browser, local fixture, seam)', () => {
 	let fixture: FixtureServer;
@@ -123,7 +123,7 @@ describe('cross-invocation session persistence (real browser, local fixture, sea
 		await expect(stat(endpointPath)).rejects.toThrow();
 	});
 
-	it('isolates all on-disk state to the temp root; the real ~/.my-browser-controller is untouched', async () => {
+	it('isolates all on-disk state to the temp root; the real ~/.webhands is untouched', async () => {
 		const realEndpointPath = resolveSessionEndpointPath();
 		expect(realEndpointPath.startsWith(homedir())).toBe(true);
 

@@ -18,7 +18,7 @@ the verb and launch tasks) — hence `covers: []`.
 
 **Mechanism (resolved — see `docs/adr/0005`):** a long-lived **`incur serve`**
 process (`cli.fetch` over `/mcp`/HTTP) owns the one Playwright browser + the active
-`Session`/page; each `my-browser-controller <verb>` is a **thin client** that calls
+`Session`/page; each `webhands <verb>` is a **thin client** that calls
 the running server and exits. The browser launches ONCE in the served process,
 NEVER per verb invocation (this is the whole point — the live page state, not just
 the on-disk profile, must survive between calls). The bespoke-daemon alternative
@@ -29,7 +29,7 @@ free and satisfies ADR-0001).
 `launch`/`attach`) bring the session up; a verb invocation with NO live server
 prints a clear, actionable error naming the fix (run `serve` first) and exits
 non-zero — it does NOT silently spawn a browser. The server writes its endpoint
-(port/socket) under the config dir (`~/.my-browser-controller/`) for client verbs
+(port/socket) under the config dir (`~/.webhands/`) for client verbs
 to discover; teardown is explicit (`stop` / signal). Exactly ONE session in v1: a
 second `launch`/`attach` while one is live is a clear "already active" error.
 
@@ -57,7 +57,7 @@ the second reuses the first's live session).
 ## Prompt
 
 > Goal: implement cross-invocation session persistence — keep one browser alive
-> between separate `my-browser-controller <verb>` CLI processes. Read the prd
+> between separate `webhands <verb>` CLI processes. Read the prd
 > `work/prds/ready/browser-controller-cli.md` (Implementation Decisions — the
 > "session/daemon question" paragraph; User Stories 3 and 6 give the motivating
 > launch→goto→snapshot chain this enables) and ADR-0001 (the CONTROLLER owns the

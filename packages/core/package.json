@@ -1,5 +1,5 @@
 {
-	"name": "@my-browser-controller/core",
+	"name": "@webhands/core",
 	"version": "0.0.0",
 	"publishConfig": {
 		"access": "public"

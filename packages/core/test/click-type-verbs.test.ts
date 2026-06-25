@@ -25,7 +25,7 @@ import {
  * normal click would time out), `type` fills the addressed input.
  *
  * Shared-write isolation: every launch points its profile root at a per-test
- * temp dir; nothing here ever touches the real `~/.my-browser-controller`.
+ * temp dir; nothing here ever touches the real `~/.webhands`.
  */
 describe('click + type verbs (real browser, local fixture, seam)', () => {
 	let server: FixtureServer;

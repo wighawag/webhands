@@ -1,5 +1,5 @@
 ---
-'my-browser-controller': patch
+'webhands': patch
 ---
 
 Add the v1 honesty-and-proof docs.

@@ -1,4 +1,4 @@
-# my-browser-controller
+# webhands
 
 A CLI (built with [`incur`](https://github.com/wevm/incur), so it doubles as an
 MCP server) that drives a real, persistent browser via Playwright, letting an
@@ -18,15 +18,15 @@ thin client that drives the SAME live page and exits (see
 [`docs/adr/0005`](docs/adr/0005-incur-serve-hosts-the-long-lived-session.md)). The
 typical end-to-end flow:
 
-1. `my-browser-controller setup-profile`: opens the dedicated profile in a
+1. `webhands setup-profile`: opens the dedicated profile in a
    VISIBLE browser so you log in / clear any anti-bot challenge ONCE. State
    (cookies, login, challenge clearance) persists on disk.
-2. `my-browser-controller serve --headless`: launches the one browser against
+2. `webhands serve --headless`: launches the one browser against
    that saved profile and keeps it alive (runs until `stop` or Ctrl-C).
-3. `my-browser-controller goto <url>` then `my-browser-controller snapshot` (and
+3. `webhands goto <url>` then `webhands snapshot` (and
    `click` / `type` / `eval` / `wait`): separate invocations that all drive the
    single live page the server holds.
-4. `my-browser-controller stop`: tears the session down.
+4. `webhands stop`: tears the session down.
 
 A verb run with no live server prints a clear error telling you to run `serve`
 first; the tool never silently spawns a browser.

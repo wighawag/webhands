@@ -1,5 +1,5 @@
 ---
-'@my-browser-controller/core': minor
+'@webhands/core': minor
 ---
 
 Add the `attach` transport (`PlaywrightAttachTransport`): connect to a browser the user already started with remote debugging, reusing their live authenticated context.

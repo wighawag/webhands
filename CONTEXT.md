@@ -1,8 +1,8 @@
-# CONTEXT — my-browser-controller domain language
+# CONTEXT — webhands domain language
 
-The domain glossary for `my-browser-controller`. Agents and skills use THIS vocabulary when naming modules, tests, and discussing the system. Architectural rationale lives in `docs/adr/` (decisions); product framing lives in `work/prds/`.
+The domain glossary for `webhands`. Agents and skills use THIS vocabulary when naming modules, tests, and discussing the system. Architectural rationale lives in `docs/adr/` (decisions); product framing lives in `work/prds/`.
 
-## What my-browser-controller is
+## What webhands is
 
 A CLI (built with [`incur`](https://github.com/wevm/incur), so it doubles as an MCP server) that drives a real, persistent browser via Playwright, letting an agent or human control any website from a genuinely logged-in browser session. It launches or attaches to a Chromium/Firefox instance using a dedicated profile, supports a headed login pass that is later reused headless, and exposes verbs (`goto`, `snapshot`, `click`, `type`, `eval`, `cookies`). A `core` package holds the browser-control logic plus a transport seam (CDP/Playwright now, a content-script browser extension later); a `cli` package wraps `core` with `incur`.
 

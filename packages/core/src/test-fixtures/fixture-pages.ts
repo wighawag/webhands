@@ -12,7 +12,7 @@ const INDEX = `<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<title>my-browser-controller fixture</title>
+		<title>webhands fixture</title>
 	</head>
 	<body>
 		<h1 id="heading">Fixture Page</h1>

@@ -23,7 +23,7 @@ import {
  * context and observe them restored.
  *
  * Shared-write isolation: every profile root AND every export file lives under a
- * per-test temp dir; nothing here touches the real `~/.my-browser-controller`
+ * per-test temp dir; nothing here touches the real `~/.webhands`
  * or any shared/global location.
  */
 describe('cookies export/import round-trip (real browser, local fixture)', () => {

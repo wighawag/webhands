@@ -23,7 +23,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@my-browser-controller/core':
+      '@webhands/core':
         specifier: workspace:*
         version: link:../core
       incur:

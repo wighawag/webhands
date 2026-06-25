@@ -145,7 +145,7 @@ export class NoLiveServerError extends ControllerError {
 	readonly code = 'no-live-server';
 
 	constructor(
-		message: string = 'No live my-browser-controller session server is running. Start one with `serve` first.',
+		message: string = 'No live webhands session server is running. Start one with `serve` first.',
 		options?: {cause?: unknown},
 	) {
 		super(message, options);

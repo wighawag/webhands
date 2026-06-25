@@ -18,14 +18,14 @@ import {
 	type SessionServerOptions,
 	type Transport,
 	type WaitCondition,
-} from '@my-browser-controller/core';
+} from '@webhands/core';
 import {readFile, writeFile} from 'node:fs/promises';
 import {mapControllerError} from './errors.js';
 import {
 	createDefaultSessionProvider,
 	type SessionProvider,
 } from './session-provider.js';
-import {setupProfile} from '@my-browser-controller/core';
+import {setupProfile} from '@webhands/core';
 import {VERSION} from './version.js';
 
 /**
@@ -33,7 +33,7 @@ import {VERSION} from './version.js';
  * `c.name`) inside every fix-command message, so a suggested command always
  * matches how the user invoked the tool.
  */
-export const CLI_NAME = 'my-browser-controller';
+export const CLI_NAME = 'webhands';
 
 const DESCRIPTION =
 	'Drive a real, logged-in browser (launch or attach) and run page verbs ' +

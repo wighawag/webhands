@@ -29,7 +29,7 @@ the manual Kayak smoke (owned by `docs-tos-humility-and-kayak-smoke`), not here.
 - [ ] State written during the headed session persists in the profile dir and is visible to a subsequent (headless) launch against the same profile.
 - [ ] A clear, actionable message tells the user what to do (log in / clear the challenge, then close) and which profile is being set up.
 - [ ] Tests assert the testable behaviour (headed open against the correct profile dir; state persistence) against the local fixture page — NOT a third-party login.
-- [ ] **Shared-write isolation:** tests point the profile root at a temp dir and assert the real `~/.my-browser-controller` is UNTOUCHED.
+- [ ] **Shared-write isolation:** tests point the profile root at a temp dir and assert the real `~/.webhands` is UNTOUCHED.
 - [ ] A changeset is added.
 - [ ] Tests cover the new behaviour (mirror the repo's existing test style).
 

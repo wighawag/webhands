@@ -20,7 +20,7 @@ import type {OpenTarget, Session, Transport} from './seam.js';
  *
  * This IS the controller: it opens the single live {@link Session} ONCE through
  * a {@link Transport} and then serves that already-live page over HTTP, so each
- * `my-browser-controller <verb>` thin-client process drives the SAME page state
+ * `webhands <verb>` thin-client process drives the SAME page state
  * (not just the on-disk profile) and exits. The browser is launched once here,
  * never per verb. It owns three things ADR-0005 calls out:
  *
@@ -41,7 +41,7 @@ import type {OpenTarget, Session, Transport} from './seam.js';
  * Shared-write isolation: the endpoint file lives under the controller home
  * root, so a {@link SessionServer} created with a temp `root`/`env` (via
  * {@link SessionServerOptions}) writes only there, and tests assert the real
- * `~/.my-browser-controller` is untouched.
+ * `~/.webhands` is untouched.
  */
 export interface SessionServerOptions extends ProfileLocationOptions {
 	/**

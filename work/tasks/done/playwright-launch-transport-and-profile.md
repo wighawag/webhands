@@ -11,7 +11,7 @@ covers: [2, 3, 4]
 The v1 concrete transport behind the `core` seam: a Playwright transport that
 opens a browser via `launchPersistentContext` against a **dedicated profile
 directory** the controller owns (under a config location, e.g.
-`~/.my-browser-controller/profiles/<name>`), supporting both headed and headless
+`~/.webhands/profiles/<name>`), supporting both headed and headless
 launch. It NEVER points at the OS default Chrome profile (Chrome policy refuses
 to automate it — see `docs/adr/0002`). State (cookies, storage) persists in the
 profile dir across runs.
@@ -30,7 +30,7 @@ local fixture page and assert profile persistence across a relaunch (set a cooki
 - [ ] State persists across relaunch: a test sets state in one launch and observes it in a fresh launch against the same profile dir.
 - [ ] A missing browser binary and a not-yet-set-up profile each surface as a TYPED / identifiable error from `core` (distinguishable, not a bare string), so the CLI task can render the exact-fix-command message for story 17. (This task OWNS the typed condition in `core`; `cli-incur-wiring-and-errors` owns the user-facing message text.)
 - [ ] Tests drive a real local Playwright browser against the local fixture page (not a third-party site) and assert at the `core` `Driver` seam.
-- [ ] **Shared-write isolation:** profile-dir tests point the profile root at a temp/scratch dir (via the relevant env/config) and assert the real `~/.my-browser-controller` location is UNTOUCHED after the run.
+- [ ] **Shared-write isolation:** profile-dir tests point the profile root at a temp/scratch dir (via the relevant env/config) and assert the real `~/.webhands` location is UNTOUCHED after the run.
 - [ ] A changeset is added.
 - [ ] Tests cover the new behaviour (mirror the repo's existing test style).
 
@@ -53,7 +53,7 @@ local fixture page and assert profile persistence across a relaunch (set a cooki
 > against a real local Playwright browser hitting the local fixture page
 > (deterministic) — assert profile persistence across a relaunch.
 >
-> CRITICAL: the profile dir is a SHARED/GLOBAL location (`~/.my-browser-controller`).
+> CRITICAL: the profile dir is a SHARED/GLOBAL location (`~/.webhands`).
 > Tests MUST point it at a temp dir and assert the real one is untouched.
 >
 > Surface a MISSING-BINARY and a MISSING-PROFILE condition as a TYPED/identifiable

@@ -23,7 +23,7 @@ import {
  * the `core` Driver/Transport seam.
  *
  * Shared-write isolation: every launch points its profile root at a per-test
- * temp dir; nothing here ever touches the real `~/.my-browser-controller`.
+ * temp dir; nothing here ever touches the real `~/.webhands`.
  */
 describe('PlaywrightLaunchTransport (real browser, local fixture)', () => {
 	let server: FixtureServer;
@@ -195,7 +195,7 @@ describe('PlaywrightLaunchTransport (real browser, local fixture)', () => {
 		).rejects.toThrow(/only handles 'launch'/);
 	});
 
-	it('leaves the real ~/.my-browser-controller location UNTOUCHED', async () => {
+	it('leaves the real ~/.webhands location UNTOUCHED', async () => {
 		const realHome = join(homedir(), DEFAULT_HOME_DIRNAME);
 		const before = existsSync(realHome);
 

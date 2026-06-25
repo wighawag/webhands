@@ -1,5 +1,5 @@
 {
-	"name": "my-browser-controller",
+	"name": "webhands",
 	"version": "0.0.0",
 	"publishConfig": {
 		"access": "public"
@@ -12,14 +12,14 @@
 		}
 	},
 	"bin": {
-		"my-browser-controller": "./dist/bin.js"
+		"webhands": "./dist/bin.js"
 	},
 	"files": [
 		"dist",
 		"src"
 	],
 	"dependencies": {
-		"@my-browser-controller/core": "workspace:*",
+		"@webhands/core": "workspace:*",
 		"incur": "^0.4.10"
 	},
 	"devDependencies": {

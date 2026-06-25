@@ -27,9 +27,9 @@ scope/honesty note in [`../README.md`](../README.md) and
 - A Playwright Chromium binary is installed. If a run reports a missing browser,
   the error names the exact command (e.g. `npx playwright install chromium`).
 - Invoke the CLI however you run it locally. Below it is written as
-  `my-browser-controller`; from the repo you can also use
-  `node packages/cli/dist/bin.js` (or `pnpm --filter my-browser-controller exec
-  my-browser-controller`).
+  `webhands`; from the repo you can also use
+  `node packages/cli/dist/bin.js` (or `pnpm --filter webhands exec
+  webhands`).
 
 ## The pipe (landed shape, per ADR-0005)
 
@@ -51,7 +51,7 @@ thin clients that drive the SAME live page. So the smoke is:
    log in to Kayak (and clear any anti-bot challenge) if/as needed:
 
    ```sh
-   my-browser-controller setup-profile
+   webhands setup-profile
    ```
 
    This saves cookies/state under the dedicated profile dir. You only do this
@@ -61,7 +61,7 @@ thin clients that drive the SAME live page. So the smoke is:
    server against the saved profile and leave it running:
 
    ```sh
-   my-browser-controller serve --headless
+   webhands serve --headless
    ```
 
    It prints the endpoint URL and PID, and runs until you `stop` it (or Ctrl-C).
@@ -73,23 +73,23 @@ thin clients that drive the SAME live page. So the smoke is:
    example a one-way route on a near-future date:
 
    ```sh
-   my-browser-controller goto 'https://www.kayak.com/flights/LON-NYC/2026-09-15?sort=bestflight_a'
+   webhands goto 'https://www.kayak.com/flights/LON-NYC/2026-09-15?sort=bestflight_a'
    ```
 
    You may need to pace the XHR-rendered results, e.g.
-   `my-browser-controller wait --ms 8000` (or `wait --navigation`).
+   `webhands wait --ms 8000` (or `wait --navigation`).
 
 4. **Snapshot the results (separate invocation).** Read the rendered page as a
    token-cheap accessibility-tree + text view:
 
    ```sh
-   my-browser-controller snapshot
+   webhands snapshot
    ```
 
 5. **Tear down.**
 
    ```sh
-   my-browser-controller stop
+   webhands stop
    ```
 
 ## What counts as a pass
