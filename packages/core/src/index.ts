@@ -27,6 +27,14 @@ export {PlaywrightLaunchTransport} from './playwright-launch-transport.js';
 export {PlaywrightAttachTransport} from './playwright-attach-transport.js';
 
 export {
+	setupProfile,
+	buildPrompt,
+	type PromptSink,
+	type SetupProfileOptions,
+	type SetupProfileResult,
+} from './setup-profile.js';
+
+export {
 	ControllerError,
 	MissingBrowserBinaryError,
 	MissingProfileError,
