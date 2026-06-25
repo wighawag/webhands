@@ -206,6 +206,14 @@ export interface Session {
 	readonly page: Page;
 	/** Tear down the session and release the underlying browser resources. */
 	close(): Promise<void>;
+	/**
+	 * Resolve when the session is closed — either by the USER closing the browser
+	 * window/context, or by a {@link Session.close} call. This is what lets a
+	 * headed flow (notably `setup-profile`) HOLD the window open and block until
+	 * the human is done, instead of tearing it down immediately. Resolves once
+	 * (idempotent); resolves immediately if the session is already closed.
+	 */
+	waitForClose(): Promise<void>;
 }
 
 /**

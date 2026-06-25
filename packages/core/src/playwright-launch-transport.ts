@@ -128,6 +128,21 @@ function makeSession(context: BrowserContext, pwPage: PwPage): Session {
 		}
 	};
 
+	// Resolves the first time the context is gone — whether the USER closed the
+	// window (Playwright fires the context 'close' event) or our own close()
+	// ran. This is what lets `setup-profile` hold the headed window open and
+	// block on waitForClose() until the human is done.
+	let resolveClosed!: () => void;
+	const closedSignal = new Promise<void>((resolve) => {
+		resolveClosed = resolve;
+	});
+	const markClosed = () => {
+		if (closed) return;
+		closed = true;
+		resolveClosed();
+	};
+	context.on('close', markClosed);
+
 	const page: Page = {
 		async navigate(url: string): Promise<void> {
 			ensureOpen();
@@ -206,9 +221,15 @@ function makeSession(context: BrowserContext, pwPage: PwPage): Session {
 	return {
 		page,
 		async close(): Promise<void> {
-			if (closed) return;
-			closed = true;
+			if (closed) {
+				return;
+			}
+			// context.close() fires the 'close' event, which runs markClosed.
 			await context.close();
+			markClosed();
+		},
+		waitForClose(): Promise<void> {
+			return closedSignal;
 		},
 	};
 }

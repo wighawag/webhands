@@ -484,6 +484,103 @@ describe('incur CLI wiring', () => {
 		});
 	});
 
+	describe('setup-profile HOLDS the headed window open until the user closes it', () => {
+		/** A fake session whose close is driven by the test (models the headed window). */
+		function heldSession(): {
+			session: Session;
+			closeIt: () => void;
+			closedByCommand: () => boolean;
+		} {
+			let resolveClosed!: () => void;
+			const closedSignal = new Promise<void>((r) => {
+				resolveClosed = r;
+			});
+			let closedByCommand = false;
+			const page = {
+				async navigate() {},
+				async snapshot() {
+					return {url: 'stub://x', view: 'accessibility' as const, content: ''};
+				},
+				async click() {},
+				async type() {},
+				async eval() {
+					return undefined;
+				},
+				async wait() {},
+				async cookies() {
+					return [];
+				},
+				async setCookies() {},
+			};
+			const session: Session = {
+				page,
+				async close() {
+					closedByCommand = true;
+					resolveClosed();
+				},
+				waitForClose() {
+					return closedSignal;
+				},
+			};
+			return {
+				session,
+				closeIt: resolveClosed,
+				closedByCommand: () => closedByCommand,
+			};
+		}
+
+		it('does not resolve until the user closes the window, then reports success + the launch cta', async () => {
+			const {session, closeIt} = heldSession();
+			const location = {
+				homeRoot: '/tmp/iso',
+				profilesRoot: '/tmp/iso/profiles',
+				profileDir: '/tmp/iso/profiles/default',
+				profile: 'default',
+			};
+			const cli = createCli({
+				setupProfile: async () => ({session, location}),
+			});
+
+			let stdout = '';
+			let done = false;
+			const serving = cli
+				.serve(['setup-profile', '--full-output', '--format', 'json'], {
+					stdout: (s) => {
+						stdout += s;
+					},
+					exit: () => {},
+					env: {},
+				})
+				.then(() => {
+					done = true;
+				});
+
+			// The command must still be BLOCKED on the open window (nothing emitted).
+			await new Promise((r) => setTimeout(r, 20));
+			expect(done).toBe(false);
+			expect(stdout).toBe('');
+
+			// The user closes the window -> the command finishes and reports success.
+			closeIt();
+			await serving;
+			expect(done).toBe(true);
+
+			const env = JSON.parse(stdout) as {
+				ok: boolean;
+				data?: {profile: string; profileDir: string};
+				meta: {cta?: {commands: {command: string}[]}};
+			};
+			expect(env.ok).toBe(true);
+			expect(env.data?.profile).toBe('default');
+			expect(env.data?.profileDir).toBe('/tmp/iso/profiles/default');
+			// The cta suggests `launch` now that the profile is set up (the command
+			// field is the resolved string, e.g. `webhands launch --profile default`).
+			expect(
+				env.meta.cta?.commands.some((c) => c.command.includes('launch')),
+			).toBe(true);
+		});
+	});
+
 	describe('the verb commands wire to the core seam (wiring, not behaviour)', () => {
 		it('dispatches `goto` to the core Page.navigate verb via the provider', async () => {
 			const {provider, transport} = stubProvider();
@@ -534,6 +631,7 @@ describe('incur CLI wiring', () => {
 				async close() {
 					closed = true;
 				},
+				async waitForClose() {},
 			});
 			await run(provider, ['goto', 'https://example.test/']);
 			expect(closed).toBe(true);

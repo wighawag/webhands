@@ -56,11 +56,24 @@ export function connectRemoteSession(baseUrl: string): Session {
 		throw new Error(reply.error);
 	};
 
+	let resolveClosed!: () => void;
+	const closedSignal = new Promise<void>((resolve) => {
+		resolveClosed = resolve;
+	});
+
 	return {
 		page: makeRpcPage(send),
 		async close() {
-			// Intentionally a no-op: the served process owns the session's lifetime
-			// (see this module's overview). Teardown is the explicit `stop` verb.
+			// Intentionally a no-op against the SERVER: the served process owns the
+			// session's lifetime (see this module's overview). Teardown is the
+			// explicit `stop` verb. We still resolve the local close signal so a
+			// caller awaiting waitForClose() on this client handle unblocks.
+			resolveClosed();
+		},
+		waitForClose(): Promise<void> {
+			// A client never waits on the user closing the window — that is the
+			// server's concern; this resolves on a local close() call.
+			return closedSignal;
 		},
 	};
 }

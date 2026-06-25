@@ -238,10 +238,13 @@ export function createCli(deps: CliDeps = {}) {
 					profile: c.options.profile,
 					...(deps.home ?? {}),
 				});
-				// `setup-profile` holds the headed window open for the human's login;
-				// the long-lived hold is the persistence task's concern. For the v1
-				// wiring we report where the profile lives and close the session.
-				await session.close();
+				// `setup-profile` HOLDS the headed window open for the human's login:
+				// block until the user closes the browser (or it otherwise ends),
+				// THEN report success. (Earlier this closed the session immediately,
+				// so the window opened and vanished in the same tick.) On close the
+				// persistent context has flushed the new state to the profile dir, so
+				// the profile is set up and `launch` is the right next step.
+				await session.waitForClose();
 				return c.ok(
 					{profile: location.profile, profileDir: location.profileDir},
 					{

@@ -37,6 +37,11 @@ export class StubTransport implements Transport {
 		const calls = this.calls;
 		let closed = false;
 
+		let resolveClosed!: () => void;
+		const closedSignal = new Promise<void>((resolve) => {
+			resolveClosed = resolve;
+		});
+
 		const ensureOpen = () => {
 			if (closed) {
 				throw new Error('session is closed');
@@ -93,7 +98,14 @@ export class StubTransport implements Transport {
 		return {
 			page,
 			async close(): Promise<void> {
+				if (closed) {
+					return;
+				}
 				closed = true;
+				resolveClosed();
+			},
+			waitForClose(): Promise<void> {
+				return closedSignal;
 			},
 		};
 	}

@@ -107,6 +107,20 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 		}
 	};
 
+	// Resolves when the session ends: either the user's browser goes away
+	// (Playwright fires 'disconnected' on a connectOverCDP browser) or our own
+	// close() disconnects. Lets a caller block until the session is gone.
+	let resolveClosed!: () => void;
+	const closedSignal = new Promise<void>((resolve) => {
+		resolveClosed = resolve;
+	});
+	const markClosed = () => {
+		if (closed) return;
+		closed = true;
+		resolveClosed();
+	};
+	browser.on('disconnected', markClosed);
+
 	const page: Page = {
 		async navigate(url: string): Promise<void> {
 			ensureOpen();
@@ -168,10 +182,16 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 	return {
 		page,
 		async close(): Promise<void> {
-			if (closed) return;
-			closed = true;
-			// Detach from the user's browser; do NOT terminate it.
+			if (closed) {
+				return;
+			}
+			// Detach from the user's browser; do NOT terminate it. This fires
+			// 'disconnected', which runs markClosed.
 			await browser.close();
+			markClosed();
+		},
+		waitForClose(): Promise<void> {
+			return closedSignal;
 		},
 	};
 }
