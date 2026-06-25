@@ -126,10 +126,57 @@ const REDIRECTING = `<!doctype html>
 </html>
 `;
 
+/**
+ * A page carrying controlled, deterministic state for the `eval` verb (PRD
+ * story 9) to read back. The escape-hatch tests evaluate expressions against
+ * THIS fixture's own state and assert the serialized result, never against
+ * third-party DOM (PRD "Testing Decisions"):
+ *
+ * - `#marker` holds a known text the verb can read.
+ * - `window.__fixture` is a known object graph (a number, a string, a nested
+ *   array) so an object result can be asserted by value.
+ * - `window.__fixtureAsync()` resolves to a known value after a tick, so the
+ *   Promise-awaiting behaviour of `eval` is exercised on the fixture's own
+ *   clock (deterministic, not a network round-trip).
+ * - `window.__fixtureCircular` is a circular structure, the controlled case for
+ *   asserting that the transport's structured clone PRESERVES circular refs (a
+ *   `[Circular]` marker) rather than throwing, unlike a JSON-based encoding.
+ */
+const EVAL = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>eval fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Eval Fixture</h1>
+		<p id="marker">marker-value</p>
+		<script>
+			window.__fixture = {
+				count: 42,
+				label: 'fixture-label',
+				nested: [1, 2, 3],
+			};
+			window.__fixtureAsync = function () {
+				return new Promise(function (resolve) {
+					window.setTimeout(function () {
+						resolve('async-resolved');
+					}, 10);
+				});
+			};
+			var circular = {};
+			circular.self = circular;
+			window.__fixtureCircular = circular;
+		</script>
+	</body>
+</html>
+`;
+
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
 	'click-type.html': CLICK_TYPE,
 	'delayed.html': DELAYED_CONTENT,
 	'redirecting.html': REDIRECTING,
+	'eval.html': EVAL,
 };

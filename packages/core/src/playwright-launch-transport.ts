@@ -173,6 +173,19 @@ function makeSession(context: BrowserContext, pwPage: PwPage): Session {
 		},
 		async eval(expression: string): Promise<unknown> {
 			ensureOpen();
+			// The `eval` escape hatch (PRD story 9): run the raw JS EXPRESSION in the
+			// page and return its serializable result. Playwright's `evaluate`
+			// already IS the seam's serialization contract (see {@link Page.eval}):
+			// it passes a string as an expression, awaits a returned Promise, and
+			// structurally clones the result out of the page by VALUE. That clone is
+			// richer than JSON: it preserves NaN/Infinity/BigInt and circular
+			// structures (back-refs become a `[Circular]` marker), yields `undefined`
+			// for functions/symbols, and returns an opaque preview string for a live
+			// host object (a DOM node never crosses the process boundary). A page-side
+			// throw rejects. We pass it straight through rather than re-encode it:
+			// wrapping the value in a transport-specific envelope would invent a
+			// dialect the seam deliberately avoids. The thrown error is a plain
+			// `Error`, so no Playwright/CDP type leaks across the seam (ADR-0003).
 			return pwPage.evaluate(expression);
 		},
 		async wait(condition: WaitCondition): Promise<void> {

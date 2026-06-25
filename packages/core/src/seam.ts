@@ -145,7 +145,47 @@ export interface Page {
 	click(target: LocatorString): Promise<void>;
 	/** Type text into the element addressed by a raw Playwright locator string. */
 	type(target: LocatorString, text: string): Promise<void>;
-	/** Run JavaScript in the page context and return its result. */
+	/**
+	 * Run a JavaScript EXPRESSION in the active page's context and return its
+	 * result, the `eval` escape hatch for cases no other verb covers (PRD story
+	 * 9). It sits naturally beside the raw-locator addressing (ADR-0004): both are
+	 * page-context expressions the transport resolves.
+	 *
+	 * `expression` is evaluated AS AN EXPRESSION (not a function body), so its
+	 * value is the result: `'1 + 2'` yields `3`, `"document.title"` yields the
+	 * title. If it evaluates to a Promise, the transport awaits it and returns the
+	 * resolved value.
+	 *
+	 * SERIALIZATION CONTRACT (the load-bearing part). The result must cross the
+	 * seam by VALUE: it is structurally cloned out of the page context, not
+	 * handed back as a live reference. The transport, not this verb, owns the
+	 * serialization, and its behaviour is the documented contract callers rely
+	 * on. It is RICHER than `JSON.stringify` (do not reason about it as JSON):
+	 * - Primitives, plain objects, and arrays round-trip faithfully, including
+	 *   nested structures.
+	 * - `undefined` round-trips as `undefined`; `null` as `null`.
+	 * - Non-finite numbers (`NaN`, `Infinity`, `-0`) and `BigInt` are PRESERVED
+	 *   as their real JS values (unlike JSON, which would lose them).
+	 * - A circular structure is PRESERVED, with each back-reference replaced by a
+	 *   `[Circular]` marker (it does NOT throw).
+	 * - Values with no transferable form (functions, symbols) come back as
+	 *   `undefined`; a `Date` comes back as a `Date`; `Map`/`Set` come back as an
+	 *   empty object `{}` (their entries do not survive the clone).
+	 * - Live host objects (a DOM node, `window`) come back as an OPAQUE PREVIEW
+	 *   STRING, NOT the live object: it cannot cross the process boundary, so the
+	 *   escape hatch hands back a readable stand-in rather than a broken handle.
+	 *   An agent that needs a DOM value reads a serializable property of it
+	 *   (`...textContent`, `...value`) inside the expression, exactly as the
+	 *   tests do.
+	 * - An expression that THROWS in the page REJECTS with a transport-neutral
+	 *   `Error` carrying the page-side message (no CDP/Playwright type leaks
+	 *   across the seam, ADR-0003).
+	 *
+	 * The return type is `unknown` because the page decides the shape; callers
+	 * narrow it. This is deliberately a thin passthrough to the transport's
+	 * serialize-and-return: `eval` does not re-encode or wrap the result, so an
+	 * agent gets exactly what the page produced.
+	 */
 	eval(expression: string): Promise<unknown>;
 	/** Pace actions by waiting for a condition. */
 	wait(condition: WaitCondition): Promise<void>;
