@@ -11,6 +11,50 @@ alive across separate CLI invocations behind a long-lived `serve` process, and
 exposes page verbs (`goto`, `snapshot`, `click`, `type`, `eval`, `wait`,
 `cookies`) with structured output.
 
+## Use it via your AI agent (start here)
+
+The simplest way to use `webhands` is to let your coding agent (Claude Code,
+Cursor, etc.) run it through plain `bash` with `npx`. No MCP wiring, no install
+step — the agent just runs `npx webhands <verb>` commands. The first run of
+`npx webhands` fetches the package automatically.
+
+Give your agent something like: *"Use `webhands` to open Kayak and read me the
+live prices for EDI→BOM on 31 Oct."* A capable agent will then:
+
+```sh
+# 1. start & HOLD the browser. serve blocks, so the agent backgrounds it:
+nohup npx webhands serve --headed > /tmp/webhands.log 2>&1 &
+sleep 12 && cat /tmp/webhands.log     # confirm it printed an endpoint + pid
+
+# 2. navigate the live page (separate invocation, same browser):
+npx webhands goto 'https://www.kayak.co.uk/flights/EDI-BOM/2026-10-31?sort=price_a'
+
+# 3. let JS results render, then read the page token-cheaply:
+npx webhands wait --ms 8000
+npx webhands snapshot --token-limit 6000
+
+# 4. always tear down when done:
+npx webhands stop
+```
+
+Three things a new user should know up front:
+
+- **You log in once, in a window you can see.** Run `npx webhands setup-profile`
+  (or start with `serve --headed`) and sign in / clear any cookie or anti-bot
+  prompt yourself. That state is saved to a dedicated profile and reused on later
+  runs. The tool never bypasses logins or solves CAPTCHAs — you do that part.
+- **It acts as the real, logged-in you.** Reading pages is low-risk; let the agent
+  do that freely. But anything that spends money, books, posts, or changes account
+  state should be YOUR explicit decision — have the agent surface the link and let
+  you finish checkout. (See *Scope and honesty* below.)
+- **Anti-bot sites may need the visible window.** Headless runs can hit a
+  "you look like a bot" page on sites like Kayak. The fix is to run `--headed` and
+  clear the challenge yourself once, not to defeat it.
+
+For the full agent playbook (workflow, gotchas, guardrails) install the bundled
+skill: `npx webhands skills add` then look for `use-webhands`. Per-verb flag
+reference: `npx webhands <verb> --help` or `npx webhands --llms-full`.
+
 ## How it works (the pipe)
 
 The browser is owned by ONE long-lived `serve` process; each verb invocation is a
