@@ -5,6 +5,7 @@ import {
 	type Page as PwPage,
 } from 'playwright';
 import {AttachNoContextError, AttachNotChromiumError} from './errors.js';
+import {waitFor} from './playwright-launch-transport.js';
 import type {
 	Cookie,
 	OpenTarget,
@@ -105,6 +106,9 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 	const page: Page = {
 		async navigate(url: string): Promise<void> {
 			ensureOpen();
+			// "Settled" = the `load` event; XHR/JS-rendered content that appears
+			// after load is the `wait` verb's job. Same rationale (and the
+			// no-`networkidle` reasoning) as the launch transport's `navigate`.
 			await pwPage.goto(url, {waitUntil: 'load'});
 		},
 		async snapshot(options?: SnapshotOptions): Promise<Snapshot> {
@@ -137,17 +141,9 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 		},
 		async wait(condition: WaitCondition): Promise<void> {
 			ensureOpen();
-			switch (condition.kind) {
-				case 'timeout':
-					await pwPage.waitForTimeout(condition.ms);
-					return;
-				case 'locator':
-					await resolveLocator(pwPage, condition.target).waitFor();
-					return;
-				case 'navigation':
-					await pwPage.waitForNavigation();
-					return;
-			}
+			// Identical to the launch transport (shared `waitFor`): selector /
+			// navigation / timeout, so the verb behaves the same on both.
+			await waitFor(pwPage, condition);
 		},
 		async cookies(): Promise<readonly Cookie[]> {
 			ensureOpen();

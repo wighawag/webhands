@@ -126,6 +126,14 @@ function makeSession(context: BrowserContext, pwPage: PwPage): Session {
 	const page: Page = {
 		async navigate(url: string): Promise<void> {
 			ensureOpen();
+			// "Settled" for `goto` = the `load` event: the document and its
+			// subresources have loaded (PRD story 6, "navigate ... and wait for it
+			// to settle"). We deliberately do NOT wait for `networkidle`:
+			// Playwright discourages it, and it hangs forever on pages with
+			// long-poll / streaming / analytics beacons (exactly the logged-in apps
+			// this tool targets). Content rendered AFTER load (XHR-injected prices,
+			// hydrated lists) is the job of the explicit `wait` verb (story 10), not
+			// of `goto`.
 			await pwPage.goto(url, {waitUntil: 'load'});
 		},
 		async snapshot(options?: SnapshotOptions): Promise<Snapshot> {
@@ -164,17 +172,7 @@ function makeSession(context: BrowserContext, pwPage: PwPage): Session {
 		},
 		async wait(condition: WaitCondition): Promise<void> {
 			ensureOpen();
-			switch (condition.kind) {
-				case 'timeout':
-					await pwPage.waitForTimeout(condition.ms);
-					return;
-				case 'locator':
-					await resolveLocator(pwPage, condition.target).waitFor();
-					return;
-				case 'navigation':
-					await pwPage.waitForNavigation();
-					return;
-			}
+			await waitFor(pwPage, condition);
 		},
 		async cookies(): Promise<readonly Cookie[]> {
 			ensureOpen();
@@ -195,6 +193,48 @@ function makeSession(context: BrowserContext, pwPage: PwPage): Session {
 			await context.close();
 		},
 	};
+}
+
+/**
+ * Run the `wait` verb's three forms (PRD story 10) against a Playwright page.
+ *
+ * - `timeout` — pace by a fixed delay (`waitForTimeout`), so an agent can act
+ *   like a human and let XHR-rendered content land.
+ * - `locator` — block until the addressed element appears (`Locator.waitFor()`),
+ *   the form for content rendered AFTER `goto` settled on `load`.
+ * - `navigation` — block until the NEXT navigation settles to `load`. We use
+ *   `waitForNavigation()` even though Playwright marks it `@deprecated` ("racy,
+ *   use waitForURL"): that deprecation targets in-process TEST code that can arm
+ *   the wait BEFORE the action and pass a target URL. Neither holds here. Across
+ *   this seam verbs are DISCRETE sequential calls (`click` then `wait`), so we
+ *   CANNOT arm before the trigger; and the realistic trigger is an async,
+ *   JS-driven transition (a redirect / SPA route change that fires AFTER the
+ *   agent's action, the "let XHR-rendered content load" case of story 10), so
+ *   "wait for the NEXT navigation" is exactly right — whereas `waitForLoadState`
+ *   would see the already-loaded current page and return before the pending
+ *   transition. `waitForURL` is unusable because the verb has no target URL by
+ *   design (the agent waits for "a navigation", not a known address). (See the
+ *   task's ## Decisions note.)
+ *
+ * Shared by both Playwright transports so the verb behaviour stays identical
+ * (the forward-note's "do NOT write a parallel second implementation").
+ */
+export async function waitFor(
+	page: PwPage,
+	condition: WaitCondition,
+): Promise<void> {
+	switch (condition.kind) {
+		case 'timeout':
+			await page.waitForTimeout(condition.ms);
+			return;
+		case 'locator':
+			await resolveLocator(page, condition.target).waitFor();
+			return;
+		case 'navigation':
+			// eslint-disable-next-line @typescript-eslint/no-deprecated
+			await page.waitForNavigation();
+			return;
+	}
 }
 
 /**
