@@ -5,10 +5,18 @@ import {
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,
+	NoLiveServerError,
+	SessionAlreadyActiveError,
 	type OpenTarget,
+	type RunningSessionServer,
 	type Session,
 } from '@my-browser-controller/core';
-import {createCli, CLI_NAME, type SessionProvider} from '../src/index.js';
+import {
+	createCli,
+	CLI_NAME,
+	type ServeSession,
+	type SessionProvider,
+} from '../src/index.js';
 
 /**
  * CLI-LEVEL WIRING tests (PRD "Testing Decisions": CLI tests assert incur
@@ -39,12 +47,39 @@ function throwingProvider(error: unknown): SessionProvider {
 	};
 }
 
+/**
+ * A fake {@link ServeSession} that records the target it was asked to bring up
+ * and returns a canned running server, so `serve` wiring is exercised with no
+ * real browser and no real HTTP listener.
+ */
+function fakeServe(): {
+	serve: ServeSession;
+	targets: OpenTarget[];
+	stopped: boolean[];
+} {
+	const targets: OpenTarget[] = [];
+	const stopped: boolean[] = [];
+	const serve: ServeSession = async (target) => {
+		targets.push(target);
+		const index = stopped.push(false) - 1;
+		const server: RunningSessionServer = {
+			endpoint: {url: 'http://127.0.0.1:51999', pid: 4242},
+			async stop() {
+				stopped[index] = true;
+			},
+		};
+		return server;
+	};
+	return {serve, targets, stopped};
+}
+
 /** Run a command through `serve`, capturing stdout and exit code (no real process exit). */
 async function run(
 	provider: SessionProvider,
 	argv: string[],
+	extra: {serveSession?: ServeSession} = {},
 ): Promise<{stdout: string; code: number}> {
-	const cli = createCli({sessionProvider: provider});
+	const cli = createCli({sessionProvider: provider, ...extra});
 	let stdout = '';
 	let code = 0;
 	await cli.serve(argv, {
@@ -63,18 +98,18 @@ async function run(
 async function runEnvelope(
 	provider: SessionProvider,
 	argv: string[],
+	extra: {serveSession?: ServeSession} = {},
 ): Promise<{
 	ok: boolean;
 	data?: unknown;
 	error?: {code: string; message: string};
 	meta: {cta?: {commands: {command: string}[]}};
 }> {
-	const {stdout} = await run(provider, [
-		...argv,
-		'--full-output',
-		'--format',
-		'json',
-	]);
+	const {stdout} = await run(
+		provider,
+		[...argv, '--full-output', '--format', 'json'],
+		extra,
+	);
 	return JSON.parse(stdout);
 }
 
@@ -303,6 +338,62 @@ describe('incur CLI wiring', () => {
 		});
 	});
 
+	describe('cross-invocation lifecycle: serve / stop (ADR-0005)', () => {
+		it('`serve` brings up the single session and reports its discoverable endpoint', async () => {
+			const {provider} = stubProvider();
+			const {serve, targets} = fakeServe();
+			const env = await runEnvelope(provider, ['serve', '--profile', 'work'], {
+				serveSession: serve,
+			});
+			expect(env.ok).toBe(true);
+			expect(env.data).toMatchObject({
+				verb: 'serve',
+				url: 'http://127.0.0.1:51999',
+				pid: 4242,
+			});
+			// `serve` consumed the connection options to choose the launch target.
+			expect(targets).toEqual([
+				{mode: 'launch', profile: 'work', headed: false},
+			]);
+		});
+
+		it('`serve --endpoint` brings the single session up in attach mode', async () => {
+			const {provider} = stubProvider();
+			const {serve, targets} = fakeServe();
+			await runEnvelope(
+				provider,
+				['serve', '--endpoint', 'http://127.0.0.1:9222'],
+				{serveSession: serve},
+			);
+			expect(targets).toEqual([
+				{mode: 'attach', endpoint: 'http://127.0.0.1:9222'},
+			]);
+		});
+
+		it('`stop` with no live server is a friendly no-op (stopped:false), not an error', async () => {
+			const {provider} = stubProvider();
+			// home is unset, so discovery finds no endpoint file under a fresh root.
+			const env = await runEnvelope(provider, ['stop']);
+			expect(env.ok).toBe(true);
+			expect(env.data).toMatchObject({verb: 'stop', stopped: false});
+		});
+
+		it('declares serve/stop output schemas (one command each, story 12)', async () => {
+			const serveSchema = (await schemaOf(['serve'])) as {
+				output?: {properties?: Record<string, unknown>};
+			};
+			expect(Object.keys(serveSchema.output?.properties ?? {})).toEqual(
+				expect.arrayContaining(['ok', 'verb', 'url', 'pid']),
+			);
+			const stopSchema = (await schemaOf(['stop'])) as {
+				output?: {properties?: Record<string, unknown>};
+			};
+			expect(Object.keys(stopSchema.output?.properties ?? {})).toEqual(
+				expect.arrayContaining(['ok', 'verb', 'stopped']),
+			);
+		});
+	});
+
 	describe('actionable errors name the EXACT fix command (story 17)', () => {
 		it('maps the typed missing-browser-binary condition to `playwright install`', async () => {
 			const provider = throwingProvider(
@@ -355,6 +446,30 @@ describe('incur CLI wiring', () => {
 			expect(env.ok).toBe(false);
 			expect(env.error?.code).toBe('attach-no-context');
 			expect(env.error?.message).toContain('open a window/tab');
+		});
+
+		it('maps the typed no-live-server condition to `serve` (run serve first)', async () => {
+			// A verb invocation with NO live server: the default thin-client provider
+			// raises NoLiveServerError; the CLI must tell the user to run `serve`
+			// first and exit non-zero, never auto-spawn (ADR-0005).
+			const provider = throwingProvider(new NoLiveServerError());
+			const {code} = await run(provider, ['goto', 'https://example.test/']);
+			expect(code).toBe(1);
+			const env = await runEnvelope(provider, [
+				'goto',
+				'https://example.test/',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('no-live-server');
+			expect(env.error?.message).toContain(`${CLI_NAME} serve`);
+		});
+
+		it('maps the typed session-already-active condition to `stop`', async () => {
+			const provider = throwingProvider(new SessionAlreadyActiveError());
+			const env = await runEnvelope(provider, ['launch']);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('session-already-active');
+			expect(env.error?.message).toContain(`${CLI_NAME} stop`);
 		});
 
 		it('does NOT mistake a generic error for a typed condition (falls back to `unknown`)', async () => {

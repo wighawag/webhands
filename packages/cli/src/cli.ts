@@ -5,9 +5,18 @@ import {
 	serializeCookies,
 	deserializeCookies,
 	locator,
+	PlaywrightAttachTransport,
+	PlaywrightLaunchTransport,
+	readSessionEndpoint,
+	clearSessionEndpoint,
+	SessionAlreadyActiveError,
+	startSessionServer,
 	type Cookie,
 	type OpenTarget,
+	type RunningSessionServer,
 	type Session,
+	type SessionServerOptions,
+	type Transport,
 	type WaitCondition,
 } from '@my-browser-controller/core';
 import {readFile, writeFile} from 'node:fs/promises';
@@ -52,17 +61,36 @@ export interface CliDeps {
 	readonly setupProfile?: typeof setupProfile;
 	/** Overrides for the controller home root (tests pass a temp dir). */
 	readonly home?: {root?: string; env?: NodeJS.ProcessEnv};
+	/**
+	 * How the `serve` command brings up the single long-lived session (ADR-0005).
+	 * Defaults to {@link startSessionServer} bound to the v1 Playwright transports;
+	 * injectable so `serve`/`stop` wiring is testable with a stub transport and no
+	 * real browser, and so a test can drive the server lifecycle deterministically.
+	 */
+	readonly serveSession?: ServeSession;
 }
+
+/**
+ * The `serve`-command seam: bring up the ONE long-lived session for a target and
+ * return the running server (its advertised endpoint + an explicit `stop`). The
+ * default wraps `core`'s {@link startSessionServer} with the v1 Playwright
+ * transports; tests inject a stub-backed one.
+ */
+export type ServeSession = (
+	target: OpenTarget,
+	options: {root?: string; env?: NodeJS.ProcessEnv},
+) => Promise<RunningSessionServer>;
 
 // --- shared schema fragments ----------------------------------------------
 
 /**
- * Connection options every page verb shares: HOW to obtain the session it acts
- * on. In v1 these open a session per invocation through the default provider;
- * once cross-invocation persistence lands (ADR-0005, the next task) the verbs
- * become thin clients of the running `serve` process and the provider, not
- * these options, carries the open mechanism. They live here as ONE shared
- * fragment so every verb opens identically.
+ * Connection options shared by the page verbs and `serve`: WHICH browser the
+ * single session targets. In the ADR-0005 model the `serve` command consumes
+ * these to bring the ONE long-lived session up (launch a profile, or attach to
+ * an endpoint); the page VERBS are thin clients that drive whatever session is
+ * already live, so for them these options are vestigial selectors of the launch
+ * mode only when `serve` reads them. They live here as ONE shared fragment so
+ * `serve` and the verbs describe the open the same way.
  */
 const connectionOptions = z.object({
 	profile: z
@@ -170,6 +198,8 @@ export function createCli(deps: CliDeps = {}) {
 	const provider =
 		deps.sessionProvider ?? createDefaultSessionProvider(deps.home ?? {});
 	const runSetupProfile = deps.setupProfile ?? setupProfile;
+	const serveSession = deps.serveSession ?? defaultServeSession;
+	const home = deps.home ?? {};
 
 	const cli = Cli.create(binary, {
 		description: DESCRIPTION,
@@ -272,6 +302,123 @@ export function createCli(deps: CliDeps = {}) {
 							},
 						),
 				);
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	// --- lifecycle: serve / stop (ADR-0005, cross-invocation persistence) ----
+
+	cli.command('serve', {
+		description:
+			'Start the long-lived session server: launch (or attach) the ONE browser ' +
+			'and keep it alive so later verb invocations drive the SAME live page. ' +
+			'Runs until stopped (Ctrl-C or `stop`).',
+		options: connectionOptions.extend({
+			headed: z
+				.boolean()
+				.default(false)
+				.describe('Show the browser window (default: headless).'),
+		}),
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('serve'),
+			url: z.string().describe('The endpoint client verbs discover and call.'),
+			pid: z
+				.number()
+				.describe('The served process PID (for `stop` / signals).'),
+		}),
+		async run(c) {
+			try {
+				// Single session in v1: refuse to bring up a second while one is live.
+				const existing = await readSessionEndpoint(home);
+				if (existing !== undefined) {
+					throw new SessionAlreadyActiveError();
+				}
+				const target: OpenTarget =
+					c.options.endpoint !== undefined && c.options.endpoint !== ''
+						? {mode: 'attach', endpoint: c.options.endpoint}
+						: {
+								mode: 'launch',
+								profile: c.options.profile,
+								headed: c.options.headed,
+							};
+				const server = await serveSession(target, home);
+				// Explicit teardown on signal: closing the browser + clearing the
+				// endpoint file is the server's `stop`. We DO NOT auto-spawn and we DO
+				// NOT auto-teardown on anything but an explicit stop/signal (ADR-0005).
+				const onSignal = () => {
+					void server.stop().finally(() => process.exit(0));
+				};
+				process.once('SIGINT', onSignal);
+				process.once('SIGTERM', onSignal);
+				return c.ok(
+					{
+						ok: true as const,
+						verb: 'serve' as const,
+						url: server.endpoint.url,
+						pid: server.endpoint.pid,
+					},
+					{
+						cta: {
+							commands: [
+								{
+									command: 'goto',
+									description:
+										'Navigate the served live page (from a separate invocation).',
+								},
+								{
+									command: 'stop',
+									description: 'Tear the served session down.',
+								},
+							],
+						},
+					},
+				);
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('stop', {
+		description:
+			'Tear down the long-lived session server: close the browser and stop serving.',
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('stop'),
+			stopped: z
+				.boolean()
+				.describe('Whether a live server was found and signalled to stop.'),
+		}),
+		async run(c) {
+			try {
+				const endpoint = await readSessionEndpoint(home);
+				if (endpoint === undefined) {
+					// Nothing to stop: report it plainly rather than error. Idempotent
+					// teardown is friendlier than a failure on a second `stop`.
+					return c.ok({
+						ok: true as const,
+						verb: 'stop' as const,
+						stopped: false,
+					});
+				}
+				// The served session lives in a SEPARATE process; signal it to run its
+				// own clean teardown (close browser + clear endpoint file). Then clear
+				// the endpoint file here too so discovery reflects the stop even if the
+				// process was already gone (stale endpoint).
+				try {
+					process.kill(endpoint.pid, 'SIGTERM');
+				} catch {
+					// The process is already gone; clearing the file below suffices.
+				}
+				await clearSessionEndpoint(home);
+				return c.ok({
+					ok: true as const,
+					verb: 'stop' as const,
+					stopped: true,
+				});
 			} catch (cause) {
 				return fail(c, cause, binary);
 			}
@@ -572,6 +719,30 @@ export function createCli(deps: CliDeps = {}) {
 	cli.command(cookies);
 
 	return cli;
+}
+
+/**
+ * The default {@link ServeSession}: bring up the ONE long-lived session through
+ * `core`'s {@link startSessionServer}, wired to the v1 Playwright transports.
+ * `launch` targets use the launch transport (raising the typed missing-profile /
+ * missing-binary errors the CLI maps to fix commands); `attach` targets use the
+ * attach transport. Kept here (not in the provider) because `serve` is the ONE
+ * place a real browser is launched in the ADR-0005 model; verb commands are thin
+ * clients and never launch.
+ */
+async function defaultServeSession(
+	target: OpenTarget,
+	home: {root?: string; env?: NodeJS.ProcessEnv},
+): Promise<RunningSessionServer> {
+	const launch = new PlaywrightLaunchTransport(home);
+	const attach = new PlaywrightAttachTransport();
+	const transport: Transport = {
+		open(t: OpenTarget): Promise<Session> {
+			return t.mode === 'attach' ? attach.open(t) : launch.open(t);
+		},
+	};
+	const options: SessionServerOptions = {...home, transport};
+	return startSessionServer(target, options);
 }
 
 /**

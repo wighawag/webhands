@@ -1,16 +1,17 @@
 import {
-	PlaywrightAttachTransport,
-	PlaywrightLaunchTransport,
+	connectRemoteSession,
+	NoLiveServerError,
+	readSessionEndpoint,
 	type OpenTarget,
 	type Session,
 } from '@my-browser-controller/core';
 
 /**
- * How a CLI command obtains a live {@link Session} to run a verb against.
+ * How a CLI verb command obtains a live {@link Session} to run against.
  *
- * This is the ONE seam the CLI uses to reach a browser. It is deliberately a
- * single function (open a session for an {@link OpenTarget}) rather than the
- * transports directly, for two reasons:
+ * This is the ONE seam the verb commands use to reach a browser. It is
+ * deliberately a single function (open a session for an {@link OpenTarget})
+ * rather than the transports directly, for two reasons:
  *
  * 1. **Testability of the WIRING.** CLI-level tests assert incur wiring
  *    (schemas, output envelope, cta, manifest, error text), NOT verb behaviour
@@ -19,19 +20,19 @@ import {
  *    real browser, and a test can inject a provider that THROWS the typed
  *    `core` errors to assert the actionable fix-command messages.
  *
- * 2. **A clean swap point for cross-invocation persistence.** ADR-0005 keeps a
- *    single browser alive between separate CLI invocations behind a long-lived
- *    `incur serve` process; verbs become thin clients of that server. That
- *    mechanism is the NEXT task (`cross-invocation-session-persistence`, which
- *    is `blockedBy` this one). When it lands it replaces THIS provider with the
- *    thin-client lookup (read the endpoint file, talk to the running server)
- *    without changing a single command definition. Until then the provider
- *    opens a session directly through the v1 Playwright transports, so the verb
- *    commands run end to end today.
+ * 2. **The cross-invocation persistence swap point.** Per ADR-0005 a single
+ *    browser is kept alive between separate CLI invocations behind a long-lived
+ *    `serve` process; verb commands are THIN CLIENTS of that server. The default
+ *    provider (below) is now exactly that thin client: it discovers the running
+ *    server via the endpoint file and returns a {@link connectRemoteSession}
+ *    proxy that drives the server's already-live page; when NO server is live it
+ *    raises a typed {@link NoLiveServerError} so the CLI prints "run `serve`
+ *    first" and exits non-zero, never auto-spawning a browser (ADR-0005:
+ *    lifecycle is EXPLICIT in v1).
  */
 export type SessionProvider = (target: OpenTarget) => Promise<Session>;
 
-/** Overrides for where the default provider's profiles live (tests pass a temp root). */
+/** Overrides for where the default provider discovers the running server (tests pass a temp root). */
 export interface DefaultSessionProviderOptions {
 	/** Explicit controller home root. Omit to use `~/.my-browser-controller`. */
 	readonly root?: string;
@@ -40,20 +41,30 @@ export interface DefaultSessionProviderOptions {
 }
 
 /**
- * The v1 default {@link SessionProvider}: open a session directly through the
- * Playwright transports.
+ * The v1 default {@link SessionProvider}: a THIN CLIENT of the long-lived
+ * `serve` process (ADR-0005).
  *
- * `launch` uses {@link PlaywrightLaunchTransport} (which raises the typed
- * `MissingProfileError` / `MissingBrowserBinaryError` the CLI maps to fix
- * commands); `attach` uses {@link PlaywrightAttachTransport}. This is a thin,
- * per-invocation open; the long-lived single session lands in the persistence
- * task (see {@link SessionProvider}).
+ * It reads the endpoint file the running server advertised under the config dir
+ * and returns a {@link connectRemoteSession} proxy that forwards each verb to
+ * the server's single live page. There is no per-invocation browser launch
+ * here: a verb invocation drives the SAME live page the server holds, which is
+ * what makes session state persist across separate CLI processes.
+ *
+ * The {@link OpenTarget} is intentionally IGNORED for discovery: which browser
+ * to launch (`launch`/`attach`, the profile) was decided once, by the `serve`
+ * command, when the single session was brought up. A verb does not get to pick
+ * a different browser; it just drives the live one. If no server is live the
+ * provider raises {@link NoLiveServerError} (mapped by the CLI to "run `serve`
+ * first"); it never silently opens a browser.
  */
 export function createDefaultSessionProvider(
 	options: DefaultSessionProviderOptions = {},
 ): SessionProvider {
-	const launch = new PlaywrightLaunchTransport(options);
-	const attach = new PlaywrightAttachTransport();
-	return (target) =>
-		target.mode === 'attach' ? attach.open(target) : launch.open(target);
+	return async (_target: OpenTarget): Promise<Session> => {
+		const endpoint = await readSessionEndpoint(options);
+		if (endpoint === undefined) {
+			throw new NoLiveServerError();
+		}
+		return connectRemoteSession(endpoint.url);
+	};
 }

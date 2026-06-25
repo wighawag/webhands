@@ -40,9 +40,37 @@ export {
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,
+	NoLiveServerError,
+	SessionAlreadyActiveError,
 	isControllerError,
 	type ControllerErrorCode,
 } from './errors.js';
+
+export {
+	resolveSessionEndpointPath,
+	writeSessionEndpoint,
+	readSessionEndpoint,
+	clearSessionEndpoint,
+	SESSION_ENDPOINT_FILENAME,
+	type SessionEndpoint,
+} from './session-endpoint.js';
+
+export {
+	startSessionServer,
+	sessionAlreadyActive,
+	type SessionServerOptions,
+	type RunningSessionServer,
+} from './session-server.js';
+
+export {connectRemoteSession} from './remote-session.js';
+
+export {
+	SESSION_RPC_PATH,
+	applySessionRpc,
+	makeRpcPage,
+	type SessionRpcRequest,
+	type SessionRpcResponse,
+} from './session-rpc.js';
 
 export {
 	resolveHomeRoot,

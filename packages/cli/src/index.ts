@@ -15,7 +15,13 @@ import type {Driver} from '@my-browser-controller/core';
  * programmatically (`createCli().serve(argv, {stdout, exit})` / `cli.fetch`).
  */
 
-export {createCli, CLI_NAME, DEFAULT_PROFILE, type CliDeps} from './cli.js';
+export {
+	createCli,
+	CLI_NAME,
+	DEFAULT_PROFILE,
+	type CliDeps,
+	type ServeSession,
+} from './cli.js';
 
 export {
 	createDefaultSessionProvider,

@@ -20,7 +20,9 @@ export type ControllerErrorCode =
 	| 'missing-browser-binary'
 	| 'missing-profile'
 	| 'attach-not-chromium'
-	| 'attach-no-context';
+	| 'attach-no-context'
+	| 'no-live-server'
+	| 'session-already-active';
 
 /**
  * Base class for every identifiable `core` error. Branch on {@link code}.
@@ -128,6 +130,42 @@ export class AttachNoContextError extends ControllerError {
 	) {
 		super(message, options);
 		this.endpoint = endpoint;
+	}
+}
+
+/**
+ * No long-lived served session is running (no endpoint file under the config
+ * dir), so a thin-client verb has nothing to drive (ADR-0005). Surfaced so the
+ * CLI can tell the user to run `serve` first rather than auto-spawning a browser
+ * (lifecycle is EXPLICIT in v1). This is the cross-invocation analogue of
+ * {@link MissingProfileError}: a precondition the user resolves with one named
+ * command.
+ */
+export class NoLiveServerError extends ControllerError {
+	readonly code = 'no-live-server';
+
+	constructor(
+		message: string = 'No live my-browser-controller session server is running. Start one with `serve` first.',
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+	}
+}
+
+/**
+ * A second `serve`/`launch`/`attach` was requested while one session is already
+ * live. v1 holds EXACTLY ONE session (ADR-0005, single session); a concurrent
+ * open is a clear refusal, not a second browser. Surfaced so the CLI can tell
+ * the user to stop the active session first.
+ */
+export class SessionAlreadyActiveError extends ControllerError {
+	readonly code = 'session-already-active';
+
+	constructor(
+		message: string = 'A session is already active; stop it first (run `stop`).',
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
 	}
 }
 

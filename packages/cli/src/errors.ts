@@ -4,6 +4,8 @@ import {
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,
+	NoLiveServerError,
+	SessionAlreadyActiveError,
 	type ControllerError,
 	type ControllerErrorCode,
 } from '@my-browser-controller/core';
@@ -56,6 +58,15 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 		case 'attach-no-context':
 			// The reached browser has no window/tab to reuse; the fix is to open one.
 			return `${binary} attach --endpoint ${(error as AttachNoContextError).endpoint} (open a window/tab in that browser first)`;
+		case 'no-live-server':
+			// No long-lived session server is running (ADR-0005): a verb is a thin
+			// client and has nothing to drive. The fix is to bring one up FIRST with
+			// `serve`; we never auto-spawn a browser in v1.
+			return `${binary} serve`;
+		case 'session-already-active':
+			// A session is already live; v1 holds exactly one. The fix is to tear it
+			// down before starting another.
+			return `${binary} stop`;
 		default: {
 			// Exhaustiveness guard: a new ControllerErrorCode must add a fix command
 			// here rather than silently fall through to a generic message.
@@ -97,5 +108,7 @@ export {
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,
+	NoLiveServerError,
+	SessionAlreadyActiveError,
 };
 export type {ControllerError, ControllerErrorCode};
