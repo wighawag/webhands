@@ -16,7 +16,11 @@
  */
 
 /** The closed set of identifiable `core` error conditions. */
-export type ControllerErrorCode = 'missing-browser-binary' | 'missing-profile';
+export type ControllerErrorCode =
+	| 'missing-browser-binary'
+	| 'missing-profile'
+	| 'attach-not-chromium'
+	| 'attach-no-context';
 
 /**
  * Base class for every identifiable `core` error. Branch on {@link code}.
@@ -81,6 +85,49 @@ export class MissingProfileError extends ControllerError {
 		super(message, options);
 		this.profile = profile;
 		this.profileDir = profileDir;
+	}
+}
+
+/**
+ * The `attach` transport connected to a browser that is NOT Chromium. CDP-attach
+ * (`connectOverCDP`) is Chromium-only (ADR-0002/0003: Firefox attaches via a
+ * different mechanism), so attaching to anything else cannot reuse the live
+ * context and is refused. Surfaced as a typed condition so the CLI can tell the
+ * user attach is Chromium-only WITHOUT the seam ever naming CDP/Chromium types.
+ */
+export class AttachNotChromiumError extends ControllerError {
+	readonly code = 'attach-not-chromium';
+	/** The browser engine actually reached at the endpoint (e.g. `firefox`). */
+	readonly browser: string;
+
+	constructor(
+		browser: string,
+		message: string = `attach is Chromium-only; the endpoint exposes a "${browser}" browser. Start Chromium/Chrome with --remote-debugging-port and attach to that.`,
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+		this.browser = browser;
+	}
+}
+
+/**
+ * The browser reached at the attach endpoint exposes no browser context to
+ * reuse. attach deliberately reuses the user's EXISTING authenticated context
+ * (`contexts()[0]`) and never opens a fresh one (ADR-0002), so a browser with
+ * zero contexts is a refusal, not a silent `newContext()`.
+ */
+export class AttachNoContextError extends ControllerError {
+	readonly code = 'attach-no-context';
+	/** The endpoint that exposed no reusable context. */
+	readonly endpoint: string;
+
+	constructor(
+		endpoint: string,
+		message: string = `attach found no existing browser context at ${endpoint} to reuse. Open a window/tab in the browser before attaching.`,
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+		this.endpoint = endpoint;
 	}
 }
 

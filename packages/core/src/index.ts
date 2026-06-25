@@ -15,10 +15,14 @@ export {StubTransport, type StubCall} from './stub-transport.js';
 
 export {PlaywrightLaunchTransport} from './playwright-launch-transport.js';
 
+export {PlaywrightAttachTransport} from './playwright-attach-transport.js';
+
 export {
 	ControllerError,
 	MissingBrowserBinaryError,
 	MissingProfileError,
+	AttachNotChromiumError,
+	AttachNoContextError,
 	isControllerError,
 	type ControllerErrorCode,
 } from './errors.js';
