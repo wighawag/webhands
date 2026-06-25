@@ -11,12 +11,16 @@
 			"default": "./dist/index.js"
 		}
 	},
+	"bin": {
+		"my-browser-controller": "./dist/bin.js"
+	},
 	"files": [
 		"dist",
 		"src"
 	],
 	"dependencies": {
-		"@my-browser-controller/core": "workspace:*"
+		"@my-browser-controller/core": "workspace:*",
+		"incur": "^0.4.10"
 	},
 	"devDependencies": {
 		"@types/node": "^25.2.0",
