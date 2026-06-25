@@ -1,30 +1,9 @@
 ---
 title: Browser Controller CLI (control any website from a real browser session)
 slug: browser-controller-cli
-needsAnswers: true
 ---
 
 > Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks.
-
-<!-- open-questions -->
-<!--
-  TRANSIENT BLOCK — stripped by the apply rung on full resolution.
-  While the spec has unresolved questions blocking autonomous tasking:
-    1. Set `needsAnswers: true` in the frontmatter above.
-    2. List the questions under the `## Open questions` heading below.
-    3. Clear the flag (and let apply strip this block) once they are answered.
-  Delete the whole fenced block — markers and all — if the prd launches fully resolved.
--->
-
-## Open questions
-
-1. **Browser-binary install policy.** Should `prepare` (or a first-run check) run `pnpm exec playwright install chromium`, or is browser-binary installation a separate manual step the user runs once? (Default assumption: separate; `setup-profile`/`launch` print a clear error with the install command if the binary is missing.)
-2. **Firefox in v1 or deferred?** The transport seam must not assume CDP (CDP-attach is Chromium-only). But do we ship a working Firefox `launch`/`setup-profile` path in v1, or only design the seam and ship Chromium first? `attach` over CDP is Chromium-only regardless; Firefox attach would need a different mechanism (Playwright Juggler / `launchPersistentContext`). (Default assumption: Chromium-complete in v1, Firefox seam-ready but not shipped.)
-3. **`snapshot` output shape.** Playwright accessibility-tree snapshot, a trimmed DOM/text extract, or both behind a flag? What is the token-cheap default an agent reads? (Default assumption: accessibility-tree + visible-text, with a `--full` for raw DOM.)
-4. **Element addressing for `click`/`type`.** CSS selector only, or also Playwright-style role/text locators and/or the stable ref-ids emitted by `snapshot` (so the agent clicks `e5` from the snapshot)? (Default assumption: accept CSS selector AND snapshot ref-ids.)
-5. **`attach` connection UX.** Do we require the user to start Chrome with `--remote-debugging-port` themselves, or does the CLI offer a helper to relaunch their Chrome with debugging enabled? (Chrome refuses to automate the default profile, so attach realistically targets a user who opted in.)
-
-<!-- /open-questions -->
 
 ## Problem Statement
 
@@ -52,7 +31,7 @@ The code is split: **`packages/core`** holds the browser-control logic behind a 
 5. As a user, I want `attach` to connect to my own already-running Chrome (remote-debugging enabled), so the controller reuses my live tabs, real fingerprint, and IP.
 6. As an agent, I want `goto <url>` to navigate the active page and wait for it to settle, so subsequent reads see rendered content.
 7. As an agent, I want `snapshot` to return a token-cheap, structured view of the page (accessibility tree + visible text) with stable element refs, so I can understand the page and decide what to click without parsing raw HTML.
-8. As an agent, I want `click <ref|selector>` and `type <ref|selector> <text>` to act on elements, including handling hidden custom inputs (dispatch click) where a normal click would time out.
+8. As an agent, I want `click <locator>` and `type <locator> <text>` to act on elements addressed by a **raw Playwright locator string** (e.g. `getByRole('button', { name: 'Search' })`), including handling hidden custom inputs (dispatch click) where a normal click would time out.
 9. As an agent, I want `eval <js>` to run JavaScript in the page context and get the result, as an escape hatch when a verb does not cover a case.
 10. As an agent, I want `wait` (for a selector, navigation, or timeout) so I can pace actions like a human and let XHR-rendered prices load.
 11. As a user, I want `cookies export` / `cookies import` so I can move or back up a session, or seed a profile.
@@ -68,12 +47,12 @@ The code is split: **`packages/core`** holds the browser-control logic behind a 
 ### Autonomy notes (the two gate axes)
 
 - **`humanOnly`:** NOT set on this prd. Tasking can be agent-driven once the open questions are resolved. (Individual tasks that touch login/credentials or destructive profile handling may carry their own `humanOnly`, decided by the tasker per task — this prd flag does not pre-set them.)
-- **`needsAnswers`: true.** The five open questions above (binary-install policy, Firefox scope, snapshot shape, element addressing, attach UX) shape task boundaries; resolve them (the defaults in each are reasonable to accept) before auto-tasking, or task manually accepting the defaults.
+- **`needsAnswers`: resolved.** The five questions that shaped task boundaries are settled: (1) browser-binary install is a separate manual step with a clear missing-binary error; (2) Chromium-complete in v1, Firefox `launch` deferred and `attach` Chromium-only; (3) `snapshot` defaults to accessibility-tree + visible-text with `--full` for raw DOM; (4) `click`/`type` take a **raw Playwright locator string** (see `docs/adr/0004`); (5) `attach` requires the user to start their browser with `--remote-debugging-port` themselves (no relaunch helper). The prd is now auto-taskable.
 
 ## Implementation Decisions
 
 - **Monorepo from `template-typescript-lib`**: pnpm workspace (`packages/*`), ESM, `tsc` build, `vitest`, `prettier`, changesets, `ldenv`, tabs indentation. Two packages: `packages/core`, `packages/cli`.
-- **`core`** exposes a `Driver`/`Transport` interface (the seam): `open(profile|attachTarget) → Session`, and a `Page` abstraction with the verb operations. v1 concrete transport = Playwright. The interface is defined in terms of high-level verbs (navigate, snapshot, click, type, eval, wait, cookies), NOT in terms of CDP, so an extension transport or a Firefox transport can implement it.
+- **`core`** exposes a `Driver`/`Transport` interface (the seam): `open(profile|attachTarget) → Session`, and a `Page` abstraction with the verb operations. v1 concrete transport = Playwright. The interface is defined in terms of high-level verbs (navigate, snapshot, click, type, eval, wait, cookies), NOT in terms of CDP, so an extension transport or a Firefox transport can implement it. **Element addressing is a raw Playwright locator string** resolved by the active transport (per `docs/adr/0004`): "transport-neutral" means Playwright-equivalent addressing, not a reduced selector subset — the no-CDP-leak rule of `docs/adr/0003` is unchanged.
 - **Profile management**: a dedicated user-data dir under a config location (e.g. `~/.my-browser-controller/profiles/<name>`), launched via Playwright `launchPersistentContext`. Never point at the OS default Chrome profile (Chrome policy refuses it).
 - **attach** = Playwright `chromium.connectOverCDP(endpoint)`, reusing `browser.contexts()[0]` (the existing authenticated context) — NOT `newContext()`. Chromium-only; documented as such.
 - **`cli`** = `incur` `Cli.create('my-browser-controller', …).command(…).serve()`, one command per verb plus `setup-profile`/`launch`/`attach`, each with a zod `args`/`options`/`output` schema. MCP and skills come from incur for free.
