@@ -1,6 +1,26 @@
 {
 	"name": "webhands",
 	"version": "0.1.3",
+	"description": "A CLI (and MCP server) that drives a real, persistent browser via Playwright, letting an agent or human control any website from a genuinely logged-in browser session.",
+	"keywords": [
+		"browser",
+		"playwright",
+		"automation",
+		"cli",
+		"mcp",
+		"agent"
+	],
+	"license": "AGPL-3.0-or-later",
+	"author": "wighawag",
+	"homepage": "https://github.com/wighawag/webhands#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/wighawag/webhands.git",
+		"directory": "packages/cli"
+	},
+	"bugs": {
+		"url": "https://github.com/wighawag/webhands/issues"
+	},
 	"publishConfig": {
 		"access": "public"
 	},

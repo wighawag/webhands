@@ -1,6 +1,23 @@
 {
 	"name": "@webhands/core",
 	"version": "0.1.0",
+	"description": "Core library for webhands: drives a real, persistent browser via Playwright.",
+	"keywords": [
+		"browser",
+		"playwright",
+		"automation"
+	],
+	"license": "AGPL-3.0-or-later",
+	"author": "wighawag",
+	"homepage": "https://github.com/wighawag/webhands#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/wighawag/webhands.git",
+		"directory": "packages/core"
+	},
+	"bugs": {
+		"url": "https://github.com/wighawag/webhands/issues"
+	},
 	"publishConfig": {
 		"access": "public"
 	},
