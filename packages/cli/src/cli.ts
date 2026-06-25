@@ -26,6 +26,7 @@ import {
 	type SessionProvider,
 } from './session-provider.js';
 import {setupProfile} from '@my-browser-controller/core';
+import {VERSION} from './version.js';
 
 /**
  * The CLI binary name. Used both as the `incur` CLI name and (echoed back from
@@ -68,6 +69,12 @@ export interface CliDeps {
 	 * real browser, and so a test can drive the server lifecycle deterministically.
 	 */
 	readonly serveSession?: ServeSession;
+	/**
+	 * The version string reported by `--version`, the help header, and the MCP
+	 * server. Defaults to {@link VERSION} (this package's `package.json` version);
+	 * injectable so a test can assert the wiring deterministically.
+	 */
+	readonly version?: string;
 }
 
 /**
@@ -203,6 +210,7 @@ export function createCli(deps: CliDeps = {}) {
 
 	const cli = Cli.create(binary, {
 		description: DESCRIPTION,
+		version: deps.version ?? VERSION,
 		// `outputPolicy: 'all'` (the default) — humans and agents both see output.
 	});
 
