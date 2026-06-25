@@ -4,6 +4,7 @@
   "type": "module",
   "devDependencies": {
     "@changesets/cli": "^2.29.8",
+    "change-name": "^0.3.2",
     "ldenv": "^0.3.16",
     "prettier": "^3.8.4"
   },
