@@ -15,7 +15,9 @@
 		"dist",
 		"src"
 	],
-	"dependencies": {},
+	"dependencies": {
+		"playwright": "1.61.1"
+	},
 	"devDependencies": {
 		"@types/node": "^25.2.0",
 		"as-soon": "^0.1.5",

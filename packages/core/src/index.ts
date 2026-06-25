@@ -13,6 +13,26 @@ export {locator} from './seam.js';
 
 export {StubTransport, type StubCall} from './stub-transport.js';
 
+export {PlaywrightLaunchTransport} from './playwright-launch-transport.js';
+
+export {
+	ControllerError,
+	MissingBrowserBinaryError,
+	MissingProfileError,
+	isControllerError,
+	type ControllerErrorCode,
+} from './errors.js';
+
+export {
+	resolveHomeRoot,
+	resolveProfileLocation,
+	CONTROLLER_HOME_ENV,
+	DEFAULT_HOME_DIRNAME,
+	PROFILES_DIRNAME,
+	type ProfileLocation,
+	type ProfileLocationOptions,
+} from './profile-location.js';
+
 export {
 	startFixtureServer,
 	type FixtureServer,
