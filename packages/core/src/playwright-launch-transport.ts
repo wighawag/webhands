@@ -1,5 +1,10 @@
 import {stat} from 'node:fs/promises';
-import {chromium, type BrowserContext, type Page as PwPage} from 'playwright';
+import {
+	chromium,
+	errors as pwErrors,
+	type BrowserContext,
+	type Page as PwPage,
+} from 'playwright';
 import {MissingBrowserBinaryError, MissingProfileError} from './errors.js';
 import {
 	resolveProfileLocation,
@@ -160,7 +165,7 @@ function makeSession(context: BrowserContext, pwPage: PwPage): Session {
 		},
 		async click(t): Promise<void> {
 			ensureOpen();
-			await resolveLocator(pwPage, t).click();
+			await clickLocator(pwPage, t);
 		},
 		async type(t, text): Promise<void> {
 			ensureOpen();
@@ -243,14 +248,68 @@ export async function waitFor(
  * evaluate them in a small sandbox where `page`/`p` is the page, so the full
  * Playwright locator grammar is available without leaking the type across the
  * seam.
+ *
+ * Exported (with {@link clickLocator}/{@link waitFor}) so the attach transport
+ * resolves locators IDENTICALLY — one resolution path, no parallel addressing
+ * scheme (the forward-note's "do NOT write a parallel second implementation").
  */
-function resolveLocator(page: PwPage, expression: string) {
+export function resolveLocator(page: PwPage, expression: string) {
 	// eslint-disable-next-line no-new-func
 	const factory = new Function('page', 'p', `return (${expression});`) as (
 		page: PwPage,
 		p: PwPage,
 	) => ReturnType<PwPage['locator']>;
 	return factory(page, page);
+}
+
+/**
+ * How long a normal, actionability-checked `click` may wait before we treat the
+ * element as un-clickable and fall back to a dispatched click. Short on purpose:
+ * a hidden custom input never becomes actionable, so the regular click would
+ * otherwise burn Playwright's full default timeout (30s) before the escape path
+ * runs. The visible-element happy path clicks immediately and never hits this;
+ * this bound is the latency cost paid ONLY on the hidden/non-actionable path,
+ * and is long enough to tolerate a slow-but-eventually-actionable element
+ * (animations, late layout) before deciding to dispatch.
+ */
+const NORMAL_CLICK_TIMEOUT_MS = 1_000;
+
+/**
+ * Run the `click` verb against a Playwright page (PRD story 8), shared by both
+ * Playwright transports so the verb behaves identically (mirrors {@link waitFor};
+ * the forward-note's "do NOT write a parallel second implementation").
+ *
+ * First try a normal `Locator.click()`, which AUTO-WAITS for the element to be
+ * visible and actionable — the right behaviour for a real button. A hidden
+ * custom input (the case the prd calls out) NEVER becomes actionable, so that
+ * click times out; on a Playwright `TimeoutError` we fall back to
+ * `dispatchEvent('click')`, which fires a click WITHOUT the actionability
+ * checks. The fallback is deliberately the documented Playwright escape (a
+ * sibling to the `eval` hatch, ADR-0004), not a reimplemented click: we keep
+ * the locator a raw resolved expression and only change HOW the resolved
+ * locator is clicked.
+ *
+ * Only a timeout triggers the fallback. The fallback `dispatchEvent` is itself
+ * bounded by the same short timeout, so a locator that resolves NO element (a
+ * bad locator) surfaces its timeout quickly instead of hanging the dispatch on
+ * Playwright's 30s default — the dispatch escape is for elements that EXIST but
+ * are not actionable (hidden custom inputs), not for absent ones.
+ */
+export async function clickLocator(
+	page: PwPage,
+	expression: string,
+): Promise<void> {
+	const target = resolveLocator(page, expression);
+	try {
+		await target.click({timeout: NORMAL_CLICK_TIMEOUT_MS});
+	} catch (cause) {
+		if (!(cause instanceof pwErrors.TimeoutError)) {
+			throw cause;
+		}
+		// The element never became actionable (e.g. a hidden custom input). Fire
+		// the click without actionability checks, the prd's explicit escape path.
+		await target.dispatchEvent('click', {timeout: NORMAL_CLICK_TIMEOUT_MS});
+	}
 }
 
 /** Map a Playwright cookie to the transport-neutral seam {@link Cookie}. */

@@ -5,7 +5,11 @@ import {
 	type Page as PwPage,
 } from 'playwright';
 import {AttachNoContextError, AttachNotChromiumError} from './errors.js';
-import {waitFor} from './playwright-launch-transport.js';
+import {
+	clickLocator,
+	resolveLocator,
+	waitFor,
+} from './playwright-launch-transport.js';
 import type {
 	Cookie,
 	OpenTarget,
@@ -127,9 +131,14 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 			const content = await pwPage.ariaSnapshot({mode: 'ai'});
 			return {url, view: 'accessibility', content};
 		},
+		// `resolveLocator`/`clickLocator`/`waitFor` are imported from the launch
+		// transport so both transports resolve locators and run the verbs through
+		// ONE path (no parallel addressing scheme; the forward-note).
 		async click(t): Promise<void> {
 			ensureOpen();
-			await resolveLocator(pwPage, t).click();
+			// Shared `clickLocator`: normal actionability-checked click with the
+			// hidden-element dispatch fallback (PRD story 8), identical to launch.
+			await clickLocator(pwPage, t);
 		},
 		async type(t, text): Promise<void> {
 			ensureOpen();
@@ -165,22 +174,6 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 			await browser.close();
 		},
 	};
-}
-
-/**
- * Resolve a raw Playwright locator EXPRESSION (ADR-0004) against the page. The
- * verb surface passes locator expressions like `getByRole('button', …)`; we
- * evaluate them in a small sandbox where `page`/`p` is the page, so the full
- * Playwright locator grammar is available without leaking the type across the
- * seam.
- */
-function resolveLocator(page: PwPage, expression: string) {
-	// eslint-disable-next-line no-new-func
-	const factory = new Function('page', 'p', `return (${expression});`) as (
-		page: PwPage,
-		p: PwPage,
-	) => ReturnType<PwPage['locator']>;
-	return factory(page, page);
 }
 
 /** Map a Playwright cookie to the transport-neutral seam {@link Cookie}. */
