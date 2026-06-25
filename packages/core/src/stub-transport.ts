@@ -4,6 +4,7 @@ import type {
 	Page,
 	Session,
 	Snapshot,
+	SnapshotOptions,
 	Transport,
 	WaitCondition,
 } from './seam.js';
@@ -52,10 +53,14 @@ export class StubTransport implements Transport {
 				ensureOpen();
 				calls.push({verb: 'navigate', args: [to]});
 			},
-			async snapshot(): Promise<Snapshot> {
+			async snapshot(options?: SnapshotOptions): Promise<Snapshot> {
 				ensureOpen();
-				calls.push({verb: 'snapshot', args: []});
-				return {url, content: ''};
+				calls.push({verb: 'snapshot', args: [options]});
+				return {
+					url,
+					view: options?.full === true ? 'full' : 'accessibility',
+					content: '',
+				};
 			},
 			async click(t): Promise<void> {
 				ensureOpen();

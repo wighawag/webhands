@@ -11,6 +11,7 @@ import type {
 	Page,
 	Session,
 	Snapshot,
+	SnapshotOptions,
 	Transport,
 	WaitCondition,
 } from './seam.js';
@@ -106,11 +107,21 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 			ensureOpen();
 			await pwPage.goto(url, {waitUntil: 'load'});
 		},
-		async snapshot(): Promise<Snapshot> {
+		async snapshot(options?: SnapshotOptions): Promise<Snapshot> {
 			ensureOpen();
 			const url = pwPage.url();
-			const content = (await pwPage.textContent('body')) ?? '';
-			return {url, content};
+			if (options?.full === true) {
+				const content = await pwPage.evaluate(
+					() => document.documentElement.outerHTML,
+				);
+				return {url, view: 'full', content};
+			}
+			// Default: the token-cheap accessibility tree + visible text with stable
+			// `[ref=...]` refs (see the launch transport and `Snapshot` for the
+			// rationale; the string crosses the seam as opaque, transport-neutral
+			// text, ADR-0003).
+			const content = await pwPage.ariaSnapshot({mode: 'ai'});
+			return {url, view: 'accessibility', content};
 		},
 		async click(t): Promise<void> {
 			ensureOpen();

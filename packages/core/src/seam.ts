@@ -81,15 +81,50 @@ export type WaitCondition =
 	| {readonly kind: 'navigation'};
 
 /**
- * A structured, token-cheap view of the current page (accessibility tree +
- * visible text) with stable element refs. The exact shape is filled in by the
- * `snapshot` verb task; here it is left open so the seam compiles and stub
- * transports can round-trip it.
+ * Which page view a {@link Snapshot} carries.
+ *
+ * - `'accessibility'` — the DEFAULT, token-cheap structured view: the
+ *   accessibility tree (roles + names) plus visible text, with stable element
+ *   refs (see {@link Snapshot.content}). This is the cheap view an agent reads
+ *   to decide what to act on WITHOUT parsing raw HTML.
+ * - `'full'` — the raw DOM (serialized outer HTML), returned when the verb is
+ *   called with {@link SnapshotOptions.full}. A settled PRD decision (story 7,
+ *   `needsAnswers` Q3): default is the accessibility view, `--full` is raw DOM.
+ */
+export type SnapshotView = 'accessibility' | 'full';
+
+/** Options for the {@link Page.snapshot} verb. */
+export interface SnapshotOptions {
+	/**
+	 * When `true`, return the raw DOM (`view: 'full'`) instead of the default
+	 * accessibility-tree + visible-text view. Maps to the CLI `--full` flag.
+	 */
+	readonly full?: boolean;
+}
+
+/**
+ * A structured, token-cheap view of the current page with stable element refs.
+ *
+ * In the default `'accessibility'` view, {@link Snapshot.content} is the
+ * accessibility tree (roles + accessible names) plus visible text, with each
+ * actionable node carrying a stable `[ref=...]` element reference. The refs
+ * are stable for an unchanged page (re-snapshotting yields the same refs), so
+ * an agent can read the cheap view, pick a ref, and address that element
+ * later. Snapshot refs and the raw Playwright-locator addressing (ADR-0004)
+ * are COMPLEMENTARY ways to address elements, not competitors.
+ *
+ * The `content` string is a transport-neutral, human/agent-readable text
+ * serialization (no CDP/Playwright types cross the seam, per ADR-0003). Its
+ * concrete grammar is a transport detail; callers treat it as opaque,
+ * token-cheap text to read, and parse refs out of it only by the documented
+ * `[ref=...]` convention.
  */
 export interface Snapshot {
 	/** The page URL at snapshot time. */
 	readonly url: string;
-	/** Human/agent-readable structured page content. */
+	/** Which view this snapshot carries (default vs `--full` raw DOM). */
+	readonly view: SnapshotView;
+	/** Human/agent-readable structured page content (see {@link Snapshot}). */
 	readonly content: string;
 }
 
@@ -100,8 +135,12 @@ export interface Snapshot {
 export interface Page {
 	/** Navigate the active page to a URL and let it settle. */
 	navigate(url: string): Promise<void>;
-	/** Return a structured, token-cheap view of the page. */
-	snapshot(): Promise<Snapshot>;
+	/**
+	 * Return a structured, token-cheap view of the page. Defaults to the
+	 * accessibility-tree + visible-text view with stable refs; pass
+	 * `{full: true}` to get the raw DOM instead (PRD story 7).
+	 */
+	snapshot(options?: SnapshotOptions): Promise<Snapshot>;
 	/** Click the element addressed by a raw Playwright locator string. */
 	click(target: LocatorString): Promise<void>;
 	/** Type text into the element addressed by a raw Playwright locator string. */

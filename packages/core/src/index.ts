@@ -6,6 +6,8 @@ export type {
 	Page,
 	Session,
 	Snapshot,
+	SnapshotOptions,
+	SnapshotView,
 	Transport,
 	WaitCondition,
 } from './seam.js';

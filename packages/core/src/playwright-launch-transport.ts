@@ -11,6 +11,7 @@ import type {
 	Page,
 	Session,
 	Snapshot,
+	SnapshotOptions,
 	Transport,
 	WaitCondition,
 } from './seam.js';
@@ -127,11 +128,27 @@ function makeSession(context: BrowserContext, pwPage: PwPage): Session {
 			ensureOpen();
 			await pwPage.goto(url, {waitUntil: 'load'});
 		},
-		async snapshot(): Promise<Snapshot> {
+		async snapshot(options?: SnapshotOptions): Promise<Snapshot> {
 			ensureOpen();
 			const url = pwPage.url();
-			const content = (await pwPage.textContent('body')) ?? '';
-			return {url, content};
+			if (options?.full === true) {
+				// `--full`: the raw DOM. `documentElement.outerHTML` is the serialized
+				// live DOM (post-script render), which is what an agent that wants the
+				// real HTML expects — not the original network response.
+				const content = await pwPage.evaluate(
+					() => document.documentElement.outerHTML,
+				);
+				return {url, view: 'full', content};
+			}
+			// Default: the token-cheap accessibility tree + visible text with stable
+			// `[ref=...]` element refs. Playwright's `ariaSnapshot({mode: 'ai'})`
+			// emits exactly that — a YAML aria tree (roles + accessible names +
+			// text) where each node carries a stable `[ref=eN]` reference, assigned
+			// deterministically by traversal order so re-snapshotting an unchanged
+			// page yields the same refs. The string crosses the seam as opaque,
+			// transport-neutral text (no Playwright type leaks, ADR-0003).
+			const content = await pwPage.ariaSnapshot({mode: 'ai'});
+			return {url, view: 'accessibility', content};
 		},
 		async click(t): Promise<void> {
 			ensureOpen();
