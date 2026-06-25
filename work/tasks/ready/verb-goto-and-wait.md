@@ -6,6 +6,14 @@ blockedBy: [playwright-launch-transport-and-profile]
 covers: [6, 10]
 ---
 
+> FORWARD-NOTE (conductor, after `playwright-launch-transport-and-profile` landed):
+> `navigate` (goto, `waitUntil: 'load'`) and `wait` (timeout/locator/navigation)
+> already have working bodies in `makeSession`
+> (`packages/core/src/playwright-launch-transport.ts`). REFINE + fully TEST those
+> against the fixture (add delayed/XHR fixtures for the three `wait` forms); do NOT
+> write a parallel second implementation. Confirm "settled" semantics (load vs
+> networkidle) and the `wait` API shape are right; tighten if needed.
+
 ## What to build
 
 Two page verbs in `core`, behind the seam:

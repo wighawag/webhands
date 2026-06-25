@@ -6,6 +6,11 @@ blockedBy: [playwright-launch-transport-and-profile]
 covers: [9]
 ---
 
+> FORWARD-NOTE (conductor, after `playwright-launch-transport-and-profile` landed):
+> `eval` already has a working body in `makeSession` (`pwPage.evaluate(expression)`).
+> REFINE + fully TEST it (esp. how non-serializable results are handled); do NOT
+> write a parallel implementation.
+
 ## What to build
 
 The `eval <js>` verb in `core`, behind the seam: run JavaScript in the active

@@ -6,6 +6,15 @@ blockedBy: [playwright-launch-transport-and-profile]
 covers: [8]
 ---
 
+> FORWARD-NOTE (conductor, after `playwright-launch-transport-and-profile` landed):
+> `click`/`type` already resolve a RAW Playwright locator string in `makeSession`
+> via `resolveLocator` (a `new Function` eval of the expression — ADR-0004's
+> "locator string is an expression the controller resolves"). REFINE + fully TEST
+> that (incl. the hidden-input dispatch-click path this task owns); do NOT add a
+> parallel addressing scheme. NOTE: `resolveLocator` executes caller-supplied
+> expressions — keep that surface confined and documented (an observation is filed
+> for the ToS/humility docs); do not broaden it here.
+
 ## What to build
 
 The `click <locator>` and `type <locator> <text>` verbs in `core`, behind the seam.

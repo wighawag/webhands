@@ -6,6 +6,15 @@ blockedBy: [playwright-launch-transport-and-profile]
 covers: [7]
 ---
 
+> FORWARD-NOTE (from the conductor, after `playwright-launch-transport-and-profile` landed):
+> The launch transport already wired a TRIVIAL `snapshot` in `makeSession`
+> (`packages/core/src/playwright-launch-transport.ts`) that returns `{url, content}`
+> via `textContent('body')` — a STUB, not the real thing. This task OWNS replacing
+> that stub with the real accessibility-tree + visible-text snapshot, stable refs,
+> and the `--full` raw-DOM option (Q3). REFINE the existing seam `snapshot` shape
+> (in `seam.ts` + the transport), do NOT add a parallel second snapshot path. The
+> seam's `Snapshot` type will need widening from the current `{url, content}` stub.
+
 ## What to build
 
 The `snapshot` verb in `core`, behind the seam: return a **token-cheap, structured

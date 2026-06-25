@@ -6,6 +6,12 @@ blockedBy: [playwright-launch-transport-and-profile]
 covers: [11]
 ---
 
+> FORWARD-NOTE (conductor, after `playwright-launch-transport-and-profile` landed):
+> The seam already has `cookies()`/`setCookies()` in `makeSession` (mapping to/from
+> a transport-neutral `Cookie` type). This task adds the export/import VERB surface
+> + the round-trip on top of those; REFINE the existing seam methods rather than
+> adding a parallel cookie path. Keep any export file in the test's own temp dir.
+
 ## What to build
 
 The `cookies export` / `cookies import` verbs in `core`, behind the seam, so a user
