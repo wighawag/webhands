@@ -13,6 +13,13 @@ export type {
 } from './seam.js';
 export {locator} from './seam.js';
 
+export {
+	serializeCookies,
+	deserializeCookies,
+	COOKIES_EXPORT_VERSION,
+	type CookiesExport,
+} from './cookies-export.js';
+
 export {StubTransport, type StubCall} from './stub-transport.js';
 
 export {PlaywrightLaunchTransport} from './playwright-launch-transport.js';

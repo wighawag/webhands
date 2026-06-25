@@ -172,6 +172,33 @@ const EVAL = `<!doctype html>
 </html>
 `;
 
+/**
+ * A page that SETS its own cookies client-side on load (PRD story 11), so the
+ * `cookies export`/`cookies import` round-trip exports cookies the PAGE
+ * created (not only ones seeded through the seam) and re-imports them into a
+ * fresh context. Two cookies make the round-trip meaningful: a session-like
+ * value and a second name, so the test asserts the whole set crosses, not just
+ * one. `document.cookie` writes are visible to the browser context's cookie
+ * store, which is exactly what the seam's `cookies()` reads.
+ */
+const COOKIES = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>cookies fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Cookies Fixture</h1>
+		<p id="status">setting cookies</p>
+		<script>
+			document.cookie = 'mbc_session=session-value-123; path=/';
+			document.cookie = 'mbc_pref=dark-mode; path=/';
+			document.getElementById('status').textContent = 'cookies set';
+		</script>
+	</body>
+</html>
+`;
+
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
@@ -179,4 +206,5 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'delayed.html': DELAYED_CONTENT,
 	'redirecting.html': REDIRECTING,
 	'eval.html': EVAL,
+	'cookies.html': COOKIES,
 };
