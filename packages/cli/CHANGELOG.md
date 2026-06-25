@@ -1,5 +1,11 @@
 # webhands
 
+## 0.1.3
+
+### Patch Changes
+
+- fa9b0d5: Include the repository README in the published package by copying it from the monorepo root during `prepublishOnly` (the copied file is gitignored).
+
 ## 0.1.2
 
 ### Patch Changes
