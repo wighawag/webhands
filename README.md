@@ -83,12 +83,6 @@ This is a **personal-use** tool. Its whole premise is that you drive a browser
 [`docs/adr/0002`](docs/adr/0002-real-session-over-fingerprint-spoofing.md)). It is
 deliberately local and single-session by design.
 
-- **Driving sites like Kayak or Skyscanner is generally against their Terms of
-  Service.** Automating access to such sites, even from a real session, can
-  violate those terms. Using this tool against a third-party site is your
-  responsibility; check that site's ToS and respect it. Kayak is only the
-  smoke-test TARGET that proves the pipe end to end, not a feature this tool
-  endorses scraping.
 - **No login-bypass, no CAPTCHA-solving.** The human does the one-time login and
   clears any anti-bot challenge in the headed `setup-profile` step. This tool
   does NOT bypass authentication or solve CAPTCHAs programmatically, and it is not
@@ -101,8 +95,7 @@ deliberately local and single-session by design.
   the design assumes the session is genuinely yours.
 
 In short: this is for reading and acting on web apps **you already have an account
-on**, from **your own browser**, the way you could by hand, not for scraping
-third parties at scale or evading their protections.
+on**, from **your own browser**, the way you could by hand.
 
 ## Security note (the `serve` endpoint runs arbitrary code)
 
@@ -117,10 +110,3 @@ session, but it means the running `serve` endpoint is a code-execution surface.
   localhost (the default); never bind it to a public interface or hand its URL to
   code you do not trust. Anyone who can call it can run arbitrary JavaScript in
   your logged-in session.
-
-## Manual smoke test
-
-A live, flaky, **non-CI** end-to-end smoke against Kayak is documented at
-[`docs/manual-smoke-kayak.md`](docs/manual-smoke-kayak.md). It is a manual proof
-of the pipe, NOT part of the `verify` gate, and the automated test suite never
-hits a live third-party site.
