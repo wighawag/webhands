@@ -3,39 +3,8 @@ title: Cross-invocation session persistence (long-lived browser between CLI call
 slug: cross-invocation-session-persistence
 prd: browser-controller-cli
 blockedBy: [cli-incur-wiring-and-errors]
-needsAnswers: true
 covers: []
 ---
-
-<!-- open-questions -->
-
-## Open questions
-
-The prd explicitly SEEDS but does NOT decide the mechanism by which a browser stays
-alive between separate CLI invocations (verbs need a persistent browser between
-calls, but each `my-browser-controller <verb>` is a fresh process). The two
-candidate mechanisms named in the prd are a genuine design fork that changes the
-architecture, the IPC surface, and the test seam — so this is flagged rather than
-guessed:
-
-1. **Background daemon vs. `incur serve`?** The prd names two options: (a) a
-   long-lived `core` background daemon process the CLI talks to, or (b) lean on
-   `incur`'s `cli.fetch` serve-as-API (`/mcp`) to host the long-lived browser in a
-   served process the CLI invocations call over fetch. Which is the v1 mechanism?
-2. **Lifecycle & addressing:** how is the long-lived process started, discovered,
-   and torn down (explicit `serve`/`start` + `stop`, or auto-spawn on first verb)?
-   How does a verb invocation address the single active session?
-3. **Single-session scope:** the prd fixes single active session in v1 (multi-session
-   is out of scope) — confirm the chosen mechanism holds exactly one session and
-   what happens on a second concurrent `launch`/`attach`.
-4. **Test seam:** what is the highest deterministic seam to test the persistence
-   (process survives between two verb calls against the local fixture; second call
-   reuses the first call's page/session)?
-
-Resolve these (human or a design ADR) before building; the answer likely warrants
-an ADR since it is hard to reverse and shapes the whole IPC surface.
-
-<!-- /open-questions -->
 
 ## What to build
 
@@ -47,20 +16,38 @@ paragraph) that makes the per-verb and launch user stories usable end-to-end fro
 a CLI; it does not deliver the verb or launch surface itself (those are owned by
 the verb and launch tasks) — hence `covers: []`.
 
-A thin vertical slice once the fork is resolved: starting/attaching a session in
-one CLI invocation leaves a live browser that a subsequent invocation's verb drives,
-and the session is discoverable, single, and tear-down-able. Tests assert the
-persistence at the chosen seam against the local fixture page (one process spans
-two verb invocations; the second reuses the first's session).
+**Mechanism (resolved — see `docs/adr/0005`):** a long-lived **`incur serve`**
+process (`cli.fetch` over `/mcp`/HTTP) owns the one Playwright browser + the active
+`Session`/page; each `my-browser-controller <verb>` is a **thin client** that calls
+the running server and exits. The browser launches ONCE in the served process,
+NEVER per verb invocation (this is the whole point — the live page state, not just
+the on-disk profile, must survive between calls). The bespoke-daemon alternative
+was rejected (the incur server is already being built, so it hosts the loop for
+free and satisfies ADR-0001).
+
+**Lifecycle is EXPLICIT (no auto-spawn in v1, per ADR-0005):** `serve` (and
+`launch`/`attach`) bring the session up; a verb invocation with NO live server
+prints a clear, actionable error naming the fix (run `serve` first) and exits
+non-zero — it does NOT silently spawn a browser. The server writes its endpoint
+(port/socket) under the config dir (`~/.my-browser-controller/`) for client verbs
+to discover; teardown is explicit (`stop` / signal). Exactly ONE session in v1: a
+second `launch`/`attach` while one is live is a clear "already active" error.
+
+A thin vertical slice: `serve` brings up the session in one process; a subsequent
+separate verb invocation drives the SAME live page; the session is discoverable,
+single, and tear-down-able. Tests assert the persistence at the chosen seam against
+the local fixture page (one served process spans two separate client invocations;
+the second reuses the first's live session).
 
 ## Acceptance criteria
 
-- [ ] (Once the open questions are resolved) A single browser session survives between two separate CLI invocations; the second invocation's verb drives the same live page.
-- [ ] Exactly one active session is held in v1 (multi-session is out of scope); a clear behaviour is defined for a second concurrent `launch`/`attach`.
-- [ ] The long-lived process is startable, discoverable, and tear-down-able, with clear errors when no session is live.
+- [ ] A long-lived `incur serve` process hosts the browser + single session; a single session survives between two separate CLI invocations; the second invocation's verb drives the same live page (the browser is launched ONCE in the server, never per verb).
+- [ ] Exactly one active session is held in v1 (multi-session is out of scope); a second concurrent `launch`/`attach` while one is live is a clear "already active" error.
+- [ ] Lifecycle is EXPLICIT (ADR-0005): `serve`/`stop` bring the session up/down; a verb with NO live server prints a clear, actionable error naming the fix (run `serve` first) and exits non-zero — it never auto-spawns a browser in v1.
+- [ ] The served process writes its endpoint under the config dir for client verbs to discover; the process is startable, discoverable, and tear-down-able.
 - [ ] **Shared-write isolation:** any on-disk state (socket/pid/endpoint files, profile dir) is isolated to a temp dir in tests and the real shared location is asserted untouched.
 - [ ] Tests assert persistence at the chosen seam against the local fixture page (a process spans two verb invocations; the second reuses the first's session).
-- [ ] A changeset is added; the mechanism decision is recorded as an ADR if it meets the ADR gate.
+- [ ] A changeset is added. (The mechanism decision is recorded in `docs/adr/0005`.)
 - [ ] Tests cover the new behaviour (mirror the repo's existing test style).
 
 ## Blocked by
@@ -81,11 +68,13 @@ two verb invocations; the second reuses the first's session).
 > user stories themselves (those land in their own tasks) — hence `covers: []`. It
 > is what makes those stories work end-to-end across separate CLI processes.
 >
-> THIS TASK CARRIES OPEN QUESTIONS (`needsAnswers: true`): the prd deliberately
-> seeds but does NOT decide the daemon-vs-`incur serve` mechanism. Do NOT guess —
-> the questions in `## Open questions` must be resolved (by a human or a design ADR)
-> before building. The choice is hard to reverse and shapes the whole IPC surface,
-> so record it as an ADR in `docs/adr/` when decided.
+> The mechanism IS DECIDED (read `docs/adr/0005` FIRST): a long-lived `incur serve`
+> process (`cli.fetch`) owns the one browser + session; verbs are thin clients that
+> call it and exit; the browser launches once in the server, never per verb.
+> Lifecycle is EXPLICIT — `serve`/`stop`, and a verb with no live server errors
+> clearly (run `serve` first) rather than auto-spawning. Single session in v1; a
+> second `launch`/`attach` while one is live is an "already active" error. Do NOT
+> reintroduce the rejected bespoke-daemon path.
 >
 > Depends on `cli-incur-wiring-and-errors`. Test at a deterministic seam against the
 > LOCAL FIXTURE PAGE: one long-lived process must span two separate verb invocations
@@ -96,7 +85,7 @@ two verb invocations; the second reuses the first's session).
 > tear-down-able, the mechanism decision is recorded, and persistence is tested at
 > the seam.
 >
-> FIRST, check this task against current reality — confirm the CLI wiring landed and
-> whether an ADR has since resolved the fork (if so, the open questions may already
-> be answered; clear the flag and build). Building on the wrong mechanism is
-> expensive, so resolve the fork first.
+> FIRST, check this task against current reality — confirm the CLI wiring landed as
+> assumed and that `docs/adr/0005` is still the governing decision; if the serve
+> surface differs from what the wiring task built, reconcile rather than building on
+> a stale premise.
