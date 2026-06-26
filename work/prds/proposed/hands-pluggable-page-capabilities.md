@@ -1,27 +1,10 @@
 ---
 title: Hands — pluggable page capabilities over a capability-host primitive
 slug: hands-pluggable-page-capabilities
-needsAnswers: true
+needsAnswers: false
 ---
 
 > Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked — they move into tasks/ADRs and this prd settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
-
-<!-- open-questions -->
-<!--
-  TRANSIENT BLOCK — stripped by the apply rung on full resolution.
-  Clear `needsAnswers` and delete this block once these are answered.
--->
-
-## Open questions
-
-1. **What does a hand RECEIVE, and what may it CONTRIBUTE — and what isolation (if any) is there between hands?** Today every verb is a closure over the Node-side Playwright `pwPage` inside `makeSession`. A hand is the same thing made explicit. Decide: does a hand receive the raw `pwPage`, the whole `Session`, or a scoped hand-context? Raw `pwPage` means ZERO isolation (a third-party hand could `pwPage.close()` or hijack navigation) — acceptable IFF hands are trusted/local/in-process, but it must be a STATED decision, not an accident. And what may a hand contribute: named verbs only (minimal), or also lifecycle hooks / event handlers / MCP tool definitions (richer, more "platform")? Lean: a hand contributes named verbs + an optional `dispose`; nothing more, to avoid over-building a platform.
-2. **Is Phase 1 (refactor webhands' OWN verbs into built-in hands) a PUBLIC-seam change or a purely INTERNAL, behavior-preserving refactor?** The `Page`/verb public interface can stay byte-for-byte identical while its IMPLEMENTATION is refactored onto the hand-host primitive (built-in hands compose into the same `Page` object). Confirm Phase 1 is internal-only (no public surface change, no behavior change — proven by the existing verb tests staying green), so its blast radius is bounded. This gates whether Phase 1 needs its own ADR (internal structure) vs a public-contract change.
-3. **The serialization split: agent-exposed verbs vs in-process hands.** A hand's contribution may be consumed two ways: (Model A) IN-PROCESS by other Node code, which can pass/receive rich objects (e.g. another library composing iamhuman); (Model B) as an AGENT-EXPOSED VERB over MCP/RPC, which may return ONLY serializable values (Playwright's `evaluate`-style structured clone — no live `Locator`/handle crosses). A hand may be both (in-process logic + a serializable verb facade). Confirm the rule: agent-exposed hand verbs return serializable values only; rich/handle-shaped results stay within a single in-process call.
-4. **Terminology coherence: `hand` vs the existing `transport`/`driver` vs `verb`.** These are ORTHOGONAL axes and must not blur (conceptual-coherence rule): a **transport** is HOW we reach the browser (Playwright launch/attach now, others later — ADR-0003); a **verb** is one agent-facing action on the page; a **hand** is a capability MODULE that contributes verbs/behavior by closing over the Page. Any hand runs over any Playwright-capable transport. Confirm the glossary wording so `hand`/`transport`/`verb` stay distinct, and pin `hand` in `CONTEXT.md` only when this PRD is tasked (not before — the term is `proposed` until then).
-5. **Security surface of page-level access / eval.** The README already flags `eval` as a code-execution surface kept local/trusted. Hands receiving the `pwPage` (or a widened page-eval) widen that surface. Confirm the trust boundary (local-only, no remote callers) and whether loading a third-party hand is gated/explicit.
-6. **(Deferred — does NOT block this PRD) Does Playwright actually solve the hard motivating case?** The captcha example assumes Playwright can reach + operate nested cross-origin frames (a WAF iframe containing a captcha iframe) via `frameLocator(...).frameLocator(...)` + coordinate clicks + screenshot. Unverified; a throwaway spike resolves it. The hands primitive does NOT depend on it — webhands benefits regardless — but the captcha proof case does.
-
-<!-- /open-questions -->
 
 ## Problem Statement
 
@@ -65,18 +48,117 @@ This **refines ADR-0003/0004, does not discard them:** the no-CDP/Chromium-only-
 ### Autonomy notes (the two gate axes)
 
 - **`humanOnly`:** omitted. A human reviews and tasks this; no special human-only judgement beyond that.
-- **`needsAnswers`: true.** The hand contract & isolation (#1), the Phase-1 scope (#2), the serialization split (#3), and the terminology/security confirmations (#4, #5) fix the design and must be settled before tasking. The Imperva/Playwright spike (#6) is deferred and does not block.
+- **`needsAnswers`: now false (resolved).** The hand contract & isolation (#1), the Phase-1 scope (#2), the serialization split (#3), and the terminology/security confirmations (#4, #5) were settled in interview and are folded into ## Implementation Decisions below. The Imperva/Playwright spike (#6) stays deferred and does not block (see the Deferred note below).
 
 ## Implementation Decisions
 
-(Seed for tasking; trimmed by `to-task`.)
+(Seed for tasking; trimmed by `to-task`. The six bullets below are the settled
+resolutions of the prd's original open questions.)
 
-- **A hand = a module closing over the Page, contributing named verbs (+ optional `dispose`).** Built-in verbs and third-party capabilities use the identical mechanism.
-- **Hand-host primitive** composes hands into the session's verb surface; it is the existing `makeSession` closure made explicit and pluggable.
-- **Model A (in-process page access) is the foundation; Model B (capability-as-agent-verb) is layered on it.**
-- **Phase 1 (own verbs → built-in hands) is internal/behavior-preserving; Phase 2 opens it to third-party hands + loads iamhuman.**
-- **Refines ADR-0003/0004** (new ADR at tasking); keeps no-CDP-leak; cross-browser via Playwright `Page`.
-- **`hand` is orthogonal to `transport` and `verb`** — pin in `CONTEXT.md` only when tasked.
+- **What a hand receives + the isolation/trust model (resolved Q1).** A hand
+  receives a scoped-but-LIVE hand-context shaped like `{pwPage, context,
+  ensureOpen}`: the real Playwright `Page` and `BrowserContext` (Model A needs
+  the live objects, e.g. iamhuman's `PlaywrightDriver(page)`), plus the
+  lifecycle guard `ensureOpen()`. The `context` is carried for ALL hands (the
+  built-in `cookies`/`setCookies` verbs prove some hands need it). A hand
+  CONTRIBUTES named verbs + an optional `dispose`, and NOTHING more (no
+  lifecycle hooks, no event handlers, no MCP-definition objects — that would be
+  the platform the Out of Scope rejects). The trust model is STATED, not
+  accidental: **zero isolation** between hands — all hands operate on one live
+  page in one process and are trusted, local, in-process peers of the built-ins;
+  a hand can break the session, which is accepted because loading a hand is
+  explicit and local (see Q5). **Inter-hand reuse is supported as ordinary Node
+  composition** (a hand `import`s and calls another module/hand directly),
+  NOT via a host-provided sibling-hand registry in the context — the
+  hand-context carries live page access only. Shared page-operation helpers
+  (`clickLocator`, `resolveLocator`, `waitFor`, already exported by
+  `playwright-launch-transport.ts`) stay importable building blocks so reuse
+  lives in module-land. A `ctx.hands` registry is additive and non-breaking if a
+  real need ever appears; not built now.
+- **Phase 1 is a purely INTERNAL, behavior-preserving refactor (resolved Q2).**
+  No change to `seam.ts` (the public `Page`/`Transport` contract is untouched);
+  no behavior change, proven by the existing `test/` verb suite
+  (`click-type-verbs`, `snapshot-verb`, `eval-verb`, `goto-wait-verbs`,
+  `cookies-export-import`, `cross-invocation-session-persistence`, `seam`)
+  staying green WITHOUT modification. The hand-host primitive and the
+  `Hand`/`HandContext` types are **package-internal in Phase 1** (used to build
+  the built-ins, not exported as a third-party extension point); they become
+  public only in Phase 2. Built-in hands compose **eagerly at `makeSession`**,
+  exactly as the page object is built today (no lazy registration, so no
+  ordering effects). Therefore Phase 1 needs only a **lightweight
+  internal-structure ADR** (or a note in the Phase-2 ADR), NOT a public-contract
+  ADR; the public-contract ADR lands in Phase 2 when `Hand`/`HandContext` go
+  public.
+- **Serialization split: live handles stay in-process; agent verbs are
+  serializable-only (resolved Q3).** A live Playwright object (`Page`,
+  `Locator`, `ElementHandle`, `BrowserContext`) may flow ONLY within a single
+  in-process call chain (Model A). The moment a value is returned to an
+  AGENT-EXPOSED verb (anything that becomes an MCP tool / crosses RPC), it must
+  be serializable under the **same structured-clone contract `Page.eval`
+  already documents** in `seam.ts` (richer than JSON: preserves
+  `NaN`/`BigInt`/circular-as-`[Circular]`; DOM nodes come back as opaque
+  preview strings, never live handles). This is NOT a new constraint — it is the
+  existing seam law (ADR-0003 no-leak; `eval`-style clone) extended verbatim to
+  hand-contributed verbs; every built-in verb already obeys it. A hand may be
+  both (in-process rich logic + a serializable verb facade); the hand owns the
+  reduction at the boundary. Enforced by **convention + types** (not a blanket
+  runtime clone — that would corrupt legitimate in-process Model A returns); a
+  host-side runtime clone of agent-verb results is noted as available HARDENING
+  if untrusted hands ever land. The rule is binding now; the MCP/RPC plumbing
+  (Model B exposure) is **Phase 2** work above `core`, not Phase 1.
+- **Terminology: `transport` / `verb` / `hand` are three orthogonal axes
+  (resolved Q4).** `transport` (a.k.a. `driver`) = HOW we reach the browser
+  (`Transport.open` → `Session`; one active per session; ADR-0003). `verb` = one
+  agent-facing action on the page (a method on `Page`; built-in or
+  hand-contributed, indistinguishable at the surface; ADR-0004). `hand` = a
+  pluggable capability MODULE that closes over the Page (`{pwPage, context,
+  ensureOpen}`) and contributes verbs and/or in-process behavior (many compose
+  per session). Explicit coherence guards: **a hand is NOT a verb** (it can
+  contribute several + in-process logic) and **a hand is NOT a transport** (it
+  does not `open` sessions, does not reach the browser independently, gets the
+  live Playwright page directly rather than a transport-neutral abstraction —
+  which is why ADR-0003 is REFINED, not violated: the page stays in-process,
+  never crosses the seam). Hands are offered ONLY by a transport that can hand
+  over live page access (the Playwright transport; User Story 7). The glossary
+  wording is pinned into `CONTEXT.md` ONLY when this prd is tasked (the term is
+  `proposed` until then).
+- **Security: local-only trust reaffirmed; third-party hand loading is explicit
+  + declarative (resolved Q5).** A hand is **arbitrary Node code in the webhands
+  process** — a strictly larger surface than `eval` (which is sandboxed to the
+  page's JS world): a hand has whatever the process has (filesystem, network,
+  env, `context.close()`, cookie rewrite, navigation hijack). The right mental
+  model is npm supply-chain trust: **loading a hand == trusting an in-process
+  npm dependency.** The trust boundary stays **local-only, no remote callers**
+  (hands widen the IN-PROCESS trust surface, NOT the remote attack surface —
+  they expose no new network listener). Loading a third-party hand is
+  **explicit and declarative, modeled on pi's `packages[]`**: a config-named
+  list of hand sources (`npm:<pkg>` / `git:<url>`) with **pinned entry points**,
+  NEVER auto-discovery / `node_modules` scanning / convention-inferred entry
+  files. **Install is separate from load/trust** (mirroring pi's separate
+  `trust.json`): naming a hand in config IS the trust act; `npm install` alone
+  never auto-loads. webhands does NOT build a managed installer (pi's `npm/`
+  workspace equivalent) in this prd — operators install the dependency
+  themselves; a managed install/update mechanism is deferred (same bucket as the
+  distribution model in Out of Scope). No sandbox / no permission system
+  (consistent with Q1's zero-isolation); gating = explicitness +
+  documentation. Docs must state the trust level plainly (the truthful,
+  scaled-up version of the README's `eval` warning).
+- **Refines ADR-0003/0004** (new ADR at tasking); keeps no-CDP-leak;
+  cross-browser via Playwright `Page`.
+
+### Deferred (does NOT block this prd) — the Playwright/captcha spike (Q6)
+
+Whether Playwright can reach + operate nested cross-origin frames (a WAF iframe
+containing a captcha iframe) via `frameLocator(...).frameLocator(...)` +
+coordinate clicks + screenshot is **left deferred and unresolved here.** The
+hands design is decision-complete without it: the primitive is proven by
+self-application (Phase 1), which does not depend on the captcha case. The spike
+is a **throwaway, iamhuman-specific validation to run at Phase-2 entry** (if
+Playwright cannot reach nested cross-origin frames, iamhuman's APPROACH needs
+rethinking — an iamhuman risk, not a webhands risk). A spike failure would
+falsify the **captcha EXAMPLE**, not the **hands abstraction**: webhands still
+benefits (built-in hands, in-process composition, any non-captcha third-party
+hand).
 
 ## Out of Scope
 
