@@ -5,21 +5,8 @@ import {
 	type Page as PwPage,
 } from 'playwright';
 import {AttachNoContextError, AttachNotChromiumError} from './errors.js';
-import {
-	clickLocator,
-	resolveLocator,
-	waitFor,
-} from './playwright-launch-transport.js';
-import type {
-	Cookie,
-	OpenTarget,
-	Page,
-	Session,
-	Snapshot,
-	SnapshotOptions,
-	Transport,
-	WaitCondition,
-} from './seam.js';
+import {composeBuiltInPage, type HandContext} from './hand-host.js';
+import type {OpenTarget, Session, Transport} from './seam.js';
 
 /**
  * The `attach` concrete transport: connect (`chromium.connectOverCDP`) to a
@@ -92,11 +79,17 @@ export class PlaywrightAttachTransport implements Transport {
 /**
  * Wrap a CDP-attached browser into the seam's {@link Session}.
  *
- * `close()` DISCONNECTS the controller from the user's browser; it must not
- * kill the browser the user started (`Browser.close()` on a `connectOverCDP`
- * connection detaches rather than terminating the remote process). We resolve
- * cookies through the reused context so they reflect the live, authenticated
- * session.
+ * The VERB surface comes from the shared hand-host ({@link composeBuiltInPage}),
+ * the SAME single composition the launch transport uses (no duplicated
+ * page-object literal). Cookies resolve through the reused context (derived here
+ * via `pwPage.context()`) so they reflect the live, authenticated session.
+ *
+ * Only the SESSION LIFECYCLE is per-transport: this transport listens on the
+ * browser's `'disconnected'` event and its `close()` calls `browser.close()`,
+ * which DISCONNECTS the controller from the user's browser WITHOUT killing it
+ * (a `connectOverCDP` connection detaches rather than terminating the remote
+ * process, ADR-0002) — the opposite of the launch transport, which kills the
+ * browser it spawned.
  */
 function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 	const context: BrowserContext = pwPage.context();
@@ -121,63 +114,12 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 	};
 	browser.on('disconnected', markClosed);
 
-	const page: Page = {
-		async navigate(url: string): Promise<void> {
-			ensureOpen();
-			// "Settled" = the `load` event; XHR/JS-rendered content that appears
-			// after load is the `wait` verb's job. Same rationale (and the
-			// no-`networkidle` reasoning) as the launch transport's `navigate`.
-			await pwPage.goto(url, {waitUntil: 'load'});
-		},
-		async snapshot(options?: SnapshotOptions): Promise<Snapshot> {
-			ensureOpen();
-			const url = pwPage.url();
-			if (options?.full === true) {
-				const content = await pwPage.evaluate(
-					() => document.documentElement.outerHTML,
-				);
-				return {url, view: 'full', content};
-			}
-			// Default: the token-cheap accessibility tree + visible text with stable
-			// `[ref=...]` refs (see the launch transport and `Snapshot` for the
-			// rationale; the string crosses the seam as opaque, transport-neutral
-			// text, ADR-0003).
-			const content = await pwPage.ariaSnapshot({mode: 'ai'});
-			return {url, view: 'accessibility', content};
-		},
-		// `resolveLocator`/`clickLocator`/`waitFor` are imported from the launch
-		// transport so both transports resolve locators and run the verbs through
-		// ONE path (no parallel addressing scheme; the forward-note).
-		async click(t): Promise<void> {
-			ensureOpen();
-			// Shared `clickLocator`: normal actionability-checked click with the
-			// hidden-element dispatch fallback (PRD story 8), identical to launch.
-			await clickLocator(pwPage, t);
-		},
-		async type(t, text): Promise<void> {
-			ensureOpen();
-			await resolveLocator(pwPage, t).fill(text);
-		},
-		async eval(expression: string): Promise<unknown> {
-			ensureOpen();
-			return pwPage.evaluate(expression);
-		},
-		async wait(condition: WaitCondition): Promise<void> {
-			ensureOpen();
-			// Identical to the launch transport (shared `waitFor`): selector /
-			// navigation / timeout, so the verb behaves the same on both.
-			await waitFor(pwPage, condition);
-		},
-		async cookies(): Promise<readonly Cookie[]> {
-			ensureOpen();
-			const raw = await context.cookies();
-			return raw.map(toSeamCookie);
-		},
-		async setCookies(cookies): Promise<void> {
-			ensureOpen();
-			await context.addCookies(cookies.map(fromSeamCookie));
-		},
-	};
+	// Build the verb surface from the built-in hands over a live hand-context —
+	// the same shared host the launch transport uses, so the verbs behave
+	// identically across both transports. The live `pwPage`/`context` stay
+	// in-process and never cross the seam (ADR-0003).
+	const handContext: HandContext = {pwPage, context, ensureOpen};
+	const {page, dispose: disposeHands} = composeBuiltInPage(handContext);
 
 	return {
 		page,
@@ -185,50 +127,15 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 			if (closed) {
 				return;
 			}
-			// Detach from the user's browser; do NOT terminate it. This fires
+			// Dispose the hands first (their in-process resources), THEN detach from
+			// the user's browser without terminating it. browser.close() fires
 			// 'disconnected', which runs markClosed.
+			await disposeHands();
 			await browser.close();
 			markClosed();
 		},
 		waitForClose(): Promise<void> {
 			return closedSignal;
 		},
-	};
-}
-
-/** Map a Playwright cookie to the transport-neutral seam {@link Cookie}. */
-function toSeamCookie(c: {
-	name: string;
-	value: string;
-	domain?: string;
-	path?: string;
-	expires?: number;
-	httpOnly?: boolean;
-	secure?: boolean;
-	sameSite?: 'Strict' | 'Lax' | 'None';
-}): Cookie {
-	return {
-		name: c.name,
-		value: c.value,
-		domain: c.domain,
-		path: c.path,
-		expires: c.expires,
-		httpOnly: c.httpOnly,
-		secure: c.secure,
-		sameSite: c.sameSite,
-	};
-}
-
-/** Map a seam {@link Cookie} to a Playwright cookie shape. */
-function fromSeamCookie(c: Cookie) {
-	return {
-		name: c.name,
-		value: c.value,
-		domain: c.domain,
-		path: c.path,
-		expires: c.expires,
-		httpOnly: c.httpOnly,
-		secure: c.secure,
-		sameSite: c.sameSite,
 	};
 }
