@@ -5,7 +5,7 @@ import {
 	type Page as PwPage,
 } from 'playwright';
 import {AttachNoContextError, AttachNotChromiumError} from './errors.js';
-import {composeBuiltInPage, type HandContext} from './hand-host.js';
+import {composeWithHands, type Hand, type HandContext} from './hand-host.js';
 import type {OpenTarget, Session, Transport} from './seam.js';
 
 /**
@@ -32,6 +32,18 @@ import type {OpenTarget, Session, Transport} from './seam.js';
  * running one.
  */
 export class PlaywrightAttachTransport implements Transport {
+	readonly #hands: readonly Hand[];
+
+	/**
+	 * @param hands explicitly-loaded third-party hands to compose alongside the
+	 *   built-ins (Phase 2, ADR-0007). These come from {@link loadHands} against
+	 *   the operator's explicit config; the transport does NOT discover them. Omit
+	 *   for the built-ins-only surface.
+	 */
+	constructor(hands: readonly Hand[] = []) {
+		this.#hands = hands;
+	}
+
 	async open(target: OpenTarget): Promise<Session> {
 		if (target.mode !== 'attach') {
 			throw new Error(
@@ -65,7 +77,7 @@ export class PlaywrightAttachTransport implements Transport {
 			// browser exposes a context with no page yet (single active session in
 			// v1, PRD Out of Scope).
 			const pwPage = context.pages()[0] ?? (await context.newPage());
-			return makeAttachedSession(browser, pwPage);
+			return makeAttachedSession(browser, pwPage, this.#hands);
 		} catch (cause) {
 			// On any open-time refusal, disconnect from the user's browser without
 			// closing it (a CDP connection close detaches; it does not kill the
@@ -91,7 +103,11 @@ export class PlaywrightAttachTransport implements Transport {
  * process, ADR-0002) — the opposite of the launch transport, which kills the
  * browser it spawned.
  */
-function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
+function makeAttachedSession(
+	browser: Browser,
+	pwPage: PwPage,
+	extraHands: readonly Hand[],
+): Session {
 	const context: BrowserContext = pwPage.context();
 	let closed = false;
 	const ensureOpen = () => {
@@ -119,7 +135,10 @@ function makeAttachedSession(browser: Browser, pwPage: PwPage): Session {
 	// identically across both transports. The live `pwPage`/`context` stay
 	// in-process and never cross the seam (ADR-0003).
 	const handContext: HandContext = {pwPage, context, ensureOpen};
-	const {page, dispose: disposeHands} = composeBuiltInPage(handContext);
+	const {page, dispose: disposeHands} = composeWithHands(
+		handContext,
+		extraHands,
+	);
 
 	return {
 		page,
