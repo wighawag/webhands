@@ -82,7 +82,10 @@ export {
 	SESSION_RPC_PATH,
 	applySessionRpc,
 	makeRpcPage,
+	callHandVerb,
 	type SessionRpcRequest,
+	type SessionRpcBuiltInRequest,
+	type SessionRpcHandRequest,
 	type SessionRpcResponse,
 } from './session-rpc.js';
 

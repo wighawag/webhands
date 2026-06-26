@@ -17,11 +17,35 @@ import type {Page} from './seam.js';
  * client proxy so they cannot drift (mirrors how `serializeCookies` is shared
  * by the cookies verb and its test).
  *
- * It is a thin transport detail, NOT a second verb surface: every request maps
- * 1:1 to a {@link Page} method, and the seam's verb semantics (ADR-0003/0004)
- * are unchanged. The {@link LocatorString} brand and the structured
- * {@link WaitCondition} cross as plain JSON and are re-branded on the server
- * with {@link locator}; no Playwright/CDP type is ever named here.
+ * It is a thin transport detail, NOT a second verb surface: every built-in
+ * request maps 1:1 to a {@link Page} method, and the seam's verb semantics
+ * (ADR-0003/0004) are unchanged. The {@link LocatorString} brand and the
+ * structured {@link WaitCondition} cross as plain JSON and are re-branded on the
+ * server with {@link locator}; no Playwright/CDP type is ever named here.
+ *
+ * THIRD-PARTY HAND VERBS (Phase 2, Model B of the "hands" prd; ADR-0007). The
+ * eight built-in verbs stay a CLOSED union (the 1:1 source of truth above). A
+ * dynamically-loaded hand contributes a verb whose name `core` does NOT know at
+ * compile time, so it cannot be a named member of that closed union without
+ * re-meaning "closed". Instead it crosses as a SINGLE generic
+ * {@link SessionRpcHandRequest} variant (`{verb: 'hand', name, args}`) that
+ * names the contributed verb at runtime and carries its arguments. This is the
+ * exact wire parallel of how a hand verb composes into the page object: by name,
+ * dynamically, alongside the typed built-ins. The agent thereby gains a new tool
+ * over the wire WITHOUT ever holding a live page handle.
+ *
+ * SERIALIZATION BOUNDARY (the load-bearing rule; prd's resolved Q3). A hand
+ * verb's result crosses this RPC, so it MUST be serializable under the same
+ * structured-clone contract `eval` documents (see {@link Page.eval}): richer
+ * than JSON, but a value with no transferable form does not round-trip. This is
+ * enforced by CONVENTION + TYPES (a hand author returns serializable values),
+ * NOT a blanket runtime clone here — a blanket clone would corrupt legitimate
+ * in-process (Model A) returns, where a hand may pass/return live Playwright
+ * handles within a single in-process call chain. A host-side runtime clone of
+ * agent-verb results is available HARDENING for untrusted hands, not built here.
+ * A page/in-hand throw REJECTS faithfully on the client exactly as the `eval`
+ * path already does (the server maps it to an `ok: false` reply carrying the
+ * message; the client re-throws a faithful `Error`).
  */
 
 /** The path the session RPC is served under, below the server's base URL. */
@@ -29,6 +53,15 @@ export const SESSION_RPC_PATH = '/session/call';
 
 /** A single verb call to run against the served live page. */
 export type SessionRpcRequest =
+	| SessionRpcBuiltInRequest
+	| SessionRpcHandRequest;
+
+/**
+ * The CLOSED union of webhands' eight built-in verbs. Each variant maps 1:1 to a
+ * {@link Page} method in {@link applySessionRpc}; this is the single source of
+ * truth for the built-in verb surface, shared verbatim by server and client.
+ */
+export type SessionRpcBuiltInRequest =
 	| {readonly verb: 'navigate'; readonly url: string}
 	| {readonly verb: 'snapshot'; readonly full?: boolean}
 	| {readonly verb: 'click'; readonly locator: string}
@@ -37,6 +70,25 @@ export type SessionRpcRequest =
 	| {readonly verb: 'wait'; readonly condition: WaitCondition}
 	| {readonly verb: 'cookies'}
 	| {readonly verb: 'setCookies'; readonly cookies: readonly Cookie[]};
+
+/**
+ * The OPEN escape for a dynamically-loaded third-party hand verb (Phase 2,
+ * Model B; ADR-0007). Unlike the closed built-in union, `core` does not know the
+ * verb's name at compile time, so it is carried at runtime: `name` is the
+ * contributed verb's plain name (exactly as it composed into the page object,
+ * not namespaced — a hand may even deliberately override a built-in, the
+ * operator's choice per ADR-0007) and `args` are its JSON arguments.
+ *
+ * The returned value and any thrown error obey the same serialization +
+ * rejection contract as `eval` (see this module's overview and {@link Page.eval}).
+ */
+export interface SessionRpcHandRequest {
+	readonly verb: 'hand';
+	/** The hand-contributed verb's name (as it composed into the page object). */
+	readonly name: string;
+	/** The verb's arguments, carried as plain JSON (must be serializable). */
+	readonly args: readonly unknown[];
+}
 
 /**
  * The server's reply to a {@link SessionRpcRequest}. `ok: true` carries the
@@ -84,7 +136,42 @@ export async function applySessionRpc(
 		case 'setCookies':
 			await page.setCookies(request.cookies);
 			return undefined;
+		case 'hand':
+			return applyHandVerb(page, request);
 	}
+}
+
+/**
+ * Invoke a dynamically-loaded hand verb by name against the live composed page.
+ *
+ * The composed {@link Page} carries the hand's verbs at runtime (the host merged
+ * them in by name alongside the built-ins, see `composePage`), even though the
+ * seam `Page` TYPE only names the eight built-ins. We therefore look the verb up
+ * on the page object as a runtime method and invoke it with the request's args.
+ * An unknown name is a faithful error (the hand was not loaded / named that
+ * verb), surfaced the same way a page-side throw is so the client rejects.
+ *
+ * The result is returned as-is: the serializable-only boundary is enforced by
+ * convention + types on the hand author, NOT a runtime clone here (a blanket
+ * clone would corrupt legitimate in-process Model A returns; see this module's
+ * overview). What the hand returns is what the wire carries back; the JSON
+ * framing in the server handler is the only encoding applied.
+ */
+async function applyHandVerb(
+	page: Page,
+	request: SessionRpcHandRequest,
+): Promise<unknown> {
+	const verb = (page as unknown as Record<string, unknown>)[request.name];
+	if (typeof verb !== 'function') {
+		throw new Error(
+			`no such hand verb '${request.name}' on the live page ` +
+				`(is the hand loaded and named in config?)`,
+		);
+	}
+	return (verb as (...args: readonly unknown[]) => unknown).call(
+		page,
+		...request.args,
+	);
 }
 
 /**
@@ -128,6 +215,29 @@ export function makeRpcPage(
 			await send({verb: 'setCookies', cookies});
 		},
 	};
+}
+
+/**
+ * Invoke a dynamically-loaded hand verb over the session RPC by name (Phase 2,
+ * Model B; ADR-0007). The client-side mirror of {@link applyHandVerb}: it builds
+ * the single generic {@link SessionRpcHandRequest} and hands it to the SAME
+ * `send` the built-in verbs use, so request/response shapes cannot drift.
+ *
+ * This is how the agent gains a new tool over the wire WITHOUT holding a live
+ * page handle: it names the contributed verb and passes serializable args; the
+ * server runs the hand against its own live page and returns a serializable
+ * result. A page/in-hand throw rejects faithfully (the `send` re-throws the
+ * server's error message), exactly as the `eval` path does.
+ *
+ * The result type is `unknown` because the hand decides the shape; callers
+ * narrow it (mirrors {@link Page.eval}).
+ */
+export async function callHandVerb(
+	send: (request: SessionRpcRequest) => Promise<unknown>,
+	name: string,
+	...args: readonly unknown[]
+): Promise<unknown> {
+	return send({verb: 'hand', name, args});
 }
 
 /**
