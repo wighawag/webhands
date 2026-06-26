@@ -1,4 +1,5 @@
 import {
+	callHandVerb,
 	makeRpcPage,
 	SESSION_RPC_PATH,
 	type SessionRpcRequest,
@@ -24,8 +25,21 @@ import type {Session} from './seam.js';
  * (`stop`), exactly as ADR-0005 requires. This is the whole reason cross-
  * invocation persistence works: the page state survives because the client's
  * `close()` does not reach across to the server's session.
+ *
+ * THIRD-PARTY HAND VERBS (Phase 2, Model B; ADR-0007). Pass the NAMES of the
+ * hand verbs the served process loaded as `handVerbs`; each is attached to the
+ * returned `page` as a dynamic method forwarding over the RPC via
+ * {@link callHandVerb}, so the agent gains those tools WITHOUT ever holding a
+ * live page handle. They are NOT on the seam `Page` type (the seam knows only
+ * the eight built-ins), so a caller reaches them through a cast, exactly as a
+ * third-party hand verb is reached on the in-process composed page. The result
+ * crosses the wire as a serializable value and a page/in-hand throw rejects
+ * faithfully, the same contract as the built-in verbs.
  */
-export function connectRemoteSession(baseUrl: string): Session {
+export function connectRemoteSession(
+	baseUrl: string,
+	handVerbs: readonly string[] = [],
+): Session {
 	const endpoint = new URL(SESSION_RPC_PATH, baseUrl).toString();
 
 	const send = async (request: SessionRpcRequest): Promise<unknown> => {
@@ -61,8 +75,19 @@ export function connectRemoteSession(baseUrl: string): Session {
 		resolveClosed = resolve;
 	});
 
+	const page = makeRpcPage(send);
+	// Attach each loaded hand verb as a dynamic method that forwards over the same
+	// RPC `send`. The seam `Page` type names only the built-ins, so these live on
+	// the runtime object alongside them (mirroring how a hand verb composes into
+	// the in-process page object); callers reach them through a cast.
+	const pageWithHands = page as unknown as Record<string, unknown>;
+	for (const name of handVerbs) {
+		pageWithHands[name] = (...args: readonly unknown[]): Promise<unknown> =>
+			callHandVerb(send, name, ...args);
+	}
+
 	return {
-		page: makeRpcPage(send),
+		page,
 		async close() {
 			// Intentionally a no-op against the SERVER: the served process owns the
 			// session's lifetime (see this module's overview). Teardown is the
