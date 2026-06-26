@@ -22,6 +22,20 @@ export {
 
 export {StubTransport, type StubCall} from './stub-transport.js';
 
+export type {Hand, HandContext, HandContribution} from './hand-host.js';
+
+export {
+	readHandsConfig,
+	normalizeConfig,
+	loadHands,
+	HandLoadError,
+	HANDS_CONFIG_FILENAME,
+	type HandEntry,
+	type HandsConfig,
+	type LoadedHand,
+	type LoadHandsOptions,
+} from './hand-loading.js';
+
 export {PlaywrightLaunchTransport} from './playwright-launch-transport.js';
 
 export {PlaywrightAttachTransport} from './playwright-attach-transport.js';

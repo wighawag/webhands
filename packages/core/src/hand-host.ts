@@ -355,6 +355,23 @@ export function composeBuiltInPage(ctx: HandContext): ComposedHands {
 	return composePage(ctx, BUILT_IN_HANDS);
 }
 
+/**
+ * Compose webhands' built-in hands together with any explicitly-loaded
+ * third-party hands (Phase 2) over a live context. The third-party hands are
+ * composed AFTER the built-ins through the EXACT same {@link composePage} the
+ * built-ins use, so a loaded hand plugs into the same host: its verbs merge into
+ * the same seam {@link Page} and its `dispose` is sequenced LIFO with the rest.
+ * A third-party hand may add NEW verbs (the common case) and, because later
+ * contributions win the merge, may also override a built-in verb — that is the
+ * operator's choice, made by the trust act of naming the hand (ADR-0007).
+ */
+export function composeWithHands(
+	ctx: HandContext,
+	extraHands: readonly Hand[],
+): ComposedHands {
+	return composePage(ctx, [...BUILT_IN_HANDS, ...extraHands]);
+}
+
 // ---------------------------------------------------------------------------
 // Shared verb building blocks (moved here with the verb bodies they back).
 // Re-exported from the launch transport for its existing public-API consumers.
