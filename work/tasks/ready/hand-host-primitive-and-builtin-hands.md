@@ -36,6 +36,17 @@ extracted building blocks). The hand-host MUST be the SINGLE shared composition
 both transports use, eliminating the duplicated page-object literal. Do not
 leave two divergent hand-hosts.
 
+UNIFICATION BOUNDARY (do NOT over-unify): share ONLY the VERB composition (the
+eight-verb page object built from the built-in hands). The SESSION LIFECYCLE is
+legitimately DIFFERENT between the two transports and must stay per-transport:
+the launch transport listens on `context.on('close')` and its `close()` calls
+`context.close()` (which KILLS the browser it spawned); the attach transport
+listens on `browser.on('disconnected')` and its `close()` calls
+`browser.close()` which DETACHES without killing the user's browser (ADR-0002),
+and derives its context via `pwPage.context()`. Collapsing these into one
+lifecycle would break attach's detach-not-kill guarantee. So: shared verb host,
+per-transport session/close/closed-signal wiring.
+
 Internal-only boundary (the gate from the prd's resolved Q2):
 - NO change to the public seam (`Page`/`Transport`/`Session` types stay
   byte-for-byte identical).
@@ -63,6 +74,21 @@ Internal-only boundary (the gate from the prd's resolved Q2):
       `eval-verb`, `goto-wait-verbs`, `cookies-export-import`,
       `cross-invocation-session-persistence`, `seam`, both transport tests)
       passes WITHOUT modification — behavior is preserved.
+- [ ] Only the VERB composition is shared between the two transports; each
+      transport keeps its own session lifecycle (launch: `context.on('close')` /
+      `context.close()` kills the browser; attach: `browser.on('disconnected')` /
+      `browser.close()` detaches without killing it, ADR-0002). The shared host
+      does NOT collapse these.
+- [ ] Cross-browser invariant honored BY CONSTRUCTION (prd stories 7, 8): the
+      hand-host is built INSIDE the Playwright transport(s) and uses only the
+      Playwright `Page`/`BrowserContext` API (no CDP/Chromium-only types), keeping
+      the live `pwPage` in-process (never crossing the seam). Note: the launch
+      transport hard-codes `chromium.launchPersistentContext` and there is NO
+      Firefox harness in the repo today (Firefox is designed-for but not built —
+      ADR-0003 / CONTEXT.md), so do NOT add a Firefox test; instead the host must
+      not introduce any Chromium-only dependency that would foreclose a future
+      Firefox launch, and only CDP-`attach` stays Chromium-bound. (Verify via
+      code review of the host's types, not a new browser engine in tests.)
 - [ ] Tests cover the new behaviour (mirror the repo's existing test style): the
       built-in-hands path is exercised at the same `Driver`/`Transport` seam the
       existing verb tests use; no new public surface is tested (there is none).

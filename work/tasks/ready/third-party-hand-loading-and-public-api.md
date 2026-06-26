@@ -2,8 +2,8 @@
 title: Open the host to third-party hands — public API + explicit declarative loading (Phase 2)
 slug: third-party-hand-loading-and-public-api
 prd: hands-pluggable-page-capabilities
-blockedBy: [hand-host-primitive-and-builtin-hands]
-covers: [1, 3]
+blockedBy: [hand-host-primitive-and-builtin-hands, phase1-internal-structure-adr]
+covers: [1, 3, 9]
 ---
 
 ## What to build
@@ -46,7 +46,9 @@ public-API decision the Phase-1 internal ADR explicitly left to Phase 2).
       convention-inferred entry. A hand that is installed but NOT named does not
       load.
 - [ ] Install is separate from load/trust (naming in config is the trust act).
-- [ ] A public-contract ADR is added (`docs/adr/`, next number) recording the
+- [ ] A public-contract ADR is added (`docs/adr/`, the NEXT FREE number at build
+      time — do not hard-code; `phase1-internal-structure-adr` claims `0006`
+      first, so this is `0007` unless other ADRs landed meanwhile) recording the
       decision to open the host, the explicit-declarative loading model, and the
       "loading a hand == trusting an in-process npm dependency" trust framing;
       docs state the trust level plainly.
@@ -62,6 +64,10 @@ public-API decision the Phase-1 internal ADR explicitly left to Phase 2).
 - `hand-host-primitive-and-builtin-hands` — this exposes and opens the host that
   task builds; it also makes the `Hand`/`HandContext` types (package-internal
   there) public.
+- `phase1-internal-structure-adr` — serialized so the two ADR-writing tasks do
+  NOT collide on the same ADR number: that task claims `0006`, this one takes the
+  next free number after it lands. (No logical code dependency; this edge exists
+  purely to order the ADR-number allocation.)
 
 ## Prompt
 
@@ -86,6 +92,10 @@ public-API decision the Phase-1 internal ADR explicitly left to Phase 2).
 > `npm:`/`git:` source, optionally with pinned entry files), and keeps a
 > SEPARATE trust record from install — borrow that SHAPE (explicit named list +
 > pinned entry + install-separate-from-trust), NOT pi's managed installer.
+>
+> This task also covers user story 9 (explicit third-party-hand loading + a
+> local/trusted page-access surface) — the whole security framing below IS
+> story 9.
 >
 > Security framing (prd's resolved Q5): a hand is arbitrary Node code in the
 > webhands process — a strictly larger surface than `eval` (which is sandboxed
