@@ -2,7 +2,7 @@ import {
 	chromium,
 	type Browser,
 	type BrowserContext,
-	type Page as PwPage,
+	type Page,
 } from 'playwright';
 import {AttachNoContextError, AttachNotChromiumError} from './errors.js';
 import {composeWithHands, type Hand, type HandContext} from './hand-host.js';
@@ -105,7 +105,7 @@ export class PlaywrightAttachTransport implements Transport {
  */
 function makeAttachedSession(
 	browser: Browser,
-	pwPage: PwPage,
+	pwPage: Page,
 	extraHands: readonly Hand[],
 ): Session {
 	const context: BrowserContext = pwPage.context();

@@ -1,11 +1,7 @@
-import {
-	errors as pwErrors,
-	type BrowserContext,
-	type Page as PwPage,
-} from 'playwright';
+import {errors as pwErrors, type BrowserContext, type Page} from 'playwright';
 import type {
 	Cookie,
-	Page,
+	WebHandsPage,
 	Snapshot,
 	SnapshotOptions,
 	WaitCondition,
@@ -15,10 +11,10 @@ import type {
  * The hand-host primitive (Phase 1 of the "hands" prd,
  * `work/prds/tasked/hands-pluggable-page-capabilities.md`).
  *
- * A **hand** is in-process code that closes over the Page and contributes named
+ * A **hand** is in-process code that closes over the WebHandsPage and contributes named
  * verbs (+ an optional `dispose`). This module is the host: it builds the
  * scoped-but-LIVE {@link HandContext} from the live Playwright objects, lets
- * each hand contribute its verbs, and composes them into the same {@link Page}
+ * each hand contribute its verbs, and composes them into the same {@link WebHandsPage}
  * object the seam already exposes (see {@link composePage}).
  *
  * webhands' OWN eight verbs are themselves built-in hands over this host
@@ -51,7 +47,7 @@ import type {
 
 /**
  * The scoped-but-LIVE access a hand receives. It carries live page access ONLY
- * (the trust model note above): the real Playwright {@link PwPage} and
+ * (the trust model note above): the real Playwright {@link Page} and
  * {@link BrowserContext} the hand operates against in-process, plus the
  * lifecycle guard.
  *
@@ -66,15 +62,16 @@ import type {
  *   it through this function.
  */
 export interface HandContext {
-	readonly pwPage: PwPage;
+	readonly pwPage: Page;
 	readonly context: BrowserContext;
 	readonly ensureOpen: () => void;
 }
 
 /**
  * What a hand contributes once given its {@link HandContext}: a set of named
- * verbs (a partial of the seam's {@link Page}) and an optional `dispose` for any
- * in-process resource it set up.
+ * verbs (a subset of webhands' (eight) seam verbs, i.e. a `Partial` of the
+ * seam {@link WebHandsPage}) and an optional `dispose` for any in-process
+ * resource it set up.
  *
  * A hand may contribute several verbs (the built-in interaction hand contributes
  * both `click` and `type`) — a hand is NOT a single verb. It is NOT a transport
@@ -83,7 +80,7 @@ export interface HandContext {
  * either the transport's job (session lifecycle) or a later phase's.
  */
 export interface HandContribution {
-	readonly verbs: Partial<Page>;
+	readonly verbs: Partial<WebHandsPage>;
 	readonly dispose?: () => Promise<void> | void;
 }
 
@@ -97,11 +94,11 @@ export type Hand = (ctx: HandContext) => HandContribution;
 
 /**
  * The composed result the host hands back to a transport's session wiring: the
- * {@link Page} (the seam object the verbs were merged into) and a single
+ * {@link WebHandsPage} (the seam object the verbs were merged into) and a single
  * `dispose` that tears down every hand.
  */
 export interface ComposedHands {
-	readonly page: Page;
+	readonly page: WebHandsPage;
 	/**
 	 * Dispose every hand's resources. Hands are disposed in REVERSE registration
 	 * order (LIFO, the natural teardown order for layered setup), and every
@@ -115,7 +112,7 @@ export interface ComposedHands {
 
 /**
  * Compose a set of hands over one live {@link HandContext} into a single
- * {@link Page}. This is the host primitive both Playwright transports call to
+ * {@link WebHandsPage}. This is the host primitive both Playwright transports call to
  * build their session's verb surface — the SINGLE shared composition (no
  * duplicated page-object literal).
  *
@@ -123,7 +120,7 @@ export interface ComposedHands {
  * each hand is invoked once at session-open time and its verbs are merged into
  * one page object. There is no lazy registration and no ordering effect on the
  * verbs themselves (the eight built-in verbs have disjoint names). The returned
- * {@link Page} is validated to carry every verb the seam requires, so a missing
+ * {@link WebHandsPage} is validated to carry every verb the seam requires, so a missing
  * built-in verb is a build-time/open-time failure here rather than an `undefined
  * is not a function` at the call site.
  */
@@ -131,7 +128,7 @@ export function composePage(
 	ctx: HandContext,
 	hands: readonly Hand[],
 ): ComposedHands {
-	const verbs: Partial<Page> = {};
+	const verbs: Partial<WebHandsPage> = {};
 	const disposers: Array<NonNullable<HandContribution['dispose']>> = [];
 
 	for (const hand of hands) {
@@ -174,15 +171,15 @@ const REQUIRED_VERBS = [
 	'wait',
 	'cookies',
 	'setCookies',
-] as const satisfies ReadonlyArray<keyof Page>;
+] as const satisfies ReadonlyArray<keyof WebHandsPage>;
 
 /**
- * Assert the composed verbs cover the whole seam {@link Page}, then return it
- * as a `Page`. A gap here means a built-in hand was dropped from the
+ * Assert the composed verbs cover the whole seam {@link WebHandsPage}, then return it
+ * as a `WebHandsPage`. A gap here means a built-in hand was dropped from the
  * composition — surfacing it at open time is far cheaper than a runtime
  * `undefined is not a function`.
  */
-function assertCompletePage(verbs: Partial<Page>): Page {
+function assertCompletePage(verbs: Partial<WebHandsPage>): WebHandsPage {
 	const missing = REQUIRED_VERBS.filter(
 		(name) => typeof verbs[name] !== 'function',
 	);
@@ -191,7 +188,7 @@ function assertCompletePage(verbs: Partial<Page>): Page {
 			`hand-host: composed page is missing verb(s): ${missing.join(', ')}`,
 		);
 	}
-	return verbs as Page;
+	return verbs as WebHandsPage;
 }
 
 /**
@@ -283,7 +280,7 @@ export const evalHand: Hand = ({pwPage, ensureOpen}) => ({
 			ensureOpen();
 			// The `eval` escape hatch (PRD story 9): run the raw JS EXPRESSION in the
 			// page and return its serializable result. Playwright's `evaluate`
-			// already IS the seam's serialization contract (see {@link Page.eval}):
+			// already IS the seam's serialization contract (see {@link WebHandsPage.eval}):
 			// it passes a string as an expression, awaits a returned Promise, and
 			// structurally clones the result out of the page by VALUE. That clone is
 			// richer than JSON: it preserves NaN/Infinity/BigInt and circular
@@ -345,7 +342,7 @@ export const BUILT_IN_HANDS: readonly Hand[] = [
 
 /**
  * Compose webhands' built-in hands over a live context into the seam's
- * {@link Page}. The convenience both transports call: `composePage(ctx,
+ * {@link WebHandsPage}. The convenience both transports call: `composePage(ctx,
  * BUILT_IN_HANDS)`. The built-in hands set up no in-process resources, so the
  * returned `dispose` is a no-op today; it exists so a transport can sequence
  * hand-teardown before its own browser/context teardown once third-party hands
@@ -360,7 +357,7 @@ export function composeBuiltInPage(ctx: HandContext): ComposedHands {
  * third-party hands (Phase 2) over a live context. The third-party hands are
  * composed AFTER the built-ins through the EXACT same {@link composePage} the
  * built-ins use, so a loaded hand plugs into the same host: its verbs merge into
- * the same seam {@link Page} and its `dispose` is sequenced LIFO with the rest.
+ * the same seam {@link WebHandsPage} and its `dispose` is sequenced LIFO with the rest.
  * A third-party hand may add NEW verbs (the common case) and, because later
  * contributions win the merge, may also override a built-in verb — that is the
  * operator's choice, made by the trust act of naming the hand (ADR-0007).
@@ -402,7 +399,7 @@ export function composeWithHands(
  * verb behaviour stays identical (no parallel second implementation).
  */
 export async function waitFor(
-	page: PwPage,
+	page: Page,
 	condition: WaitCondition,
 ): Promise<void> {
 	switch (condition.kind) {
@@ -429,12 +426,12 @@ export async function waitFor(
  * One resolution path for both transports (via the built-in interaction/wait
  * hands), so there is no parallel addressing scheme.
  */
-export function resolveLocator(page: PwPage, expression: string) {
+export function resolveLocator(page: Page, expression: string) {
 	// eslint-disable-next-line no-new-func
 	const factory = new Function('page', 'p', `return (${expression});`) as (
-		page: PwPage,
-		p: PwPage,
-	) => ReturnType<PwPage['locator']>;
+		page: Page,
+		p: Page,
+	) => ReturnType<Page['locator']>;
 	return factory(page, page);
 }
 
@@ -460,7 +457,7 @@ export function resolveLocator(page: PwPage, expression: string) {
  * are not actionable (hidden custom inputs), not for absent ones.
  */
 export async function clickLocator(
-	page: PwPage,
+	page: Page,
 	expression: string,
 ): Promise<void> {
 	const target = resolveLocator(page, expression);

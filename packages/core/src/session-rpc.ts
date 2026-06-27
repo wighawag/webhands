@@ -4,12 +4,12 @@ import {
 	type Snapshot,
 	type WaitCondition,
 } from './seam.js';
-import type {Page} from './seam.js';
+import type {WebHandsPage} from './seam.js';
 
 /**
  * The wire protocol for driving the long-lived session over HTTP (ADR-0005).
  *
- * The served process holds ONE live {@link Page} in memory; a thin client verb
+ * The served process holds ONE live {@link WebHandsPage} in memory; a thin client verb
  * cannot hold a JS reference to it across the process boundary, so each verb
  * call is sent as a small JSON request to the server, which runs it against its
  * live page and returns the result. This module is the SINGLE source of truth
@@ -18,7 +18,7 @@ import type {Page} from './seam.js';
  * by the cookies verb and its test).
  *
  * It is a thin transport detail, NOT a second verb surface: every built-in
- * request maps 1:1 to a {@link Page} method, and the seam's verb semantics
+ * request maps 1:1 to a {@link WebHandsPage} method, and the seam's verb semantics
  * (ADR-0003/0004) are unchanged. The {@link LocatorString} brand and the
  * structured {@link WaitCondition} cross as plain JSON and are re-branded on the
  * server with {@link locator}; no Playwright/CDP type is ever named here.
@@ -36,7 +36,7 @@ import type {Page} from './seam.js';
  *
  * SERIALIZATION BOUNDARY (the load-bearing rule; prd's resolved Q3). A hand
  * verb's result crosses this RPC, so it MUST be serializable under the same
- * structured-clone contract `eval` documents (see {@link Page.eval}): richer
+ * structured-clone contract `eval` documents (see {@link WebHandsPage.eval}): richer
  * than JSON, but a value with no transferable form does not round-trip. This is
  * enforced by CONVENTION + TYPES (a hand author returns serializable values),
  * NOT a blanket runtime clone here — a blanket clone would corrupt legitimate
@@ -58,7 +58,7 @@ export type SessionRpcRequest =
 
 /**
  * The CLOSED union of webhands' eight built-in verbs. Each variant maps 1:1 to a
- * {@link Page} method in {@link applySessionRpc}; this is the single source of
+ * {@link WebHandsPage} method in {@link applySessionRpc}; this is the single source of
  * truth for the built-in verb surface, shared verbatim by server and client.
  */
 export type SessionRpcBuiltInRequest =
@@ -80,7 +80,7 @@ export type SessionRpcBuiltInRequest =
  * operator's choice per ADR-0007) and `args` are its JSON arguments.
  *
  * The returned value and any thrown error obey the same serialization +
- * rejection contract as `eval` (see this module's overview and {@link Page.eval}).
+ * rejection contract as `eval` (see this module's overview and {@link WebHandsPage.eval}).
  */
 export interface SessionRpcHandRequest {
 	readonly verb: 'hand';
@@ -101,7 +101,7 @@ export type SessionRpcResponse =
 	| {readonly ok: false; readonly error: string};
 
 /**
- * Run one {@link SessionRpcRequest} against a live {@link Page}, returning the
+ * Run one {@link SessionRpcRequest} against a live {@link WebHandsPage}, returning the
  * value the wire should carry back. The server's HTTP handler is just this plus
  * JSON framing; keeping the dispatch here (not inline in the handler) means the
  * verb-to-page mapping is in one place and unit-testable without HTTP.
@@ -111,7 +111,7 @@ export type SessionRpcResponse =
  * branded-string contract holds.
  */
 export async function applySessionRpc(
-	page: Page,
+	page: WebHandsPage,
 	request: SessionRpcRequest,
 ): Promise<unknown> {
 	switch (request.verb) {
@@ -144,9 +144,9 @@ export async function applySessionRpc(
 /**
  * Invoke a dynamically-loaded hand verb by name against the live composed page.
  *
- * The composed {@link Page} carries the hand's verbs at runtime (the host merged
+ * The composed {@link WebHandsPage} carries the hand's verbs at runtime (the host merged
  * them in by name alongside the built-ins, see `composePage`), even though the
- * seam `Page` TYPE only names the eight built-ins. We therefore look the verb up
+ * seam `WebHandsPage` TYPE only names the eight built-ins. We therefore look the verb up
  * on the page object as a runtime method and invoke it with the request's args.
  * An unknown name is a faithful error (the hand was not loaded / named that
  * verb), surfaced the same way a page-side throw is so the client rejects.
@@ -158,7 +158,7 @@ export async function applySessionRpc(
  * framing in the server handler is the only encoding applied.
  */
 async function applyHandVerb(
-	page: Page,
+	page: WebHandsPage,
 	request: SessionRpcHandRequest,
 ): Promise<unknown> {
 	const verb = (page as unknown as Record<string, unknown>)[request.name];
@@ -175,7 +175,7 @@ async function applyHandVerb(
 }
 
 /**
- * A {@link Page} whose verbs forward to a server via the supplied transport.
+ * A {@link WebHandsPage} whose verbs forward to a server via the supplied transport.
  *
  * Used by the client-side proxy (see `remote-session.ts`): each verb builds a
  * {@link SessionRpcRequest}, hands it to `send`, and shapes the reply back into
@@ -185,7 +185,7 @@ async function applyHandVerb(
  */
 export function makeRpcPage(
 	send: (request: SessionRpcRequest) => Promise<unknown>,
-): Page {
+): WebHandsPage {
 	return {
 		async navigate(url) {
 			await send({verb: 'navigate', url});
@@ -230,7 +230,7 @@ export function makeRpcPage(
  * server's error message), exactly as the `eval` path does.
  *
  * The result type is `unknown` because the hand decides the shape; callers
- * narrow it (mirrors {@link Page.eval}).
+ * narrow it (mirrors {@link WebHandsPage.eval}).
  */
 export async function callHandVerb(
 	send: (request: SessionRpcRequest) => Promise<unknown>,

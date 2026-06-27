@@ -15,7 +15,7 @@ import {
 	resolveProfileLocation,
 	startFixtureServer,
 	type FixtureServer,
-	type Page,
+	type WebHandsPage,
 	type Session,
 } from '../src/index.js';
 
@@ -166,7 +166,7 @@ describe('hand-host composition primitive (no browser)', () => {
 
 	it('built-in composition yields a complete page (eight built-in verbs)', () => {
 		const {page} = composeBuiltInPage(fakeContext());
-		const verbNames: ReadonlyArray<keyof Page> = [
+		const verbNames: ReadonlyArray<keyof WebHandsPage> = [
 			'navigate',
 			'snapshot',
 			'click',
