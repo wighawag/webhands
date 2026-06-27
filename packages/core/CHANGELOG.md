@@ -1,16 +1,10 @@
 # @webhands/core
 
-## 0.1.0
+## 0.2.0
 
 ### Minor Changes
 
-- e458727: First release: a CLI (and MCP server) that drives a real, persistent browser via Playwright, letting an agent or human control any website from a genuinely logged-in browser session.
-
-## 1.0.0
-
-### Major Changes
-
-- 9de25a8: BREAKING: rename the verb-level transport seam type `Page` to `WebHandsPage`
+- 9de25a8: Rename the verb-level transport seam type `Page` to `WebHandsPage`
   (ADR-0008). The exported `Page` type is gone; import `WebHandsPage` instead.
   This is a NAME-ONLY change: the eight verbs
   (`navigate`/`snapshot`/`click`/`type`/`eval`/`wait`/`cookies`/`setCookies`), the
@@ -24,8 +18,6 @@
   `Page` rather than a subset of webhands' eight seam verbs. With the seam type
   renamed, those `PwPage` aliases are dropped (Playwright's `Page` is imported
   directly) and the seam meaning is unambiguous.
-
-### Minor Changes
 
 - 656909e: Surface a hand-contributed verb to the AGENT over the long-lived session RPC
   (Phase 2, Model B of the "hands" prd; ADR-0007). A dynamically-loaded hand's

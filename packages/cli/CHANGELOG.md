@@ -1,15 +1,11 @@
 # webhands
 
-## 0.1.0
-
-### Minor Changes
-
-- e458727: First release: a CLI (and MCP server) that drives a real, persistent browser via Playwright, letting an agent or human control any website from a genuinely logged-in browser session.
+## 0.1.6
 
 ### Patch Changes
 
-- Updated dependencies [e458727]
-  - @webhands/core@0.1.0
+- Updated dependencies [9de25a8]
+  - @webhands/core@0.2.0
 
 ## 0.1.5
 
@@ -18,9 +14,8 @@
 - Updated dependencies [656909e]
 - Updated dependencies [6d57871]
 - Updated dependencies [fcb1dda]
-- Updated dependencies [9de25a8]
 - Updated dependencies [c3bae5b]
-  - @webhands/core@1.0.0
+  - @webhands/core@0.2.0
 
 ## 0.1.4
 
