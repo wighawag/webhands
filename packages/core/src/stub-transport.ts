@@ -1,7 +1,7 @@
 import type {
 	Cookie,
 	OpenTarget,
-	Page,
+	WebHandsPage,
 	Session,
 	Snapshot,
 	SnapshotOptions,
@@ -13,7 +13,7 @@ import type {
  * A record of one verb call against the stub, for assertions in seam tests.
  */
 export interface StubCall {
-	readonly verb: keyof Page;
+	readonly verb: keyof WebHandsPage;
 	readonly args: readonly unknown[];
 }
 
@@ -53,7 +53,7 @@ export class StubTransport implements Transport {
 				? `stub://launch/${target.profile}`
 				: `stub://attach/${target.endpoint}`;
 
-		const page: Page = {
+		const page: WebHandsPage = {
 			async navigate(to: string): Promise<void> {
 				ensureOpen();
 				calls.push({verb: 'navigate', args: [to]});

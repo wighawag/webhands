@@ -2,8 +2,8 @@
  * The `cookies export` / `cookies import` verb's FILE FORMAT (PRD story 11).
  *
  * The seam already carries the transport-neutral cookie primitives:
- * {@link Page.cookies} reads the active context's cookies and
- * {@link Page.setCookies} loads cookies into it. The export/import VERB is built
+ * {@link WebHandsPage.cookies} reads the active context's cookies and
+ * {@link WebHandsPage.setCookies} loads cookies into it. The export/import VERB is built
  * ON TOP of those two methods (the forward-note: refine the existing seam,
  * do NOT add a parallel cookie path). What this module adds is only the
  * SERIALIZATION the verb needs to move a session to/from disk: how a
@@ -34,12 +34,12 @@ export const COOKIES_EXPORT_VERSION = 1 as const;
 export interface CookiesExport {
 	/** Format version (see {@link COOKIES_EXPORT_VERSION}). */
 	readonly version: typeof COOKIES_EXPORT_VERSION;
-	/** The exported cookies, exactly as the seam's {@link Page.cookies} returns them. */
+	/** The exported cookies, exactly as the seam's {@link WebHandsPage.cookies} returns them. */
 	readonly cookies: readonly Cookie[];
 }
 
 /**
- * Serialize the cookies read from the seam ({@link Page.cookies}) into the
+ * Serialize the cookies read from the seam ({@link WebHandsPage.cookies}) into the
  * export file's text. Pretty-printed JSON so a human can read/diff a backed-up
  * session. This is pure: it does NO disk I/O, so the caller (the CLI verb, a
  * test) owns WHERE the file lands — which is what lets a test keep its export
@@ -55,7 +55,7 @@ export function serializeCookies(cookies: readonly Cookie[]): string {
 
 /**
  * Parse an export file's text back into the cookies to hand to the seam's
- * {@link Page.setCookies} ({@link parse} is pure; the caller does the disk read
+ * {@link WebHandsPage.setCookies} ({@link parse} is pure; the caller does the disk read
  * and the `setCookies` call). Rejects anything that is not a recognised export
  * envelope so a corrupt or wrong-version file surfaces as a clear error rather
  * than silently importing nothing or a half-parsed list.

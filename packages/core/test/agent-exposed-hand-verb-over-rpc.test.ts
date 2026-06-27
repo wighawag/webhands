@@ -20,7 +20,7 @@ import {
 	startSessionServer,
 	type FixtureServer,
 	type Hand,
-	type Page,
+	type WebHandsPage,
 	type RunningSessionServer,
 	type SessionRpcRequest,
 } from '../src/index.js';
@@ -53,7 +53,7 @@ const RPC_HAND_ENTRY = join(HERE, 'fixtures', 'hands', 'rpc-hand.mjs');
 
 describe('hand-verb RPC dispatch (no browser)', () => {
 	/** A fake composed page: the seam built-ins plus a dynamic hand verb. */
-	function fakePageWithHandVerb(): Page {
+	function fakePageWithHandVerb(): WebHandsPage {
 		const page = {
 			async navigate() {},
 			async snapshot() {
@@ -79,7 +79,7 @@ describe('hand-verb RPC dispatch (no browser)', () => {
 				return {hello: `hi ${name}`};
 			},
 		};
-		return page as unknown as Page;
+		return page as unknown as WebHandsPage;
 	}
 
 	it('routes a `hand` request to the named verb and returns its serializable result', async () => {
@@ -96,7 +96,7 @@ describe('hand-verb RPC dispatch (no browser)', () => {
 			async boom(): Promise<never> {
 				throw new Error('kaboom');
 			},
-		} as unknown as Page;
+		} as unknown as WebHandsPage;
 		await expect(
 			applySessionRpc(page, {verb: 'hand', name: 'boom', args: []}),
 		).rejects.toThrow('kaboom');

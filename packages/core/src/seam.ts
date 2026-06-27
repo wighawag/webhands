@@ -74,7 +74,7 @@ export interface Cookie {
 	readonly sameSite?: 'Strict' | 'Lax' | 'None';
 }
 
-/** What to wait for in the {@link Page.wait} verb. */
+/** What to wait for in the {@link WebHandsPage.wait} verb. */
 export type WaitCondition =
 	| {readonly kind: 'timeout'; readonly ms: number}
 	| {readonly kind: 'locator'; readonly target: LocatorString}
@@ -93,7 +93,7 @@ export type WaitCondition =
  */
 export type SnapshotView = 'accessibility' | 'full';
 
-/** Options for the {@link Page.snapshot} verb. */
+/** Options for the {@link WebHandsPage.snapshot} verb. */
 export interface SnapshotOptions {
 	/**
 	 * When `true`, return the raw DOM (`view: 'full'`) instead of the default
@@ -132,7 +132,7 @@ export interface Snapshot {
  * The page-level verb surface. One method per verb in the domain glossary.
  * All element addressing flows through {@link LocatorString}.
  */
-export interface Page {
+export interface WebHandsPage {
 	/** Navigate the active page to a URL and let it settle. */
 	navigate(url: string): Promise<void>;
 	/**
@@ -196,14 +196,14 @@ export interface Page {
 }
 
 /**
- * A live browser session owning one active {@link Page}. The session lifetime
+ * A live browser session owning one active {@link WebHandsPage}. The session lifetime
  * spans from {@link Transport.open} to {@link Session.close}; it is the unit a
  * long-lived controller process keeps between CLI invocations (PRD
  * "session/daemon question").
  */
 export interface Session {
 	/** The active page the verbs act on. */
-	readonly page: Page;
+	readonly page: WebHandsPage;
 	/** Tear down the session and release the underlying browser resources. */
 	close(): Promise<void>;
 	/**

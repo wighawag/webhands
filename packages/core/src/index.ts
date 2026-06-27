@@ -3,7 +3,7 @@ export type {
 	Driver,
 	LocatorString,
 	OpenTarget,
-	Page,
+	WebHandsPage,
 	Session,
 	Snapshot,
 	SnapshotOptions,

@@ -1,5 +1,5 @@
 import {stat} from 'node:fs/promises';
-import {chromium, type BrowserContext, type Page as PwPage} from 'playwright';
+import {chromium, type BrowserContext, type Page} from 'playwright';
 import {MissingBrowserBinaryError, MissingProfileError} from './errors.js';
 import {composeWithHands, type Hand, type HandContext} from './hand-host.js';
 import {
@@ -128,7 +128,7 @@ function isMissingBrowserBinary(cause: unknown): boolean {
  */
 function makeSession(
 	context: BrowserContext,
-	pwPage: PwPage,
+	pwPage: Page,
 	extraHands: readonly Hand[],
 ): Session {
 	let closed = false;
