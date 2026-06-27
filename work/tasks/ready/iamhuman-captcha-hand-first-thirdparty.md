@@ -2,32 +2,9 @@
 title: Load iamhuman captcha-solving as the first third-party hand (Phase 2 proof)
 slug: iamhuman-captcha-hand-first-thirdparty
 prd: hands-pluggable-page-capabilities
-needsAnswers: true
 blockedBy: [third-party-hand-loading-and-public-api, agent-exposed-hand-verb-over-rpc]
 covers: [3, 4]
 ---
-
-<!-- open-questions -->
-<!--
-  TRANSIENT BLOCK — stripped by the apply rung on full resolution.
-  This task is blocked on the prd's deferred Q6 spike (an iamhuman-specific
-  risk). Resolve the spike, record the result, then clear `needsAnswers`.
--->
-
-## Open questions
-
-1. **Does Playwright actually reach + operate the nested cross-origin frame
-   case iamhuman needs?** (The prd's deferred Q6.) The captcha case assumes
-   Playwright can reach a WAF iframe containing a captcha iframe via
-   `frameLocator(...).frameLocator(...)`, perform coordinate clicks, and take a
-   screenshot, all through nested cross-origin frame boundaries. This is
-   UNVERIFIED. Run a throwaway spike to confirm before committing iamhuman's
-   approach. Per the prd, a spike FAILURE falsifies the captcha EXAMPLE, not the
-   hands abstraction (webhands still benefits from built-in hands + in-process
-   composition + any non-captcha third-party hand) — so on failure, record the
-   finding and reshape/withdraw this task rather than forcing the approach.
-
-<!-- /open-questions -->
 
 ## What to build
 
@@ -37,24 +14,42 @@ agent as a verb (Model B). This is the "user installed webhands, needs iamhuman"
 scenario resolved: the operator names iamhuman as a hand and their agent gains
 its verb, WITHOUT hand-wiring Playwright themselves.
 
-iamhuman's `PlaywrightDriver(page)`-style code plugs straight into the live
+iamhuman's `PlaywrightDriver(page)` code plugs straight into the live
 hand-context (`{pwPage, context, ensureOpen}`) — Model A in-process page access
-is exactly the foundation it needs (screenshots, coordinate mouse, nested
-`frameLocator`). Its agent-facing result is surfaced over the session RPC as a
+is exactly the foundation it needs (everything iamhuman's driver uses —
+`page.screenshot`, `page.mouse.*`, `page.evaluate`, `page.click`, AND
+`frameLocator`-chained traversal for the nested-frame case — is already on the
+live `pwPage`). Its agent-facing result is surfaced over the session RPC as a
 serializable value (Model B).
+
+Q6 STATUS (see `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md`):
+the Playwright mechanism is verified — both absolute-coordinate mouse+screenshot
+AND `frameLocator(WAF).frameLocator(hcaptcha)` DOM read/click two cross-origin
+frames deep work on a synthetic tree, so the approach is NOT foreclosed by a
+Playwright limitation. STILL OPEN (iamhuman-owned, does not block this task): the
+end-to-end on a REAL Imperva page (anti-bot detection + real frame addressing +
+out-of-band sitekey), which only a live-Imperva spike can close. THEREFORE scope
+this task's proof to a STANDARD direct hCaptcha embed (sitekey scrapeable, no
+nested frames) — which exercises the load + Model-B wiring fully without
+depending on the unverified Imperva end-to-end. The Imperva end-to-end proof is a
+named follow-up, not part of this task's done.
 
 The captcha LOGIC lives in iamhuman, not in this repo (prd Out of Scope); this
 task is the LOADING + WIRING + PROOF that a real third-party hand composes
 through the host and reaches the agent.
 
-This task is `needsAnswers: true` because the iamhuman approach hinges on the
-unresolved Q6 spike (see Open questions) — flag, don't guess.
-
 ## Acceptance criteria
 
-- [ ] (Gate) The Q6 spike is run and recorded: a `work/notes/findings/` doc
-      captures whether Playwright reaches the nested cross-origin frame case
-      (with its `source:` provenance). `needsAnswers` is cleared only after this.
+- [ ] (Q6 — PARTIALLY resolved; recorded in
+      `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md`)
+      The Playwright frame MECHANISM is spike-verified (coordinate+screenshot AND
+      `frameLocator`-chained read/click two cross-origin frames deep), so the
+      approach is not foreclosed and webhands' `pwPage` exposes all of it. The
+      REAL-Imperva end-to-end stays an iamhuman-owned open spike and is OUT of
+      this task's scope.
+- [ ] This task's captcha proof targets a STANDARD direct hCaptcha embed (no
+      nested frames, sitekey scrapeable); it does NOT depend on the unverified
+      Imperva end-to-end.
 - [ ] iamhuman is loaded as a third-party hand via the explicit declarative
       mechanism (named in config, pinned entry) and plugs into the same host the
       built-in hands use.
@@ -63,9 +58,7 @@ unresolved Q6 spike (see Open questions) — flag, don't guess.
       live page.
 - [ ] The captcha logic is NOT implemented in this repo (it lives in iamhuman);
       this task only loads + wires + proves.
-- [ ] Tests cover the wiring path (mirror the repo's test style); if the spike
-      shows Playwright cannot reach the case, this task is reshaped/withdrawn
-      rather than forcing the approach (record the decision).
+- [ ] Tests cover the wiring path (mirror the repo's test style).
 - [ ] A changeset is added (`pnpm changeset`) per the repo convention.
 - [ ] Shared-write isolation: tests point any profile/config/endpoint paths at
       temp/scratch locations and assert the real ones are untouched.
@@ -83,17 +76,21 @@ unresolved Q6 spike (see Open questions) — flag, don't guess.
 > its capability to the agent as a verb — the end-to-end Phase-2 proof of the
 > "hands" prd (`work/prds/tasked/hands-pluggable-page-capabilities.md`).
 >
-> DO NOT START BUILDING until the open question is resolved. This task is
-> `needsAnswers: true`: it is blocked on the prd's deferred Q6 spike (an
-> iamhuman-specific risk, NOT a hands-primitive risk). FIRST run a throwaway
-> spike to confirm Playwright can reach + operate the nested cross-origin frame
-> case iamhuman needs (a WAF iframe containing a captcha iframe, via
-> `frameLocator(...).frameLocator(...)` + coordinate clicks + screenshot).
-> Record the result as a `work/notes/findings/<slug>.md` with a `source:`
-> (captured trace / dated observation). If the spike FAILS, that falsifies the
-> captcha EXAMPLE, not the hands abstraction — reshape or withdraw this task and
-> surface that to a human; do not force the approach. Only after the spike
-> passes and a human clears `needsAnswers` should you build the wiring.
+> Q6 IS PARTIALLY RESOLVED (this task is unblocked but scoped): read
+> `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md` FIRST,
+> and iamhuman's own `work/notes/findings/imperva-nests-hcaptcha-in-cross-origin-iframes.md`.
+> Key results: (1) On Imperva, hCaptcha is nested TWO cross-origin frames deep;
+> the tiles + token sink are unreachable from the host document and the sitekey
+> is NOT scrapeable (it is out-of-band). (2) Playwright's frame MECHANISM is
+> spike-verified — BOTH absolute-coordinate mouse+screenshot AND
+> `frameLocator(WAF).frameLocator(hcaptcha)` DOM read/click two cross-origin
+> frames deep work — so the live `pwPage` the hand-context provides exposes
+> everything iamhuman needs. (3) STILL OPEN (iamhuman-owned, NOT this task's
+> blocker): the end-to-end on a REAL Imperva page (anti-bot + real frame
+> addressing). THEREFORE scope THIS task's captcha proof to a STANDARD direct
+> hCaptcha embed (sitekey scrapeable, no nested frames); leave the Imperva
+> end-to-end as a named iamhuman-side follow-up. Do not assume the sitekey is
+> scrapeable in general — on Imperva it is out-of-band.
 >
 > FIRST also check against reality: read the landed
 > `third-party-hand-loading-and-public-api` (public `Hand`/`HandContext` +
@@ -103,13 +100,14 @@ unresolved Q6 spike (see Open questions) — flag, don't guess.
 >
 > Domain vocabulary: a **hand** closes over the live Page (`{pwPage, context,
 > ensureOpen}`); **Model A** is in-process page access (iamhuman's
-> `PlaywrightDriver(page)` plugs straight in — it needs screenshots, coordinate
-> mouse, nested `frameLocator`, none expressible as a locator verb); **Model B**
+> `PlaywrightDriver(page)` plugs straight in — it uses `page.screenshot`,
+> `page.mouse.*`, `page.evaluate`, `page.click`, and for nested frames
+> `frameLocator`-chained traversal, all on the live `pwPage`); **Model B**
 > surfaces a hand's capability to the agent as a serializable verb over the RPC.
 > The captcha logic lives in iamhuman (prd Out of Scope) — this task is loading +
-> wiring + proof only.
+> wiring + proof only, scoped to a standard direct hCaptcha embed.
 >
-> What "done" means (post-spike): iamhuman loads as a third-party hand via the
+> What "done" means: iamhuman loads as a third-party hand via the
 > explicit declarative mechanism and plugs into the shared host; its capability
 > is invokable by the agent as a verb returning a serializable result; the
 > captcha logic stays in iamhuman; tests cover the wiring; a changeset is added;
