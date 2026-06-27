@@ -1,5 +1,16 @@
 # webhands
 
+## 0.1.5
+
+### Patch Changes
+
+- Updated dependencies [656909e]
+- Updated dependencies [6d57871]
+- Updated dependencies [fcb1dda]
+- Updated dependencies [9de25a8]
+- Updated dependencies [c3bae5b]
+  - @webhands/core@1.0.0
+
 ## 0.1.4
 
 ### Patch Changes

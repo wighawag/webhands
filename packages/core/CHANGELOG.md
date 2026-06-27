@@ -1,5 +1,85 @@
 # @webhands/core
 
+## 1.0.0
+
+### Major Changes
+
+- 9de25a8: BREAKING: rename the verb-level transport seam type `Page` to `WebHandsPage`
+  (ADR-0008). The exported `Page` type is gone; import `WebHandsPage` instead.
+  This is a NAME-ONLY change: the eight verbs
+  (`navigate`/`snapshot`/`click`/`type`/`eval`/`wait`/`cookies`/`setCookies`), the
+  branded-locator-string addressing, the session RPC wire shape, the hand contract
+  semantics, and the trust model are all byte-for-byte unchanged.
+
+  The seam type's old name collided with Playwright's own `Page`, which forced
+  three modules (the hand host and both Playwright transports) to import
+  Playwright's page as `type Page as PwPage` purely to dodge the clash, and made
+  `HandContribution.verbs: Partial<Page>` read as a partial of Playwright's huge
+  `Page` rather than a subset of webhands' eight seam verbs. With the seam type
+  renamed, those `PwPage` aliases are dropped (Playwright's `Page` is imported
+  directly) and the seam meaning is unambiguous.
+
+### Minor Changes
+
+- 656909e: Surface a hand-contributed verb to the AGENT over the long-lived session RPC
+  (Phase 2, Model B of the "hands" prd; ADR-0007). A dynamically-loaded hand's
+  verb is now invokable over the wire, so the agent gains a new tool WITHOUT ever
+  holding a live page handle: the served process runs the hand against its own
+  live page and returns a serializable result.
+
+  The eight built-in verbs stay a CLOSED `SessionRpcRequest` union (now named
+  `SessionRpcBuiltInRequest`), the single 1:1 source of truth for the built-in
+  surface. A hand verb \u2014 whose name `core` does not know at compile time \u2014 crosses
+  as one generic `SessionRpcHandRequest` variant (`{verb: 'hand', name, args}`)
+  that names the contributed verb at runtime, the exact wire parallel of how a
+  hand verb composes into the page object. `applySessionRpc` dispatches it to the
+  named verb on the composed page; `callHandVerb` is the client mirror, and
+  `connectRemoteSession(url, handVerbs)` attaches the loaded hand verbs to the
+  remote page as dynamic methods.
+
+  The serializable-only boundary (prd's resolved Q3) is enforced by convention +
+  types, NOT a blanket runtime clone (which would corrupt legitimate in-process
+  Model A returns); a host-side runtime clone of agent-verb results is noted as
+  available future hardening for untrusted hands. A page/in-hand throw rejects
+  faithfully on the client, exactly as the `eval` RPC path does. The in-process
+  Model A path is unaffected.
+
+- c3bae5b: Open the hand-host to THIRD-PARTY hands (Phase 2). The `Hand`, `HandContext`,
+  and `HandContribution` types are now PUBLIC (exported from the package entry
+  point) as the stable third-party authoring contract: a hand receives
+  `{pwPage, context, ensureOpen}` and contributes named verbs plus an optional
+  `dispose`. A new explicit, declarative loading mechanism (modeled on pi's
+  `packages[]`) loads a third-party hand ONLY when it is NAMED in
+  `<home>/hands.json` with a PINNED entry point (`readHandsConfig` / `loadHands` /
+  `HandsConfig` / `HandEntry` / `HandLoadError`); there is no auto-discovery, no
+  `node_modules` scan, and no convention-inferred entry, and install is separate
+  from load (naming a hand is the trust act, an installed-but-not-named hand never
+  loads). Both Playwright transports now accept the loaded hands and compose them
+  into the session `Page` through the same host the built-ins use, so a
+  third-party hand's verbs compose alongside the built-in verbs. Adds ADR-0007
+  recording the public-contract decision, the explicit-declarative loading model,
+  and the "loading a hand == trusting an in-process npm dependency" trust framing.
+
+### Patch Changes
+
+- 6d57871: Internal: introduce a package-private hand-host primitive and refactor the eight
+  built-in verbs (`navigate`, `snapshot`, `click`, `type`, `eval`, `wait`,
+  `cookies`, `setCookies`) into built-in hands composed over it. Both the launch
+  and attach transports now share this single verb composition instead of each
+  carrying a near-identical page-object literal; each transport keeps its own
+  session lifecycle (launch kills the spawned browser, attach detaches without
+  killing the user's browser). No public API change and no behavior change (the
+  existing verb test suite passes unmodified); the `Hand`/`HandContext` types stay
+  package-internal until Phase 2.
+- fcb1dda: Docs: add ADR-0006 recording the Phase-1 decision to refactor webhands' verbs
+  onto an INTERNAL hand-host primitive (behavior-preserving, no public-seam
+  change; `Hand`/`HandContext` package-internal until Phase 2; hands are trusted,
+  local, in-process peers with zero isolation), which refines ADR-0003/0004
+  rather than contradicting them (the live Playwright page stays in-process and
+  never crosses the seam). The public hand contract is called out as a separate
+  Phase-2 decision. Also pins `hand` in `CONTEXT.md` as a third axis orthogonal
+  to `transport` and `verb`, with the "not a verb / not a transport" guards.
+
 ## 0.1.0
 
 ### Minor Changes
