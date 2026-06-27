@@ -1,6 +1,6 @@
 {
 	"name": "webhands",
-	"version": "0.1.5",
+	"version": "0.0.0",
 	"description": "A CLI (and MCP server) that drives a real, persistent browser via Playwright, letting an agent or human control any website from a genuinely logged-in browser session.",
 	"keywords": [
 		"browser",
@@ -52,8 +52,8 @@
 		"vitest": "^4.0.18"
 	},
 	"scripts": {
-		"prepublishOnly": "cp ../../README.md ./README.md && cp ../../LICENSE ./LICENSE",
 		"build": "tsc",
+		"prepack": "node ../../scripts/copy-publish-assets.mjs",
 		"dev": "as-soon -w src pnpm build",
 		"test": "vitest run",
 		"test:watch": "vitest"

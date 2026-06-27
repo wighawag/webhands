@@ -1,6 +1,6 @@
 {
 	"name": "@webhands/core",
-	"version": "1.0.0",
+	"version": "0.0.0",
 	"description": "Core library for webhands: drives a real, persistent browser via Playwright.",
 	"keywords": [
 		"browser",
@@ -30,7 +30,9 @@
 	},
 	"files": [
 		"dist",
-		"src"
+		"src",
+		"README.md",
+		"LICENSE"
 	],
 	"dependencies": {
 		"playwright": "1.61.1"
@@ -44,6 +46,7 @@
 	},
 	"scripts": {
 		"build": "tsc",
+		"prepack": "node ../../scripts/copy-publish-assets.mjs",
 		"dev": "as-soon -w src pnpm build",
 		"test": "vitest run",
 		"test:watch": "vitest"
