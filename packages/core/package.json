@@ -1,6 +1,6 @@
 {
 	"name": "@webhands/core",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Core library for webhands: drives a real, persistent browser via Playwright.",
 	"keywords": [
 		"browser",
