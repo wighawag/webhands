@@ -27,12 +27,21 @@ the Playwright mechanism is verified — both absolute-coordinate mouse+screensh
 AND `frameLocator(WAF).frameLocator(hcaptcha)` DOM read/click two cross-origin
 frames deep work on a synthetic tree, so the approach is NOT foreclosed by a
 Playwright limitation. STILL OPEN (iamhuman-owned, does not block this task): the
-end-to-end on a REAL Imperva page (anti-bot detection + real frame addressing +
-out-of-band sitekey), which only a live-Imperva spike can close. THEREFORE scope
-this task's proof to a STANDARD direct hCaptcha embed (sitekey scrapeable, no
-nested frames) — which exercises the load + Model-B wiring fully without
-depending on the unverified Imperva end-to-end. The Imperva end-to-end proof is a
-named follow-up, not part of this task's done.
+live-Imperva END-TO-END — whether a CDP-driven Chromium is served the same DOM
+(vs. an anti-bot block) and whether inject-token + fire-callback satisfies live
+Imperva server-side validation — which only a live-Imperva spike can close. (The
+Imperva sitekey itself is PAGE-READABLE: per iamhuman's finding
+`work/notes/findings/imperva-nests-hcaptcha-in-cross-origin-iframes.md` ##
+Update 2026-06-27 — corrected per-frame probe on `imperva.tender-lab.dev`,
+2026-06-27 — the sitekey is scrapeable from the same-origin `#main-iframe` as
+`div.h-captcha[data-sitekey]` and in the hCaptcha iframe `src` hashes; the
+earlier "out-of-band sitekey" claim was a too-shallow top-frame probe and is
+no longer true.) THEREFORE scope this task's proof to a STANDARD direct
+hCaptcha embed (no nested frames) — which exercises the load + Model-B wiring
+fully without depending on the unverified Imperva end-to-end — because the open
+spike is the live-Imperva end-to-end (anti-bot detection + server-side token
+acceptance), NOT sitekey acquisition. The Imperva end-to-end proof is a named
+follow-up, not part of this task's done.
 
 The captcha LOGIC lives in iamhuman, not in this repo (prd Out of Scope); this
 task is the LOADING + WIRING + PROOF that a real third-party hand composes
@@ -78,19 +87,27 @@ through the host and reaches the agent.
 >
 > Q6 IS PARTIALLY RESOLVED (this task is unblocked but scoped): read
 > `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md` FIRST,
-> and iamhuman's own `work/notes/findings/imperva-nests-hcaptcha-in-cross-origin-iframes.md`.
-> Key results: (1) On Imperva, hCaptcha is nested TWO cross-origin frames deep;
-> the tiles + token sink are unreachable from the host document and the sitekey
-> is NOT scrapeable (it is out-of-band). (2) Playwright's frame MECHANISM is
+> and iamhuman's own `work/notes/findings/imperva-nests-hcaptcha-in-cross-origin-iframes.md`
+> — specifically its ## Update 2026-06-27 (the correction; corrected per-frame
+> probe on `imperva.tender-lab.dev`, 2026-06-27).
+> Key results: (1) On Imperva, hCaptcha tiles are nested TWO cross-origin frames
+> deep and unreachable from the host document; BUT the sitekey IS page-readable
+> — it is scrapeable from the same-origin `#main-iframe` (as
+> `div.h-captcha[data-sitekey]` and in the hCaptcha iframe `src` hashes), so the
+> earlier "sitekey out-of-band on Imperva" claim (a too-shallow top-frame probe)
+> no longer holds. (2) Playwright's frame MECHANISM is
 > spike-verified — BOTH absolute-coordinate mouse+screenshot AND
 > `frameLocator(WAF).frameLocator(hcaptcha)` DOM read/click two cross-origin
 > frames deep work — so the live `pwPage` the hand-context provides exposes
 > everything iamhuman needs. (3) STILL OPEN (iamhuman-owned, NOT this task's
-> blocker): the end-to-end on a REAL Imperva page (anti-bot + real frame
-> addressing). THEREFORE scope THIS task's captcha proof to a STANDARD direct
-> hCaptcha embed (sitekey scrapeable, no nested frames); leave the Imperva
-> end-to-end as a named iamhuman-side follow-up. Do not assume the sitekey is
-> scrapeable in general — on Imperva it is out-of-band.
+> blocker): the live-Imperva END-TO-END — whether a CDP-driven Chromium is served
+> the same DOM (vs. an anti-bot block) and whether inject-token + fire-callback
+> satisfies live Imperva server-side validation, which a static capture cannot
+> close. THEREFORE scope THIS task's captcha proof to a STANDARD direct
+> hCaptcha embed (no nested frames); leave the live-Imperva end-to-end as a named
+> iamhuman-side follow-up. The open spike is the live end-to-end, NOT sitekey
+> acquisition — on Imperva the sitekey is page-readable from the same-origin
+> `#main-iframe`.
 >
 > FIRST also check against reality: read the landed
 > `third-party-hand-loading-and-public-api` (public `Hand`/`HandContext` +
