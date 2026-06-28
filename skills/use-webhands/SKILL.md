@@ -102,8 +102,20 @@ When that happens, the fix is NOT a trick — it is to put a human in the loop:
    persists for later headless runs.)
 3. Tell the human what you need cleared, WAIT for their go-ahead, then `snapshot`.
 
-This tool deliberately does not bypass logins or solve CAPTCHAs. The human clears
-them; you drive afterwards.
+webhands ships NO captcha solver and NO provider key, and it does not bypass
+logins. For an ordinary anti-bot wall the simplest path is the human-in-the-loop
+above: the human clears it once, you drive afterwards. But the verb surface no
+longer STANDS IN THE WAY if YOU bring your own captcha-provider key: a capable
+agent can get past a captcha with verbs alone, either family. Token-harvest: read
+the sitekey with a frame-aware `query`
+(`query "frameLocator('#main-iframe').locator('.h-captcha')" --attr data-sitekey`),
+get a token from your provider, `type` it into the response sink through the same
+frame hop, then fire the callback with `eval`. Vision/tile: `screenshot --scope
+element --locator <widget>` to see the grid, then `mouse --action click --x <n>
+--y <n>` at VIEWPORT coordinates (the viewport screenshot pixel maps directly to
+the `mouse` coordinate). webhands is capable, not a solver: you supply the key and
+the logic. For the EASY path, a third-party hand (`iamhuman`) makes it one call
+instead of several verb turns.
 
 ## Guardrails (READ — this is a personal-use tool)
 
