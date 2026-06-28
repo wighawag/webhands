@@ -147,6 +147,19 @@ describe('incur CLI wiring', () => {
 			{argv: ['click'], wantArgs: true, outputKeys: ['ok', 'verb']},
 			{argv: ['type'], wantArgs: true, outputKeys: ['ok', 'verb']},
 			{argv: ['eval'], wantArgs: true, outputKeys: ['ok', 'verb', 'result']},
+			{argv: ['query'], wantArgs: true, outputKeys: ['ok', 'verb', 'rows']},
+			{argv: ['count'], wantArgs: true, outputKeys: ['ok', 'verb', 'count']},
+			{argv: ['exists'], wantArgs: true, outputKeys: ['ok', 'verb', 'exists']},
+			{
+				argv: ['is-visible'],
+				wantArgs: true,
+				outputKeys: ['ok', 'verb', 'visible'],
+			},
+			{
+				argv: ['get-attribute'],
+				wantArgs: true,
+				outputKeys: ['ok', 'verb', 'name', 'value'],
+			},
 			{argv: ['wait'], wantArgs: false, outputKeys: ['ok', 'verb', 'kind']},
 			{
 				argv: ['setup-profile'],
@@ -193,6 +206,83 @@ describe('incur CLI wiring', () => {
 				}
 			});
 		}
+	});
+
+	describe('Tier-1 query + state verb wiring (prd broaden-agent-verb-surface, R5)', () => {
+		it('forwards REPEATABLE --attr/--prop/--pw flags (not comma-joined) into the seam query call', async () => {
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'query',
+				`page.locator('.result')`,
+				'--attr',
+				'href',
+				'--attr',
+				'data-sitekey',
+				'--prop',
+				'innerText',
+				'--pw',
+				'visible',
+				'--limit',
+				'5',
+			]);
+			expect(env.ok).toBe(true);
+			expect(env.data).toMatchObject({verb: 'query'});
+			const call = transport.calls.find((c) => c.verb === 'query');
+			expect(call).toBeDefined();
+			expect(call?.args[0]).toBe(`page.locator('.result')`);
+			// Each repeated flag is a SEPARATE array element (comma is never a delimiter).
+			expect(call?.args[1]).toEqual({
+				attrs: ['href', 'data-sitekey'],
+				props: ['innerText'],
+				pw: ['visible'],
+				limit: 5,
+			});
+		});
+
+		it('renders the query rows in the structured output envelope', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, ['query', `page.locator('.x')`]);
+			expect(env.ok).toBe(true);
+			// The stub returns no rows, but the declared shape is present.
+			expect(env.data).toMatchObject({verb: 'query', rows: []});
+		});
+
+		it('count/exists/is-visible/get-attribute each return their tiny structured result', async () => {
+			const {provider} = stubProvider();
+			expect(
+				(await runEnvelope(provider, ['count', `page.locator('.x')`])).data,
+			).toMatchObject({verb: 'count', count: 0});
+			expect(
+				(await runEnvelope(provider, ['exists', `page.locator('.x')`])).data,
+			).toMatchObject({verb: 'exists', exists: false});
+			expect(
+				(await runEnvelope(provider, ['is-visible', `page.locator('.x')`]))
+					.data,
+			).toMatchObject({verb: 'isVisible', visible: false});
+			const attr = await runEnvelope(provider, [
+				'get-attribute',
+				`page.locator('.x')`,
+				'--name',
+				'data-sitekey',
+			]);
+			expect(attr.data).toMatchObject({
+				verb: 'getAttribute',
+				name: 'data-sitekey',
+				value: null,
+			});
+		});
+
+		it('get-attribute forwards the --name into the seam getAttribute call', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'get-attribute',
+				`page.locator('.x')`,
+				'--name',
+				'href',
+			]);
+			const call = transport.calls.find((c) => c.verb === 'getAttribute');
+			expect(call?.args).toEqual([`page.locator('.x')`, 'href']);
+		});
 	});
 
 	describe('structured output envelope (story 12)', () => {
@@ -323,6 +413,11 @@ describe('incur CLI wiring', () => {
 				'click',
 				'type',
 				'eval',
+				'query',
+				'count',
+				'exists',
+				'is-visible',
+				'get-attribute',
 				'wait',
 				'cookies export',
 				'cookies import',
@@ -384,6 +479,11 @@ describe('incur CLI wiring', () => {
 					'click',
 					'type',
 					'eval',
+					'query',
+					'count',
+					'exists',
+					'is-visible',
+					'get-attribute',
 					'wait',
 					'launch',
 					'attach',
@@ -662,6 +762,21 @@ describe('incur CLI wiring', () => {
 					return [];
 				},
 				async setCookies() {},
+				async query() {
+					return [];
+				},
+				async count() {
+					return 0;
+				},
+				async exists() {
+					return false;
+				},
+				async isVisible() {
+					return false;
+				},
+				async getAttribute() {
+					return null;
+				},
 			};
 			const session: Session = {
 				page,
@@ -778,6 +893,21 @@ describe('incur CLI wiring', () => {
 						return [];
 					},
 					async setCookies() {},
+					async query() {
+						return [];
+					},
+					async count() {
+						return 0;
+					},
+					async exists() {
+						return false;
+					},
+					async isVisible() {
+						return false;
+					},
+					async getAttribute() {
+						return null;
+					},
 				},
 				async close() {
 					closed = true;

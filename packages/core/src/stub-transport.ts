@@ -2,6 +2,8 @@ import type {
 	Cookie,
 	OpenTarget,
 	WebHandsPage,
+	QueryOptions,
+	QueryRow,
 	Session,
 	Snapshot,
 	SnapshotOptions,
@@ -94,6 +96,31 @@ export class StubTransport implements Transport {
 			async setCookies(cookies): Promise<void> {
 				ensureOpen();
 				calls.push({verb: 'setCookies', args: [cookies]});
+			},
+			async query(t, options?: QueryOptions): Promise<QueryRow[]> {
+				ensureOpen();
+				calls.push({verb: 'query', args: [t, options]});
+				return [];
+			},
+			async count(t): Promise<number> {
+				ensureOpen();
+				calls.push({verb: 'count', args: [t]});
+				return 0;
+			},
+			async exists(t): Promise<boolean> {
+				ensureOpen();
+				calls.push({verb: 'exists', args: [t]});
+				return false;
+			},
+			async isVisible(t): Promise<boolean> {
+				ensureOpen();
+				calls.push({verb: 'isVisible', args: [t]});
+				return false;
+			},
+			async getAttribute(t, name): Promise<string | null> {
+				ensureOpen();
+				calls.push({verb: 'getAttribute', args: [t, name]});
+				return null;
 			},
 		};
 

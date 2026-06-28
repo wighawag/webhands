@@ -260,6 +260,11 @@ function nextAct() {
 				'Type into an element addressed by a Playwright locator string.',
 		},
 		{
+			command: 'query',
+			description:
+				'Read structured data (attrs/props/visibility) out of matched elements.',
+		},
+		{
 			command: 'eval',
 			description: 'Run JavaScript in the page as an escape hatch.',
 		},
@@ -733,6 +738,223 @@ export function createCli(deps: CliDeps = {}) {
 					const result = await s.page.eval(c.args.expression);
 					return c.ok(
 						{ok: true as const, verb: 'eval' as const, result},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	// --- Tier-1 read verbs: query + state shorthands (prd broaden-agent-verb-
+	// surface, R2/R5). Each is its own incur command, so one definition yields
+	// both the CLI command and the MCP tool. List flags (--attr/--prop/--pw) are
+	// REPEATABLE, not comma-joined (R5): incur arrays collect each occurrence.
+	// There is NO --frame flag (frame scope rides IN the locator string, R1).
+
+	cli.command('query', {
+		description:
+			'Read structured data out of the element(s) a Playwright locator matches: ' +
+			'one row per match carrying exactly the requested DOM attributes (--attr), ' +
+			'live JS properties (--prop), and Playwright extras (--pw visible|bbox).',
+		args: z.object({
+			locator: z
+				.string()
+				.describe(
+					'A raw Playwright locator expression addressing the element(s) to read. ' +
+						"Frame scope rides in the string, e.g. frameLocator('#f').locator('#x').",
+				),
+		}),
+		options: connectionOptions.extend({
+			attr: z
+				.array(z.string())
+				.default([])
+				.describe(
+					'A DOM ATTRIBUTE to read (getAttribute), e.g. href. Repeatable.',
+				),
+			prop: z
+				.array(z.string())
+				.default([])
+				.describe(
+					'A live JS PROPERTY to read (el[name]), e.g. innerText. Repeatable.',
+				),
+			pw: z
+				.array(z.enum(['visible', 'bbox']))
+				.default([])
+				.describe(
+					'A Playwright extra to include: visible (actionability-grade) or ' +
+						'bbox (viewport-pixel box). Repeatable.',
+				),
+			limit: z.coerce
+				.number()
+				.optional()
+				.describe('Bound the number of rows returned.'),
+		}),
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('query'),
+			rows: z
+				.array(
+					z.object({
+						attrs: z.record(z.string(), z.string().nullable()).optional(),
+						props: z.record(z.string(), z.unknown()).optional(),
+						pw: z
+							.object({
+								visible: z.boolean().optional(),
+								bbox: z
+									.object({
+										x: z.number(),
+										y: z.number(),
+										width: z.number(),
+										height: z.number(),
+									})
+									.nullable()
+									.optional(),
+							})
+							.optional(),
+					}),
+				)
+				.describe(
+					'One row per matched element, each carrying the asked fields.',
+				),
+		}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const rows = await s.page.query(locator(c.args.locator), {
+						attrs: c.options.attr,
+						props: c.options.prop,
+						pw: c.options.pw,
+						...(c.options.limit !== undefined ? {limit: c.options.limit} : {}),
+					});
+					return c.ok(
+						{ok: true as const, verb: 'query' as const, rows},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('count', {
+		description:
+			'Count how many elements a Playwright locator matches (a match-set size).',
+		args: z.object({
+			locator: z.string().describe('A raw Playwright locator expression.'),
+		}),
+		options: connectionOptions,
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('count'),
+			count: z.number().describe('How many elements matched.'),
+		}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const count = await s.page.count(locator(c.args.locator));
+					return c.ok(
+						{ok: true as const, verb: 'count' as const, count},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('exists', {
+		description:
+			'Whether a Playwright locator matches at least one element (count > 0).',
+		args: z.object({
+			locator: z.string().describe('A raw Playwright locator expression.'),
+		}),
+		options: connectionOptions,
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('exists'),
+			exists: z.boolean().describe('Whether any element matched.'),
+		}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const exists = await s.page.exists(locator(c.args.locator));
+					return c.ok(
+						{ok: true as const, verb: 'exists' as const, exists},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('is-visible', {
+		description:
+			'Whether the first match is actionability-grade visible (a present-but-hidden ' +
+			'element reads false).',
+		args: z.object({
+			locator: z.string().describe('A raw Playwright locator expression.'),
+		}),
+		options: connectionOptions,
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('isVisible'),
+			visible: z.boolean().describe("The first match's visibility."),
+		}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const visible = await s.page.isVisible(locator(c.args.locator));
+					return c.ok(
+						{ok: true as const, verb: 'isVisible' as const, visible},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('get-attribute', {
+		description:
+			'Read a single DOM attribute off the first match (null if absent or no match).',
+		args: z.object({
+			locator: z.string().describe('A raw Playwright locator expression.'),
+		}),
+		options: connectionOptions.extend({
+			name: z
+				.string()
+				.describe('The DOM attribute name to read (e.g. href, data-sitekey).'),
+		}),
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('getAttribute'),
+			name: z.string().describe('The attribute that was read.'),
+			value: z
+				.string()
+				.nullable()
+				.describe('The attribute value, or null if absent / no match.'),
+		}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const value = await s.page.getAttribute(
+						locator(c.args.locator),
+						c.options.name,
+					);
+					return c.ok(
+						{
+							ok: true as const,
+							verb: 'getAttribute' as const,
+							name: c.options.name,
+							value,
+						},
 						{cta: {commands: [nextSnapshot()]}},
 					);
 				});

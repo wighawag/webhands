@@ -1,7 +1,15 @@
-import {errors as pwErrors, type BrowserContext, type Page} from 'playwright';
+import {
+	errors as pwErrors,
+	type BrowserContext,
+	type Locator,
+	type Page,
+} from 'playwright';
 import type {
+	BoundingBox,
 	Cookie,
 	WebHandsPage,
+	QueryOptions,
+	QueryRow,
 	Snapshot,
 	SnapshotOptions,
 	WaitCondition,
@@ -172,6 +180,11 @@ const REQUIRED_VERBS = [
 	'wait',
 	'cookies',
 	'setCookies',
+	'query',
+	'count',
+	'exists',
+	'isVisible',
+	'getAttribute',
 ] as const satisfies ReadonlyArray<keyof WebHandsPage>;
 
 /**
@@ -331,7 +344,56 @@ export const cookiesHand: Hand = ({context, ensureOpen}) => ({
 });
 
 /**
- * webhands' eight built-in verbs as built-in hands, in composition order. Both
+ * The Tier-1 read verbs (prd `broaden-agent-verb-surface`, R2): the `query`
+ * extraction verb plus the thin state shorthands `count` / `exists` /
+ * `isVisible` / `getAttribute`. All five address element(s) by the SAME raw
+ * Playwright locator expression the other verbs use, resolved through the ONE
+ * existing {@link resolveLocator} (so a `frameLocator(...)` same-origin frame
+ * hop in the string Just Works, and there is no parallel addressing scheme —
+ * R1). They are pure READS: no page mutation.
+ *
+ * `query` returns one row per match carrying EXACTLY the requested fields (R2);
+ * the state verbs are computed over the same machinery (see {@link queryRows}
+ * and the per-verb bodies). Read values cross by structured clone, the same
+ * contract as `eval` (ADR-0003).
+ */
+export const queryHand: Hand = ({pwPage, ensureOpen}) => ({
+	verbs: {
+		async query(target, options?: QueryOptions): Promise<QueryRow[]> {
+			ensureOpen();
+			return queryRows(pwPage, target, options);
+		},
+		async count(target): Promise<number> {
+			ensureOpen();
+			return resolveLocator(pwPage, target).count();
+		},
+		async exists(target): Promise<boolean> {
+			ensureOpen();
+			return (await resolveLocator(pwPage, target).count()) > 0;
+		},
+		async isVisible(target): Promise<boolean> {
+			ensureOpen();
+			// The FIRST match's actionability-grade visibility. `.first().isVisible()`
+			// returns `false` for an ABSENT element too (no match cannot be visible),
+			// which is the loud, correct answer for the absent case.
+			return resolveLocator(pwPage, target).first().isVisible();
+		},
+		async getAttribute(target, name: string): Promise<string | null> {
+			ensureOpen();
+			// The FIRST match's DOM attribute. `.first().getAttribute()` resolves to
+			// `null` for an absent attribute AND surfaces a clean miss for an absent
+			// element (it would otherwise time out); we treat "no element" as `null`
+			// (there is no attribute value to read) rather than hanging.
+			if ((await resolveLocator(pwPage, target).count()) === 0) {
+				return null;
+			}
+			return resolveLocator(pwPage, target).first().getAttribute(name);
+		},
+	},
+});
+
+/**
+ * webhands' built-in verbs as built-in hands, in composition order. Both
  * Playwright transports compose THIS exact set, so the verb surface is
  * identical across launch and attach (the only legitimate difference is the
  * per-transport SESSION LIFECYCLE, which is not a hand's concern).
@@ -343,6 +405,7 @@ export const BUILT_IN_HANDS: readonly Hand[] = [
 	evalHand,
 	waitHand,
 	cookiesHand,
+	queryHand,
 ];
 
 /**
@@ -476,6 +539,125 @@ export async function clickLocator(
 		// the click without actionability checks, the prd's explicit escape path.
 		await target.dispatchEvent('click', {timeout: NORMAL_CLICK_TIMEOUT_MS});
 	}
+}
+
+/**
+ * Run the `query` verb (prd `broaden-agent-verb-surface`, R2) against a
+ * Playwright page: resolve the locator EXPRESSION through the SINGLE existing
+ * {@link resolveLocator} (so a same-origin `frameLocator(...)` hop in the string
+ * Just Works), then return ONE ROW PER MATCH carrying EXACTLY the requested
+ * fields and nothing else.
+ *
+ * The split is LOUD and never auto-detected:
+ * - `attrs[name]` is the element's `getAttribute(name)` (the markup value;
+ *   `null` if absent).
+ * - `props[name]` is the live `el[name]` JS property (runtime state), read in
+ *   one page-world `evaluate` over the element so the value is structurally
+ *   cloned out by VALUE — the SAME serialization contract `eval` documents
+ *   (ADR-0003: no Playwright/CDP type leak; richer than JSON).
+ * - `pw.visible` / `pw.bbox` are the closed Playwright-locator extras
+ *   (`isVisible()` / `boundingBox()`), the only facts not expressible as an
+ *   attribute or a property. `bbox` is in VIEWPORT CSS-pixels.
+ *
+ * `limit` bounds the row count. With no fields requested every row is an empty
+ * object (the caller asked for nothing; R2). Each row is built independently so
+ * a per-element read failure is the page's own throw, surfaced faithfully like
+ * `eval` (no silent swallow).
+ */
+export async function queryRows(
+	page: Page,
+	expression: string,
+	options?: QueryOptions,
+): Promise<QueryRow[]> {
+	const attrs = options?.attrs ?? [];
+	const props = options?.props ?? [];
+	const pw = options?.pw ?? [];
+	const base = resolveLocator(page, expression);
+	const total = await base.count();
+	const limit =
+		options?.limit !== undefined ? Math.max(0, options.limit) : total;
+	const rowCount = Math.min(total, limit);
+
+	const rows: QueryRow[] = [];
+	for (let i = 0; i < rowCount; i++) {
+		rows.push(await readRow(base.nth(i), attrs, props, pw));
+	}
+	return rows;
+}
+
+/**
+ * Read ONE matched element into a {@link QueryRow}, carrying only the requested
+ * families. `attrs` and `props` are read in a SINGLE page-world `evaluate` over
+ * the element handle (so a row is one round-trip and `props` values are cloned
+ * by value); the `pw` extras use the locator API (`isVisible`/`boundingBox`).
+ */
+async function readRow(
+	cell: Locator,
+	attrs: readonly string[],
+	props: readonly string[],
+	pw: readonly string[],
+): Promise<QueryRow> {
+	const row: {
+		attrs?: Record<string, string | null>;
+		props?: Record<string, unknown>;
+		pw?: {visible?: boolean; bbox?: BoundingBox | null};
+	} = {};
+
+	if (attrs.length > 0 || props.length > 0) {
+		// One page-world read of the live element: `getAttribute` for the markup
+		// attrs, `el[name]` for the live JS props. The returned object is
+		// structurally cloned out of the page by Playwright (the `eval` contract),
+		// so a prop value crosses the seam by VALUE with no type leak.
+		const read = await cell.evaluate(
+			(
+				el: Element,
+				{
+					attrNames,
+					propNames,
+				}: {attrNames: readonly string[]; propNames: readonly string[]},
+			) => {
+				const out: {
+					attrs?: Record<string, string | null>;
+					props?: Record<string, unknown>;
+				} = {};
+				if (attrNames.length > 0) {
+					const a: Record<string, string | null> = {};
+					for (const name of attrNames) {
+						a[name] = el.getAttribute(name);
+					}
+					out.attrs = a;
+				}
+				if (propNames.length > 0) {
+					const p: Record<string, unknown> = {};
+					for (const name of propNames) {
+						p[name] = (el as unknown as Record<string, unknown>)[name];
+					}
+					out.props = p;
+				}
+				return out;
+			},
+			{attrNames: [...attrs], propNames: [...props]},
+		);
+		if (read.attrs !== undefined) {
+			row.attrs = read.attrs;
+		}
+		if (read.props !== undefined) {
+			row.props = read.props;
+		}
+	}
+
+	if (pw.length > 0) {
+		const extras: {visible?: boolean; bbox?: BoundingBox | null} = {};
+		if (pw.includes('visible')) {
+			extras.visible = await cell.isVisible();
+		}
+		if (pw.includes('bbox')) {
+			extras.bbox = await cell.boundingBox();
+		}
+		row.pw = extras;
+	}
+
+	return row;
 }
 
 /** Map a Playwright cookie to the transport-neutral seam {@link Cookie}. */

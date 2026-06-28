@@ -178,6 +178,99 @@ export interface Snapshot {
 }
 
 /**
+ * The Playwright-locator-derived extras a {@link QueryRow} can carry under
+ * `pw`. This is the ONLY fixed (closed) set in {@link QueryOptions}: these two
+ * facts are NOT expressible as a DOM attribute or a live JS property, so they
+ * cannot ride in `attrs`/`props` (which are caller-named and open). Everything
+ * else the agent wants is named freely as an attribute or a property (R2, no
+ * curated DOM field set).
+ *
+ * - `'visible'` — actionability-grade visibility (`locator.isVisible()`),
+ *   strictly better than the `offsetParent` hack: a present-but-hidden element
+ *   reads `false`.
+ * - `'bbox'` — the element's bounding box (`locator.boundingBox()`) in VIEWPORT
+ *   CSS-pixels, the coordinate frame the future Tier-4 `mouse` verb uses.
+ */
+export type PwExtra = 'visible' | 'bbox';
+
+/**
+ * An element's bounding box in VIEWPORT CSS-pixels, the value of a
+ * {@link QueryRow}'s `pw.bbox`. Plain numbers only, so nothing Playwright-typed
+ * crosses the seam (ADR-0003). `null` when the element has no box (e.g. it is
+ * not rendered), mirroring `locator.boundingBox()`.
+ */
+export interface BoundingBox {
+	readonly x: number;
+	readonly y: number;
+	readonly width: number;
+	readonly height: number;
+}
+
+/**
+ * Options for the {@link WebHandsPage.query} verb (R2).
+ *
+ * This is an OPTIONS OBJECT, not positional fields, on purpose (R1, the
+ * reversibility invariant a reviewer checks): a future optional `frame?`
+ * qualifier AND the T1b `ref` field are then PURE ADDITIONS to this object,
+ * breaking no existing call. Do NOT turn these into positional arguments.
+ *
+ * There is NO curated DOM field set: a row carries EXACTLY what the caller
+ * names here and nothing else. `attrs` and `props` are caller-named and OPEN
+ * (the agent already knows DOM/Playwright vocabulary); `pw` is the one closed
+ * set ({@link PwExtra}).
+ *
+ * The `attrs` vs `props` split is deliberate and LOUD — webhands NEVER
+ * auto-detects which of the two a name like `value`/`checked` means, because a
+ * silent attribute-vs-property guess is the footgun this repo's "loud over
+ * silent" style rejects.
+ */
+export interface QueryOptions {
+	/**
+	 * DOM ATTRIBUTES to read by name, via `getAttribute(name)` — what is written
+	 * in the markup (`href`, `data-sitekey`, `type`). A missing attribute reads
+	 * `null`.
+	 */
+	readonly attrs?: readonly string[];
+	/**
+	 * Live JS PROPERTIES to read by name, via `el[name]` — runtime state
+	 * (`innerText`, `value`, `checked`, `selectedIndex`). `text` is just
+	 * `props: ['innerText']`; there is no special `text` field.
+	 */
+	readonly props?: readonly string[];
+	/**
+	 * Playwright-locator-derived extras to include (the ONLY closed set; see
+	 * {@link PwExtra}).
+	 */
+	readonly pw?: readonly PwExtra[];
+	/** Bound the number of rows returned (token economy on a multi-match). */
+	readonly limit?: number;
+}
+
+/**
+ * One matched element's data, carrying EXACTLY the fields the caller named in
+ * {@link QueryOptions} and nothing else (R2). A sub-object is present ONLY when
+ * the caller asked for that family, and within it a key is present for every
+ * name requested:
+ *
+ * - `attrs[name]` is the `getAttribute(name)` value (`null` if absent).
+ * - `props[name]` is the live `el[name]` value, structurally cloned by VALUE
+ *   (the same contract as `eval`; ADR-0003: no Playwright/CDP type leaks).
+ * - `pw.visible` / `pw.bbox` are the requested {@link PwExtra} values.
+ *
+ * When `query` is called with NO fields, each row is an empty object `{}`: the
+ * caller asked for nothing, so the row carries nothing (R2, "a row carries
+ * EXACTLY what the caller asked for").
+ */
+export interface QueryRow {
+	readonly attrs?: Readonly<Record<string, string | null>>;
+	readonly props?: Readonly<Record<string, unknown>>;
+	readonly pw?: {
+		readonly visible?: boolean;
+		readonly bbox?: BoundingBox | null;
+	};
+}
+
+/**
  * The page-level verb surface. One method per verb in the domain glossary.
  * All element addressing flows through {@link LocatorString}.
  */
@@ -244,6 +337,43 @@ export interface WebHandsPage {
 	cookies(): Promise<readonly Cookie[]>;
 	/** Seed the session's cookies. */
 	setCookies(cookies: readonly Cookie[]): Promise<void>;
+	/**
+	 * Read STRUCTURED data out of the element(s) addressed by a raw Playwright
+	 * locator string (ADR-0004; already frame-capable for same-origin frames via
+	 * a `frameLocator(...)` expression). Returns ONE ROW PER MATCH, each carrying
+	 * EXACTLY the fields named in {@link QueryOptions} — caller-named `attrs`
+	 * (DOM attributes) and `props` (live JS properties), plus the closed `pw`
+	 * extras (R2). This kills the `eval`-returns-a-JSON-string pattern.
+	 *
+	 * The options are an OPTIONS OBJECT so a future `frame?` / `ref` field is a
+	 * non-breaking addition (R1); the locator resolves through the SAME single
+	 * resolver `click`/`type`/`wait` use — no parallel addressing scheme.
+	 *
+	 * Values cross by structured clone, the SAME contract as `eval` (ADR-0003: no
+	 * Playwright/CDP types on the seam). With no fields requested, each row is an
+	 * empty object.
+	 */
+	query(target: LocatorString, options?: QueryOptions): Promise<QueryRow[]>;
+	/**
+	 * The number of elements the locator matches (a property of the MATCH SET,
+	 * not a row field). A thin shorthand over the same machinery as
+	 * {@link WebHandsPage.query}.
+	 */
+	count(target: LocatorString): Promise<number>;
+	/** Whether the locator matches at least one element (`count(target) > 0`). */
+	exists(target: LocatorString): Promise<boolean>;
+	/**
+	 * The first match's actionability-grade visibility (its `pw:['visible']`): a
+	 * present-but-hidden element reads `false`, and an ABSENT element reads
+	 * `false` too (no match cannot be visible).
+	 */
+	isVisible(target: LocatorString): Promise<boolean>;
+	/**
+	 * The first match's `name` DOM attribute (its `attrs:[name]`), via
+	 * `getAttribute`. `null` when the attribute is absent OR the locator matches
+	 * no element — both "there is no such attribute value to read".
+	 */
+	getAttribute(target: LocatorString, name: string): Promise<string | null>;
 }
 
 /**
