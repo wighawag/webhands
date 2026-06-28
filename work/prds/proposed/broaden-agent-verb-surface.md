@@ -12,25 +12,18 @@ needsAnswers: true
 
 These block AUTO-tasking; they are design choices the tasker must not guess.
 
-1. **`query` return contract — the known field set + the open extension (the #4
-   decision).** Agreed shape: a CLOSED, documented field set the verb always
-   knows how to produce, PLUS a caller-supplied extension for arbitrary
-   attributes/properties. Pin the exact closed set (the draft below is
-   evidence-derived from every `eval`-extraction site in the iamhuman example) and
-   the extension syntax (named attributes vs. named JS properties vs. both). See
-   ## Implementation Decisions.
-2. **Snapshot refs vs. `query` refs vs. locator strings — one addressing story.**
+1. **Snapshot refs vs. `query` refs vs. locator strings — one addressing story.**
    `snapshot` already emits `[ref=eN]` element refs. Does `query` return rows
    keyed by those same refs (so an agent reads `query`, picks a row, and
    `click`s its ref), or only by index/locator? Reusing snapshot refs is the
    coherent answer but needs the ref scheme to be stable across a `query` +
    `click` pair. CONFIRM the addressing story is unified, not three parallel ones.
-3. **CLI/MCP surface for the new verbs.** The new verbs must appear as both CLI
+2. **CLI/MCP surface for the new verbs.** The new verbs must appear as both CLI
    commands and MCP tools (incur gives both). Confirm the structured `query`
    result and the input verbs (`press`, `select`, `hover`, `scroll`, plus any
-   Deliverable-4 coordinate/screenshot verbs) have a clean CLI shape (e.g. how a
-   field-list and a frame qualifier are passed as flags) — not just a
-   programmatic API.
+   Deliverable-4 coordinate/screenshot verbs) have a clean CLI shape (e.g. how
+   `attrs`/`props`/`pw` lists and a frame qualifier are passed as flags) — not
+   just a programmatic API.
 
 <!-- /open-questions -->
 
@@ -69,6 +62,29 @@ as settled, not open.
    `frameLocator`/coordinate ops (R3). Net: locator-native now, `frame?`-everywhere
    stays a cheap, safe future toggle.
 
+- **R2 — `query` has NO curated DOM field set; the agent names DOM data freely,
+   plus a tiny Playwright-only extras set.** DOM attributes and JS properties ARE
+   Playwright/DOM vocabulary the agent already knows, so webhands maintains NO
+   allow-list of them. A row carries EXACTLY what the caller asked for (option-ii
+   token economy taken to its end — not even a forced core):
+  - `attrs: string[]` — DOM ATTRIBUTES by name (`getAttribute`), e.g.
+    `data-sitekey`, `href`, `data-callback`. (What is written in the markup.)
+  - `props: string[]` — live JS PROPERTIES by name, e.g. `innerText`, `value`,
+    `checked`, `selectedIndex`, `type`. (Runtime state; `text` is just
+    `props: ['innerText']` — no special `text` field.)
+  - `pw: ('visible' | 'bbox')[]` — the ONLY fixed set: Playwright-LOCATOR-derived
+    extras that are NOT DOM-nameable. `visible` is `locator.isVisible()`
+    (actionability-grade, better than the `offsetParent` hack); `bbox` is
+    `locator.boundingBox()` in VIEWPORT CSS-pixels (the bridge to the Tier-4
+    `mouse` verb — same coordinate frame, R3). These two exist precisely because
+    `attrs`/`props` CANNOT express them; they are not a curation burden.
+  - `limit?: number` — bound the rows returned (token economy on multi-match).
+  - The `attrs` vs `props` SPLIT is deliberate and LOUD (no auto-detect): `value`,
+    `checked` etc. are ambiguous between attribute and live property, and silent
+    guessing is the footgun this repo's "loud over silent" style rejects.
+  - All values cross by structured clone, same contract as `eval` (ADR-0003, no
+    type leaks). `count` is its own state verb (a property of the MATCH SET, not
+    a row field); `exists` is `count > 0`.
 - **R3 — the vision/tile (cross-origin) captcha family IS promoted to the SEAM
    (Tier 4 is a committed deliverable, ordered LAST).** The user wants an unaided
    agent to handle BOTH captcha families with verbs alone: token-harvest (a) via
@@ -250,51 +266,39 @@ already works. Tier 4 is what the vision/tile family additionally needs.
 
 > Trimmed at tasking-time into tasks / ADRs.
 
-### Tier 1 `query` — the closed field set (evidence-derived) + the open extension
+### Tier 1 `query` — no curated DOM list; agent names what it wants (R2)
 
-The closed set is derived from EVERY `eval`-extraction site in the iamhuman
-example (`flow.ts` `readCentreOptions`/`readSlotRows`/`diagnoseUnknown`,
-`page-state.ts` `buildProbe`) — i.e. what real driving actually reads:
-
-- `text` — `textContent`/`innerText`, trimmed (centre names, slot dates,
-  headings, submit labels).
-- `value` — form control value (input/textarea/select).
-- `href` — resolved link target (centre links).
-- `visible` — `offsetParent !== null`-style visibility (queue/template-text
-  distinction).
-- `exists` / `count` — presence and match count (the bulk of the classifier).
-- `tagName` / `type` — element tag + input `type` (the native-date-vs-text
-  branch).
-- `id` / `name` / `role` — common identity/aria markers (`body.id`,
-  classifier ids).
-- `bbox` — bounding box (x/y/width/height) in VIEWPORT coordinates, the bridge to
-  Tier-4: an agent can `query` an element's `bbox` and feed its center straight
-  into the `mouse` verb (same coordinate frame). Also useful for "is it on
-  screen".
-- (page-level convenience) `url` / `title` — already partly covered by
-  `snapshot`; `query` over `:root`/document gives them uniformly.
-
-The OPEN extension (the user's "known set but also caller-provided"): the caller
-may additionally name (a) arbitrary ATTRIBUTES to read (`attrs: ['data-sitekey',
-'data-callback']`) and/or (b) arbitrary serializable JS PROPERTIES
-(`props: ['type', 'checked']`). Both come back by structured clone, same
-serialization contract as `eval` (ADR-0003 no type leaks). Pin the exact syntax
-in Q2.
+Resolved R2: there is NO curated DOM field set (DOM attrs/props are vocabulary the
+agent already knows). The caller names DOM data via `attrs`/`props`, plus a tiny
+fixed `pw` extras set for the two Playwright-locator-derived things DOM reads
+cannot express (`visible`, `bbox`). A row carries exactly what was asked for.
 
 `query` shape (decision-encoding sketch, NOT final API):
 
 ```
 query(
-  locator: string,                 // a raw Playwright locator expr (frame-capable today)
-  fields?: ReadonlyArray<KnownField>,   // subset of the closed set; default a sensible core
-  options?: { attrs?: string[]; props?: string[]; limit?: number },
-): Promise<ReadonlyArray<QueryRow>>    // one row per matched element (bounded by limit)
+  locator: string,                 // frame-capable locator expression (R1)
+  {
+    attrs?: string[],              // DOM attributes by name        -> getAttribute(name)
+    props?: string[],              // live JS properties by name     -> el[name] (innerText, value, checked, ...)
+    pw?: ('visible' | 'bbox')[],   // Playwright-locator extras (NOT DOM-nameable)
+    limit?: number,                // bound rows returned
+  }?,
+): Promise<ReadonlyArray<QueryRow>>  // one row per matched element; each row holds ONLY what was asked
 ```
 
 Returning ROWS (one per match) is what kills the `readSlotRows`/`readCentreOptions`
-loops. The state verbs (`exists`/`count`/`isVisible`/`getAttribute`) are thin,
-agent-legible shorthands over the same machinery (a `count` is `query(...).length`;
-they exist as named verbs because an agent branches on them constantly).
+IIFE loops in the iamhuman example. The evidence those sites read maps cleanly:
+centre name = `props:['innerText']`, link = `attrs:['href']`, sitekey =
+`attrs:['data-sitekey']`, input kind = `props:['type']`, queue visibility =
+`pw:['visible']`. The state verbs are thin, agent-legible shorthands over the
+same machinery: `count` returns the MATCH-SET size (not a row field), `exists` is
+`count > 0`, `isVisible(locator)` is `query(locator,{pw:['visible']})[0]`,
+`getAttribute(locator,name)` is `query(locator,{attrs:[name]})[0]`. They exist as
+named verbs because an agent branches on them constantly.
+
+SIGNATURE INVARIANT (R1): the options bag is an OPTIONS OBJECT, leaving room for a
+future additive optional `frame?` field with zero breakage.
 
 ### Frame scope (resolved R1) — reuse addressing; keep `frame?` a safe future add
 
