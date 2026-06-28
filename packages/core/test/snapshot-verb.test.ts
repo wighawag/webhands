@@ -117,6 +117,42 @@ describe('snapshot verb (real browser, local fixture, seam)', () => {
 		}
 	});
 
+	it('returns the accessibility view under {full: false} (unchanged)', async () => {
+		const session = await openOnFixture('snap-not-full');
+		try {
+			const snap = await session.page.snapshot({full: false});
+			expect(snap.view).toBe('accessibility');
+		} finally {
+			await session.close();
+		}
+	});
+
+	it('REJECTS an unknown option loudly instead of silently returning the wrong view (regression: {view: "full"})', async () => {
+		const session = await openOnFixture('snap-bad-key');
+		try {
+			// Before this fix, `{view: 'full'}` silently returned the accessibility
+			// view (the option was read as `options?.full === true`), so a caller
+			// who copied the RESULT's `view` field got the WRONG content with no
+			// error. It must now throw a clear, named error.
+			await expect(
+				session.page.snapshot({view: 'full'} as never),
+			).rejects.toThrow(/unknown option "view".*did you mean \{ full: true \}/);
+		} finally {
+			await session.close();
+		}
+	});
+
+	it('REJECTS a non-boolean `full`', async () => {
+		const session = await openOnFixture('snap-bad-full');
+		try {
+			await expect(
+				session.page.snapshot({full: 'yes'} as never),
+			).rejects.toThrow(/option "full" must be a boolean/);
+		} finally {
+			await session.close();
+		}
+	});
+
 	it('the default view is cheaper than the raw DOM for the same page', async () => {
 		const session = await openOnFixture('snap-cheap');
 		try {

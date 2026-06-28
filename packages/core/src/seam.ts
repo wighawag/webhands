@@ -93,13 +93,62 @@ export type WaitCondition =
  */
 export type SnapshotView = 'accessibility' | 'full';
 
-/** Options for the {@link WebHandsPage.snapshot} verb. */
+/**
+ * Options for the {@link WebHandsPage.snapshot} verb.
+ *
+ * `full` is the ONLY recognised key. Unknown keys are REJECTED (not silently
+ * ignored) by {@link validateSnapshotOptions}, which every entry point calls:
+ * passing `{view: 'full'}` (a natural mistake, because the RESULT carries a
+ * {@link SnapshotView} `view` field) throws a clear error instead of silently
+ * returning the wrong view. There is no `view` option; `view` is a RESULT
+ * field, set by the verb from `full`.
+ */
 export interface SnapshotOptions {
 	/**
 	 * When `true`, return the raw DOM (`view: 'full'`) instead of the default
 	 * accessibility-tree + visible-text view. Maps to the CLI `--full` flag.
 	 */
 	readonly full?: boolean;
+}
+
+/**
+ * Validate a {@link SnapshotOptions} value at a verb entry point, the SINGLE
+ * source of truth shared by the in-process host and the RPC server dispatch so
+ * neither path can silently drop a misspelled option.
+ *
+ * Accepts `undefined`, `{}`, and `{full: boolean}`. REJECTS any object carrying
+ * a key other than `full`, and a non-boolean `full`, by throwing a clear `Error`
+ * that names the offending key and hints the right one (e.g. `{view: 'full'}`
+ * throws `snapshot: unknown option "view" (did you mean { full: true }?)`).
+ *
+ * This turns a silent wrong-result into a loud error: it does not change
+ * behaviour for any valid input. Returns the validated options unchanged so it
+ * can wrap a call site inline.
+ */
+export function validateSnapshotOptions(
+	options?: SnapshotOptions,
+): SnapshotOptions | undefined {
+	if (options === undefined) {
+		return options;
+	}
+	if (typeof options !== 'object' || options === null) {
+		throw new Error(
+			`snapshot: options must be an object like { full: true }, got ${typeof options}`,
+		);
+	}
+	const unknownKeys = Object.keys(options).filter((key) => key !== 'full');
+	if (unknownKeys.length > 0) {
+		const named = unknownKeys.map((key) => `"${key}"`).join(', ');
+		throw new Error(
+			`snapshot: unknown option ${named} (did you mean { full: true }?)`,
+		);
+	}
+	if (options.full !== undefined && typeof options.full !== 'boolean') {
+		throw new Error(
+			`snapshot: option "full" must be a boolean, got ${typeof options.full}`,
+		);
+	}
+	return options;
 }
 
 /**
@@ -138,7 +187,9 @@ export interface WebHandsPage {
 	/**
 	 * Return a structured, token-cheap view of the page. Defaults to the
 	 * accessibility-tree + visible-text view with stable refs; pass
-	 * `{full: true}` to get the raw DOM instead (PRD story 7).
+	 * `{full: true}` to get the raw DOM instead (PRD story 7). An unknown or
+	 * misshapen option REJECTS (e.g. `{view: 'full'}`), it is never silently
+	 * ignored (see {@link validateSnapshotOptions}).
 	 */
 	snapshot(options?: SnapshotOptions): Promise<Snapshot>;
 	/** Click the element addressed by a raw Playwright locator string. */

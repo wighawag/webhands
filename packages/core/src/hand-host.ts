@@ -6,6 +6,7 @@ import type {
 	SnapshotOptions,
 	WaitCondition,
 } from './seam.js';
+import {validateSnapshotOptions} from './seam.js';
 
 /**
  * The hand-host primitive (Phase 1 of the "hands" prd,
@@ -236,6 +237,10 @@ export const snapshotHand: Hand = ({pwPage, ensureOpen}) => ({
 	verbs: {
 		async snapshot(options?: SnapshotOptions): Promise<Snapshot> {
 			ensureOpen();
+			// Reject an unknown/misshapen option LOUDLY (e.g. `{view: 'full'}`)
+			// rather than silently returning the wrong view. Single source of
+			// truth in the seam, shared with the RPC server dispatch.
+			validateSnapshotOptions(options);
 			const url = pwPage.url();
 			if (options?.full === true) {
 				// `--full`: the raw DOM. `documentElement.outerHTML` is the serialized

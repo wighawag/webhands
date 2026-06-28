@@ -8,6 +8,7 @@ import type {
 	Transport,
 	WaitCondition,
 } from './seam.js';
+import {validateSnapshotOptions} from './seam.js';
 
 /**
  * A record of one verb call against the stub, for assertions in seam tests.
@@ -60,6 +61,7 @@ export class StubTransport implements Transport {
 			},
 			async snapshot(options?: SnapshotOptions): Promise<Snapshot> {
 				ensureOpen();
+				validateSnapshotOptions(options);
 				calls.push({verb: 'snapshot', args: [options]});
 				return {
 					url,

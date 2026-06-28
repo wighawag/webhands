@@ -1,7 +1,9 @@
 import {
 	locator,
+	validateSnapshotOptions,
 	type Cookie,
 	type Snapshot,
+	type SnapshotOptions,
 	type WaitCondition,
 } from './seam.js';
 import type {WebHandsPage} from './seam.js';
@@ -119,7 +121,13 @@ export async function applySessionRpc(
 			await page.navigate(request.url);
 			return undefined;
 		case 'snapshot':
-			return page.snapshot({full: request.full});
+			// Validate on the SERVER side so a malformed request from ANY client
+			// (not just the typed `makeRpcPage`) is rejected faithfully across the
+			// seam, mirroring how a page/eval throw rejects. A raw client could POST
+			// e.g. `{verb: 'snapshot', view: 'full'}`; we rebuild the snapshot
+			// options from the request's non-`verb` keys and reject unknown ones
+			// rather than silently dropping them and returning the wrong view.
+			return page.snapshot(snapshotOptionsFromRequest(request));
 		case 'click':
 			await page.click(locator(request.locator));
 			return undefined;
@@ -139,6 +147,32 @@ export async function applySessionRpc(
 		case 'hand':
 			return applyHandVerb(page, request);
 	}
+}
+
+/**
+ * Rebuild and validate the {@link SnapshotOptions} carried by a wire `snapshot`
+ * request. The wire flattens `{full}` onto the request alongside `verb`; a raw
+ * (untyped) client may also send a misspelled key such as `view`. We collect
+ * every non-`verb` key into an options object and run it through the shared
+ * {@link validateSnapshotOptions} so the server rejects an unknown/misshapen
+ * option exactly as the in-process host does. Returns `undefined` when no
+ * options were sent (the bare `snapshot()` case).
+ */
+function snapshotOptionsFromRequest(
+	request: SessionRpcRequest & {readonly verb: 'snapshot'},
+): SnapshotOptions | undefined {
+	const {verb: _verb, ...rest} = request as Record<string, unknown> & {
+		verb: 'snapshot';
+	};
+	// Drop an explicitly-absent `full` (the typed client always sends the key,
+	// even as `undefined`) so a bare `snapshot()` stays `undefined`.
+	if ('full' in rest && rest.full === undefined) {
+		delete rest.full;
+	}
+	if (Object.keys(rest).length === 0) {
+		return undefined;
+	}
+	return validateSnapshotOptions(rest as SnapshotOptions);
 }
 
 /**
@@ -191,6 +225,10 @@ export function makeRpcPage(
 			await send({verb: 'navigate', url});
 		},
 		async snapshot(options) {
+			// Fail fast on the client too, so a typed caller's mistake (e.g.
+			// `{view: 'full'}`) is caught before a round-trip. The server
+			// re-validates as the load-bearing check for untyped clients.
+			validateSnapshotOptions(options);
 			return (await send({
 				verb: 'snapshot',
 				full: options?.full,

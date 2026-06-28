@@ -11,7 +11,7 @@ export type {
 	Transport,
 	WaitCondition,
 } from './seam.js';
-export {locator} from './seam.js';
+export {locator, validateSnapshotOptions} from './seam.js';
 
 export {
 	serializeCookies,
