@@ -14,6 +14,8 @@ import {
 	type Cookie,
 	type OpenTarget,
 	type RunningSessionServer,
+	type ScrollTarget,
+	type SelectChoice,
 	type Session,
 	type SessionServerOptions,
 	type Transport,
@@ -964,6 +966,206 @@ export function createCli(deps: CliDeps = {}) {
 		},
 	});
 
+	// --- Tier-2 rich input verbs: press / hover / select / scroll / drag (prd
+	// broaden-agent-verb-surface, stories 8-12, R5). Each is its own incur
+	// command, so one definition yields both the CLI command and the MCP tool.
+	// Positional-arg + small-flag, mirroring `click` (R5); `select`/`scroll` use
+	// loud "exactly one of" validation, mirroring `wait`. No --frame flag: frame
+	// scope rides IN the locator string (R1).
+
+	cli.command('press', {
+		description:
+			'Press a keyboard key or chord (e.g. Enter, ArrowLeft, w, Control+A) at a ' +
+			'locator or, with no locator, the focused element.',
+		args: z.object({
+			key: z
+				.string()
+				.describe(
+					'A key or chord in Playwright grammar: a key name (Enter, ArrowLeft, ' +
+						'a) or Modifier+Key (Control+A, Shift+Tab).',
+				),
+		}),
+		options: connectionOptions.extend({
+			locator: z
+				.string()
+				.optional()
+				.describe(
+					'A raw Playwright locator expression to press the key at (focuses it ' +
+						'first). Omit to press at the focused element.',
+				),
+		}),
+		output: actionOutput.extend({verb: z.literal('press')}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const target =
+						c.options.locator !== undefined && c.options.locator !== ''
+							? locator(c.options.locator)
+							: undefined;
+					await s.page.press(c.args.key, target);
+					return c.ok(
+						{ok: true as const, verb: 'press' as const},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('hover', {
+		description:
+			'Hover the pointer over the element a Playwright locator addresses ' +
+			'(reveal hover menus / on-hover controls).',
+		args: z.object({
+			locator: z.string().describe('A raw Playwright locator expression.'),
+		}),
+		options: connectionOptions,
+		output: actionOutput.extend({verb: z.literal('hover')}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					await s.page.hover(locator(c.args.locator));
+					return c.ok(
+						{ok: true as const, verb: 'hover' as const},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('select', {
+		description:
+			'Choose an option in the native <select> a Playwright locator addresses, ' +
+			'by --value OR --label (exactly one).',
+		args: z.object({
+			locator: z
+				.string()
+				.describe('A raw Playwright locator expression for the <select>.'),
+		}),
+		options: connectionOptions.extend({
+			value: z
+				.string()
+				.optional()
+				.describe("Match the option's value attribute (value form)."),
+			label: z
+				.string()
+				.optional()
+				.describe("Match the option's visible label text (label form)."),
+		}),
+		output: actionOutput.extend({
+			verb: z.literal('select'),
+			by: z.enum(['value', 'label']),
+		}),
+		async run(c) {
+			const choice = selectChoiceFrom(c.options);
+			if (choice === undefined) {
+				return c.error({
+					code: 'invalid-select',
+					message: 'select needs exactly one of --value <v> or --label <l>.',
+				});
+			}
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					await s.page.select(locator(c.args.locator), choice);
+					return c.ok(
+						{
+							ok: true as const,
+							verb: 'select' as const,
+							by: 'value' in choice ? ('value' as const) : ('label' as const),
+						},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('scroll', {
+		description:
+			'Scroll the page, either --to a Playwright locator (bring it into view) ' +
+			'or --by a dx,dy pixel delta (exactly one).',
+		options: connectionOptions.extend({
+			to: z
+				.string()
+				.optional()
+				.describe(
+					'A raw Playwright locator expression to scroll into view (to form).',
+				),
+			by: z
+				.string()
+				.optional()
+				.describe(
+					'A dx,dy pixel delta to scroll by, e.g. 0,400 (down) or -100,0 (by form).',
+				),
+		}),
+		output: actionOutput.extend({
+			verb: z.literal('scroll'),
+			form: z.enum(['to', 'by']),
+		}),
+		async run(c) {
+			const target = scrollTargetFrom(c.options);
+			if (target === undefined) {
+				return c.error({
+					code: 'invalid-scroll',
+					message:
+						'scroll needs exactly one of --to <locator> or --by <dx,dy> ' +
+						'(dx,dy two numbers, e.g. 0,400).',
+				});
+			}
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					await s.page.scroll(target);
+					return c.ok(
+						{
+							ok: true as const,
+							verb: 'scroll' as const,
+							form: 'to' in target ? ('to' as const) : ('by' as const),
+						},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('drag', {
+		description:
+			'Drag the element a source locator addresses onto the element a target ' +
+			'locator addresses (drag-reorder UIs, drag-slider challenges).',
+		args: z.object({
+			source: z
+				.string()
+				.describe('A raw Playwright locator expression for the drag source.'),
+			target: z
+				.string()
+				.describe('A raw Playwright locator expression for the drop target.'),
+		}),
+		options: connectionOptions,
+		output: actionOutput.extend({verb: z.literal('drag')}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					await s.page.drag(locator(c.args.source), locator(c.args.target));
+					return c.ok(
+						{ok: true as const, verb: 'drag' as const},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
 	cli.command('wait', {
 		description:
 			'Pace actions by waiting for a timeout, a locator to appear, or the next navigation.',
@@ -1128,6 +1330,61 @@ function waitConditionFrom(options: {
 		forms.push({kind: 'locator', target: locator(options.locator)});
 	if (options.navigation) forms.push({kind: 'navigation'});
 	return forms.length === 1 ? forms[0] : undefined;
+}
+
+/**
+ * Turn the `select` option forms into the seam's {@link SelectChoice}, or
+ * `undefined` if zero or both of `--value` / `--label` were given (the command
+ * reports that as a clear error). Mirrors `wait`'s loud "exactly one of"
+ * validation (R5): an empty string counts as absent, so `--value ''` is treated
+ * as not given.
+ */
+function selectChoiceFrom(options: {
+	value?: string;
+	label?: string;
+}): SelectChoice | undefined {
+	const forms: SelectChoice[] = [];
+	if (options.value !== undefined) forms.push({value: options.value});
+	if (options.label !== undefined) forms.push({label: options.label});
+	return forms.length === 1 ? forms[0] : undefined;
+}
+
+/**
+ * Turn the `scroll` option forms into the seam's {@link ScrollTarget}, or
+ * `undefined` if zero or both of `--to` / `--by` were given OR `--by` is not a
+ * valid `dx,dy` pair (the command reports that as a clear error). Mirrors
+ * `wait`'s loud "exactly one of" validation (R5). `--by` is parsed here (two
+ * comma-separated finite numbers) so a malformed delta fails loud rather than
+ * silently scrolling by `NaN`.
+ */
+function scrollTargetFrom(options: {
+	to?: string;
+	by?: string;
+}): ScrollTarget | undefined {
+	const forms: ScrollTarget[] = [];
+	if (options.to !== undefined && options.to !== '') {
+		forms.push({to: locator(options.to)});
+	}
+	if (options.by !== undefined && options.by !== '') {
+		const by = parseDelta(options.by);
+		if (by === undefined) return undefined;
+		forms.push({by});
+	}
+	return forms.length === 1 ? forms[0] : undefined;
+}
+
+/**
+ * Parse a `dx,dy` pixel-delta string into a `{dx, dy}` pair, or `undefined` if
+ * it is not exactly two comma-separated finite numbers. Used by `scroll --by`
+ * so a malformed delta fails loud instead of scrolling by `NaN`.
+ */
+function parseDelta(raw: string): {dx: number; dy: number} | undefined {
+	const parts = raw.split(',');
+	if (parts.length !== 2) return undefined;
+	const dx = Number(parts[0]!.trim());
+	const dy = Number(parts[1]!.trim());
+	if (!Number.isFinite(dx) || !Number.isFinite(dy)) return undefined;
+	return {dx, dy};
 }
 
 /**

@@ -4,6 +4,8 @@ import type {
 	WebHandsPage,
 	QueryOptions,
 	QueryRow,
+	ScrollTarget,
+	SelectChoice,
 	Session,
 	Snapshot,
 	SnapshotOptions,
@@ -121,6 +123,26 @@ export class StubTransport implements Transport {
 				ensureOpen();
 				calls.push({verb: 'getAttribute', args: [t, name]});
 				return null;
+			},
+			async press(key: string, t): Promise<void> {
+				ensureOpen();
+				calls.push({verb: 'press', args: [key, t]});
+			},
+			async hover(t): Promise<void> {
+				ensureOpen();
+				calls.push({verb: 'hover', args: [t]});
+			},
+			async select(t, choice: SelectChoice): Promise<void> {
+				ensureOpen();
+				calls.push({verb: 'select', args: [t, choice]});
+			},
+			async scroll(t: ScrollTarget): Promise<void> {
+				ensureOpen();
+				calls.push({verb: 'scroll', args: [t]});
+			},
+			async drag(source, t): Promise<void> {
+				ensureOpen();
+				calls.push({verb: 'drag', args: [source, t]});
 			},
 		};
 

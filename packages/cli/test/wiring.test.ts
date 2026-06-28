@@ -160,6 +160,11 @@ describe('incur CLI wiring', () => {
 				wantArgs: true,
 				outputKeys: ['ok', 'verb', 'name', 'value'],
 			},
+			{argv: ['press'], wantArgs: true, outputKeys: ['ok', 'verb']},
+			{argv: ['hover'], wantArgs: true, outputKeys: ['ok', 'verb']},
+			{argv: ['select'], wantArgs: true, outputKeys: ['ok', 'verb', 'by']},
+			{argv: ['scroll'], wantArgs: false, outputKeys: ['ok', 'verb', 'form']},
+			{argv: ['drag'], wantArgs: true, outputKeys: ['ok', 'verb']},
 			{argv: ['wait'], wantArgs: false, outputKeys: ['ok', 'verb', 'kind']},
 			{
 				argv: ['setup-profile'],
@@ -282,6 +287,149 @@ describe('incur CLI wiring', () => {
 			]);
 			const call = transport.calls.find((c) => c.verb === 'getAttribute');
 			expect(call?.args).toEqual([`page.locator('.x')`, 'href']);
+		});
+	});
+
+	describe('Tier-2 input verb wiring (prd broaden-agent-verb-surface, R5)', () => {
+		it('press forwards the key + optional --locator into the seam press call', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'press',
+				'Control+a',
+				'--locator',
+				`page.locator('#x')`,
+			]);
+			const call = transport.calls.find((c) => c.verb === 'press');
+			expect(call?.args).toEqual(['Control+a', `page.locator('#x')`]);
+		});
+
+		it('press WITHOUT --locator targets the focused element (undefined locator)', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, ['press', 'Enter']);
+			const call = transport.calls.find((c) => c.verb === 'press');
+			expect(call?.args).toEqual(['Enter', undefined]);
+		});
+
+		it('hover forwards its locator into the seam hover call', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, ['hover', `page.locator('#menu')`]);
+			const call = transport.calls.find((c) => c.verb === 'hover');
+			expect(call?.args).toEqual([`page.locator('#menu')`]);
+		});
+
+		it('select --value forwards a value choice; --label forwards a label choice', async () => {
+			const {provider, transport} = stubProvider();
+			const byValue = await runEnvelope(provider, [
+				'select',
+				`page.locator('#color')`,
+				'--value',
+				'g',
+			]);
+			expect(byValue.data).toMatchObject({verb: 'select', by: 'value'});
+			expect(transport.calls.find((c) => c.verb === 'select')?.args).toEqual([
+				`page.locator('#color')`,
+				{value: 'g'},
+			]);
+
+			const {provider: p2, transport: t2} = stubProvider();
+			const byLabel = await runEnvelope(p2, [
+				'select',
+				`page.locator('#color')`,
+				'--label',
+				'Blue',
+			]);
+			expect(byLabel.data).toMatchObject({verb: 'select', by: 'label'});
+			expect(t2.calls.find((c) => c.verb === 'select')?.args).toEqual([
+				`page.locator('#color')`,
+				{label: 'Blue'},
+			]);
+		});
+
+		it('select with NEITHER --value nor --label is a loud error (exactly one of)', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'select',
+				`page.locator('#color')`,
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-select');
+			expect(env.error?.message).toContain('exactly one of');
+		});
+
+		it('select with BOTH --value and --label is a loud error (exactly one of)', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'select',
+				`page.locator('#color')`,
+				'--value',
+				'g',
+				'--label',
+				'Green',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-select');
+		});
+
+		it('scroll --to forwards a to target; --by parses a dx,dy delta', async () => {
+			const {provider, transport} = stubProvider();
+			const to = await runEnvelope(provider, [
+				'scroll',
+				'--to',
+				`page.locator('#far')`,
+			]);
+			expect(to.data).toMatchObject({verb: 'scroll', form: 'to'});
+			expect(transport.calls.find((c) => c.verb === 'scroll')?.args).toEqual([
+				{to: `page.locator('#far')`},
+			]);
+
+			const {provider: p2, transport: t2} = stubProvider();
+			const by = await runEnvelope(p2, ['scroll', '--by', '0,400']);
+			expect(by.data).toMatchObject({verb: 'scroll', form: 'by'});
+			expect(t2.calls.find((c) => c.verb === 'scroll')?.args).toEqual([
+				{by: {dx: 0, dy: 400}},
+			]);
+		});
+
+		it('scroll with NEITHER --to nor --by is a loud error (exactly one of)', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, ['scroll']);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-scroll');
+			expect(env.error?.message).toContain('exactly one of');
+		});
+
+		it('scroll with BOTH --to and --by is a loud error (exactly one of)', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'scroll',
+				'--to',
+				`page.locator('#far')`,
+				'--by',
+				'0,400',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-scroll');
+		});
+
+		it('scroll --by with a malformed delta is a loud error (not NaN scroll)', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, ['scroll', '--by', 'oops']);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-scroll');
+		});
+
+		it('drag forwards the source + target locators into the seam drag call', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'drag',
+				`page.locator('#src')`,
+				`page.locator('#dst')`,
+			]);
+			const call = transport.calls.find((c) => c.verb === 'drag');
+			expect(call?.args).toEqual([
+				`page.locator('#src')`,
+				`page.locator('#dst')`,
+			]);
 		});
 	});
 
@@ -418,6 +566,11 @@ describe('incur CLI wiring', () => {
 				'exists',
 				'is-visible',
 				'get-attribute',
+				'press',
+				'hover',
+				'select',
+				'scroll',
+				'drag',
 				'wait',
 				'cookies export',
 				'cookies import',
@@ -484,6 +637,11 @@ describe('incur CLI wiring', () => {
 					'exists',
 					'is-visible',
 					'get-attribute',
+					'press',
+					'hover',
+					'select',
+					'scroll',
+					'drag',
 					'wait',
 					'launch',
 					'attach',

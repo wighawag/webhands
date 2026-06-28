@@ -277,6 +277,219 @@ const QUERY_LIST = `<!doctype html>
 </html>
 `;
 
+/**
+ * A page exercising the Tier-2 `press` verb (prd `broaden-agent-verb-surface`,
+ * story 8). It RECORDS keyboard events deterministically so a test asserts the
+ * verb fired the right key, not merely that it did not throw:
+ *
+ * - `#focus-input` is a text input. A `keydown` listener appends each event's
+ *   `key` (and a `+` for each held modifier) to `#keylog`, so a single key, a
+ *   named key (Enter/ArrowLeft), and a chord (`Control+a`) are all observable.
+ * - `#counter` is driven by ArrowUp/ArrowDown on a SECOND input (`#game`),
+ *   modelling a game's keyboard control: ArrowUp increments, ArrowDown
+ *   decrements, so `press('ArrowUp')` at that locator moves the counter.
+ * - The page focuses `#focus-input` on load, so a `press(key)` with NO locator
+ *   (the focused-element form) lands there — the test asserts the focused-element
+ *   path AND the at-a-locator path against the SAME recorder.
+ */
+const KEYBOARD = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>keyboard fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Keyboard Fixture</h1>
+		<input id="focus-input" type="text" aria-label="Focus Input" />
+		<pre id="keylog"></pre>
+
+		<input id="game" type="text" aria-label="Game" />
+		<p id="counter">0</p>
+
+		<script>
+			function describe(e) {
+				var mods = '';
+				if (e.ctrlKey) mods += 'Control+';
+				if (e.altKey) mods += 'Alt+';
+				if (e.shiftKey) mods += 'Shift+';
+				if (e.metaKey) mods += 'Meta+';
+				return mods + e.key;
+			}
+			var MODIFIER_KEYS = {Control: 1, Alt: 1, Shift: 1, Meta: 1};
+			var log = document.getElementById('keylog');
+			document
+				.getElementById('focus-input')
+				.addEventListener('keydown', function (e) {
+					// A chord (Control+a) fires a bare-modifier keydown (key === 'Control')
+					// before the real key; ignore those so the log records one entry per
+					// logical press.
+					if (MODIFIER_KEYS[e.key]) return;
+					log.textContent += (log.textContent ? ',' : '') + describe(e);
+				});
+
+			var counter = document.getElementById('counter');
+			document.getElementById('game').addEventListener('keydown', function (e) {
+				if (e.key === 'ArrowUp')
+					counter.textContent = String(Number(counter.textContent) + 1);
+				if (e.key === 'ArrowDown')
+					counter.textContent = String(Number(counter.textContent) - 1);
+			});
+
+			// Focus the recorder input so a press() with NO locator lands here.
+			document.getElementById('focus-input').focus();
+		</script>
+	</body>
+</html>
+`;
+
+/**
+ * A page exercising the Tier-2 `hover` verb (prd `broaden-agent-verb-surface`,
+ * story 9). `#menu` reveals a `#menu-item` ONLY while `#menu` is hovered (CSS
+ * `:hover`), AND a `mouseenter` listener flips `#hover-state` to `entered`, so
+ * the test asserts the hover affordance fired (the item became visible / the
+ * state changed), not merely that `hover` did not throw — something `click`
+ * could not surface.
+ */
+const HOVER = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>hover fixture</title>
+		<style>
+			#menu-item {
+				display: none;
+			}
+			#menu:hover #menu-item {
+				display: block;
+			}
+		</style>
+	</head>
+	<body>
+		<h1 id="heading">Hover Fixture</h1>
+		<div id="menu">
+			Menu
+			<div id="menu-item">Reveal-on-hover item</div>
+		</div>
+		<p id="hover-state">idle</p>
+		<script>
+			document.getElementById('menu').addEventListener('mouseenter', function () {
+				document.getElementById('hover-state').textContent = 'entered';
+			});
+		</script>
+	</body>
+</html>
+`;
+
+/**
+ * A page exercising the Tier-2 `select` verb (prd `broaden-agent-verb-surface`,
+ * story 10). `#color` is a native `<select>` with three options whose VALUE and
+ * LABEL deliberately DIFFER (value `r` / label `Red`, etc.), so a select-by-value
+ * and a select-by-label are distinguishable. A `change` listener mirrors the
+ * chosen value into `#chosen`, and the test also reads the live `value`
+ * property, so the choice is asserted as reflected in the element's STATE.
+ */
+const SELECT = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>select fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Select Fixture</h1>
+		<select id="color" aria-label="Color">
+			<option value="r">Red</option>
+			<option value="g">Green</option>
+			<option value="b">Blue</option>
+		</select>
+		<p id="chosen">r</p>
+		<script>
+			var sel = document.getElementById('color');
+			sel.addEventListener('change', function () {
+				document.getElementById('chosen').textContent = sel.value;
+			});
+		</script>
+	</body>
+</html>
+`;
+
+/**
+ * A page exercising the Tier-2 `scroll` verb (prd `broaden-agent-verb-surface`,
+ * story 11). The body is much taller than the viewport, with `#far-target` near
+ * the BOTTOM (off-viewport at load), so:
+ *
+ * - `scroll --to (#far-target)` brings it into view (its `pw:['visible']` /
+ *   `scrollY` change is observable).
+ * - `scroll --by 0,400` scrolls the page DOWN by 400px, so `window.scrollY`
+ *   moves by the given amount.
+ *
+ * A tall `#spacer` provides the scroll distance; `#far-target` sits after it.
+ */
+const SCROLL = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>scroll fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Scroll Fixture</h1>
+		<div id="spacer" style="height: 4000px">spacer</div>
+		<div id="far-target">Far target at the bottom</div>
+	</body>
+</html>
+`;
+
+/**
+ * A page exercising the Tier-2 `drag` verb (prd `broaden-agent-verb-surface`,
+ * story 12). `#drag-source` is a draggable element and `#drop-target` is a drop
+ * zone wired with the HTML5 drag-and-drop events: on `drop`, the handler moves
+ * the source INTO the target and flips `#drop-state` to `dropped`, so the test
+ * asserts the drop handler RAN (the DOM order / state changed), not merely that
+ * `drag` did not throw.
+ */
+const DRAG = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>drag fixture</title>
+		<style>
+			#drag-source,
+			#drop-target {
+				width: 120px;
+				height: 120px;
+				margin: 10px;
+			}
+			#drag-source {
+				background: #cde;
+			}
+			#drop-target {
+				background: #edc;
+			}
+		</style>
+	</head>
+	<body>
+		<h1 id="heading">Drag Fixture</h1>
+		<div id="drag-source" draggable="true">Drag me</div>
+		<div id="drop-target">Drop here</div>
+		<p id="drop-state">idle</p>
+		<script>
+			var source = document.getElementById('drag-source');
+			var target = document.getElementById('drop-target');
+			source.addEventListener('dragstart', function (e) {
+				e.dataTransfer.setData('text/plain', 'drag-source');
+			});
+			target.addEventListener('dragover', function (e) {
+				e.preventDefault();
+			});
+			target.addEventListener('drop', function (e) {
+				e.preventDefault();
+				target.appendChild(source);
+				document.getElementById('drop-state').textContent = 'dropped';
+			});
+		</script>
+	</body>
+</html>
+`;
+
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
@@ -286,4 +499,9 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'eval.html': EVAL,
 	'cookies.html': COOKIES,
 	'query-list.html': QUERY_LIST,
+	'keyboard.html': KEYBOARD,
+	'hover.html': HOVER,
+	'select.html': SELECT,
+	'scroll.html': SCROLL,
+	'drag.html': DRAG,
 };
