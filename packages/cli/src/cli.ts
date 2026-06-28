@@ -12,8 +12,11 @@ import {
 	SessionAlreadyActiveError,
 	startSessionServer,
 	type Cookie,
+	type MouseInput,
 	type OpenTarget,
 	type RunningSessionServer,
+	type ScreenshotOptions,
+	type ScreenshotScope,
 	type ScrollTarget,
 	type SelectChoice,
 	type Session,
@@ -1183,6 +1186,133 @@ export function createCli(deps: CliDeps = {}) {
 		},
 	});
 
+	// --- Tier-4 coordinate + screenshot verbs: mouse / screenshot (prd
+	// broaden-agent-verb-surface, R3/R5, stories 17-19). Each is its own incur
+	// command, so one definition yields both the CLI command and the MCP tool.
+	// The seam stays string/number-typed (ADR-0003 as amended by the Tier-4 ADR):
+	// `mouse` passes plain numbers + an enum, `screenshot` returns a file PATH
+	// (never image bytes). The MCP `screenshot` result surfaces that path as the
+	// attachment-capable `path` field an agent reads/attaches.
+
+	cli.command('mouse', {
+		description:
+			'Coordinate mouse input at VIEWPORT CSS-pixels (Playwright page.mouse, NOT ' +
+			'OS screen coordinates): click / move / down / up at --x,--y. A pixel in a ' +
+			'VIEWPORT screenshot maps directly to these coordinates (the look-then-click ' +
+			'loop); a FULL-PAGE screenshot does NOT.',
+		options: connectionOptions.extend({
+			action: z
+				.enum(['click', 'move', 'down', 'up'])
+				.default('click')
+				.describe('What to do at the coordinate (default: click).'),
+			x: z.coerce.number().describe('Viewport CSS-pixel X (left-relative).'),
+			y: z.coerce.number().describe('Viewport CSS-pixel Y (top-relative).'),
+			button: z
+				.enum(['left', 'right', 'middle'])
+				.default('left')
+				.describe('Which button for click/down/up (default: left).'),
+		}),
+		output: actionOutput.extend({
+			verb: z.literal('mouse'),
+			action: z.enum(['click', 'move', 'down', 'up']),
+			x: z.number(),
+			y: z.number(),
+		}),
+		async run(c) {
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const input: MouseInput = {
+						action: c.options.action,
+						x: c.options.x,
+						y: c.options.y,
+						button: c.options.button,
+					};
+					await s.page.mouse(input);
+					return c.ok(
+						{
+							ok: true as const,
+							verb: 'mouse' as const,
+							action: c.options.action,
+							x: c.options.x,
+							y: c.options.y,
+						},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('screenshot', {
+		description:
+			'Capture the page to a PNG FILE and return its PATH (never image bytes): ' +
+			'--scope viewport (default, coordinate-matched to mouse) | full (whole page, ' +
+			'NOT coordinate-matched) | element (clipped to --locator, REQUIRED for element). ' +
+			'--out overrides the path (validated to stay under the managed dir).',
+		options: connectionOptions.extend({
+			scope: z
+				.enum(['viewport', 'full', 'element'])
+				.default('viewport')
+				.describe(
+					'Region to capture: viewport (default) | full | element (needs --locator).',
+				),
+			locator: z
+				.string()
+				.optional()
+				.describe(
+					'A raw Playwright locator expression to clip to (REQUIRED for --scope ' +
+						'element, rejected otherwise). Frame scope rides in the string.',
+				),
+			out: z
+				.string()
+				.optional()
+				.describe(
+					'Override the output PNG path (validated to stay under the managed dir).',
+				),
+		}),
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('screenshot'),
+			// `path` is the attachment-capable field (R5): a plain file PATH an agent
+			// reads / attaches; no image bytes ever cross the seam.
+			path: z
+				.string()
+				.describe('The PNG file path (read/attach this; never bytes).'),
+			width: z.number().describe('The PNG pixel width.'),
+			height: z.number().describe('The PNG pixel height.'),
+		}),
+		async run(c) {
+			const options = screenshotOptionsFrom(c.options);
+			if (options === undefined) {
+				return c.error({
+					code: 'invalid-screenshot',
+					message:
+						'screenshot --scope element requires --locator <expr>; --locator is ' +
+						'only valid with --scope element.',
+				});
+			}
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const shot = await s.page.screenshot(options);
+					return c.ok(
+						{
+							ok: true as const,
+							verb: 'screenshot' as const,
+							path: shot.path,
+							width: shot.width,
+							height: shot.height,
+						},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
 	cli.command('wait', {
 		description:
 			'Pace actions by waiting for a timeout, a locator to appear, or the next navigation.',
@@ -1321,7 +1451,9 @@ async function defaultServeSession(
 			: {}),
 		...(launchPolicy.proxy !== undefined ? {proxy: launchPolicy.proxy} : {}),
 	});
-	const attach = new PlaywrightAttachTransport();
+	// attach reuses the user's browser, but the managed screenshots dir still
+	// honours the home-root override so a test isolates screenshot output.
+	const attach = new PlaywrightAttachTransport([], home);
 	const transport: Transport = {
 		open(t: OpenTarget): Promise<Session> {
 			return t.mode === 'attach' ? attach.open(t) : launch.open(t);
@@ -1388,6 +1520,32 @@ function scrollTargetFrom(options: {
 		forms.push({by});
 	}
 	return forms.length === 1 ? forms[0] : undefined;
+}
+
+/**
+ * Turn the `screenshot` option flags into the seam's {@link ScreenshotOptions},
+ * or `undefined` when the scope/locator pairing is invalid (the command reports
+ * that as a clear error, mirroring `wait`'s loud validation, R5): `--scope
+ * element` REQUIRES `--locator`, and `--locator` is ONLY valid with `--scope
+ * element`. An empty `--locator`/`--out` string counts as absent. The seam
+ * re-validates as the load-bearing check (an untyped RPC client too), so this is
+ * the friendly fail-fast at the CLI edge.
+ */
+function screenshotOptionsFrom(options: {
+	scope: ScreenshotScope;
+	locator?: string;
+	out?: string;
+}): ScreenshotOptions | undefined {
+	const hasLocator = options.locator !== undefined && options.locator !== '';
+	if (options.scope === 'element' && !hasLocator) return undefined;
+	if (options.scope !== 'element' && hasLocator) return undefined;
+	return {
+		scope: options.scope,
+		...(hasLocator ? {locator: locator(options.locator!)} : {}),
+		...(options.out !== undefined && options.out !== ''
+			? {out: options.out}
+			: {}),
+	};
 }
 
 /**

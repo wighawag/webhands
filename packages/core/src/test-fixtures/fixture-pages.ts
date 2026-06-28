@@ -568,6 +568,206 @@ const FRAME_PARENT = `<!doctype html>
 </html>
 `;
 
+/**
+ * A page exercising the Tier-4 coordinate `mouse` verb (prd
+ * `broaden-agent-verb-surface`, R3, stories 17-18). It records WHERE a
+ * coordinate click/press landed so a test asserts the verb acted at the
+ * intended VIEWPORT pixel, and proves the VIEWPORT-screenshot <-> `mouse`
+ * coordinate contract end to end:
+ *
+ * - `#hit-target` is an absolutely-positioned box at a KNOWN viewport position
+ *   and size. Its `click` handler flips `#hit-state` to `hit` and records the
+ *   event's `clientX,clientY` into `#hit-coords`, so a `mouse({action:'click',
+ *   x, y})` at a coordinate OVER the box runs the box's handler (assert the
+ *   effect), and a coordinate OUTSIDE it does NOT (the look-then-click loop is
+ *   only meaningful if the click lands where the agent aimed).
+ * - `#move-target` flips `#move-state` to `moved` on `mouseenter`, so a bare
+ *   `mouse({action:'move', x, y})` (no button) is observable too.
+ * - `#down-up-target` records `mousedown`/`mouseup` so the press/release halves
+ *   are exercised.
+ *
+ * The page pins `margin:0` and a deterministic layout so the box's viewport
+ * coordinates are stable; the test reads the box's real `getBoundingClientRect`
+ * (via `eval`) and clicks its centre, so it never hard-codes a pixel that a
+ * platform default could shift.
+ */
+const COORDINATE = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>coordinate fixture</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				padding: 0;
+			}
+			#hit-target {
+				position: absolute;
+				left: 100px;
+				top: 80px;
+				width: 120px;
+				height: 90px;
+				background: #4a7;
+			}
+			#move-target {
+				position: absolute;
+				left: 300px;
+				top: 80px;
+				width: 80px;
+				height: 80px;
+				background: #74a;
+			}
+			#down-up-target {
+				position: absolute;
+				left: 100px;
+				top: 220px;
+				width: 120px;
+				height: 90px;
+				background: #a74;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="hit-target"></div>
+		<div id="move-target"></div>
+		<div id="down-up-target"></div>
+		<p id="hit-state">untouched</p>
+		<p id="hit-coords"></p>
+		<p id="move-state">idle</p>
+		<p id="down-up-state">idle</p>
+		<script>
+			var hit = document.getElementById('hit-target');
+			hit.addEventListener('click', function (e) {
+				document.getElementById('hit-state').textContent = 'hit';
+				document.getElementById('hit-coords').textContent =
+					Math.round(e.clientX) + ',' + Math.round(e.clientY);
+			});
+			document
+				.getElementById('move-target')
+				.addEventListener('mouseenter', function () {
+					document.getElementById('move-state').textContent = 'moved';
+				});
+			var du = document.getElementById('down-up-target');
+			du.addEventListener('mousedown', function () {
+				document.getElementById('down-up-state').textContent = 'down';
+			});
+			du.addEventListener('mouseup', function () {
+				var el = document.getElementById('down-up-state');
+				el.textContent = el.textContent === 'down' ? 'down-up' : 'up-only';
+			});
+		</script>
+	</body>
+</html>
+`;
+
+/**
+ * A page exercising the Tier-4 `screenshot` verb's ELEMENT scope (prd
+ * `broaden-agent-verb-surface`, R3, story 17). `#widget` is a fixed-size,
+ * solid-colour box (a stand-in for a captcha widget) at a known size, so an
+ * element-clipped screenshot of it produces a PNG whose dimensions match the
+ * widget, not the viewport. A taller body makes a FULL-PAGE shot strictly
+ * taller than a VIEWPORT shot, so the three scopes are distinguishable by the
+ * returned dimensions.
+ */
+const SCREENSHOT = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>screenshot fixture</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				padding: 0;
+			}
+			#widget {
+				width: 200px;
+				height: 150px;
+				background: #2a6;
+			}
+			#tall {
+				height: 3000px;
+				background: linear-gradient(#fff, #036);
+			}
+		</style>
+	</head>
+	<body>
+		<div id="widget">widget</div>
+		<div id="tall">tall body for full-page</div>
+	</body>
+</html>
+`;
+
+/**
+ * The Tier-4 CROSS-ORIGIN nested-frame fixture (prd
+ * `broaden-agent-verb-surface`, R3, stories 17-19), mirroring the synthetic
+ * doubly-nested cross-origin tree the finding
+ * `playwright-cross-origin-frame-captcha-mechanics.md` spike-verified:
+ *
+ * ```
+ * top (host)
+ *  └─ iframe#child-frame       ← CROSS-ORIGIN (a second fixture-server origin)
+ *     └─ iframe#child-frame    ← CROSS-ORIGIN AGAIN (a third origin)
+ *        └─ the tile grid + token sink
+ * ```
+ *
+ * Because the fixture server serves IDENTICAL pages on every port, the test
+ * composes the three origins by passing each child frame's absolute URL in a
+ * `?child=<url>` query param; this page reads its OWN query string and points
+ * `#child-frame` at the given child URL. Every level uses the SAME iframe id
+ * (`#child-frame`), so a `frameLocator('#child-frame').frameLocator('#child-frame')`
+ * chain reads two cross-origin boundaries deep. With no `child` param the frame
+ * is removed, so the SAME page is the host, the WAF level, and the deepest
+ * captcha level depending on the URL the test embeds. The deepest level (no
+ * `child`) carries the controlled tile/token state the READ asserts, and a
+ * `#tile-1` widget an element-clipped screenshot targets.
+ */
+const NESTED_FRAME = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>nested frame fixture</title>
+		<style>
+			#tile-1 {
+				width: 90px;
+				height: 90px;
+				background: #c33;
+			}
+		</style>
+	</head>
+	<body>
+		<h1 id="level-heading">nested frame level</h1>
+		<!-- The tile grid + token sink, present at EVERY level but meaningful at
+		     the deepest (captcha) one the test reads into. -->
+		<div id="challenge" class="challenge">
+			<div id="tile-1" class="tile" data-tile="1">tile 1</div>
+			<div class="tile" data-tile="2">tile 2</div>
+			<div class="tile" data-tile="3">tile 3</div>
+			<textarea id="h-captcha-response" name="h-captcha-response">deep-token-123</textarea>
+		</div>
+		<iframe id="child-frame" name="child-frame" width="360" height="300"></iframe>
+		<script>
+			// Read this level's OWN ?child=<url> and point the nested frame at it, so
+			// the test composes the cross-origin tree across distinct origins. Every
+			// level uses the SAME iframe id (#child-frame) so a
+			// frameLocator('#child-frame').frameLocator('#child-frame') chain reads two
+			// cross-origin boundaries deep.
+			var params = new URLSearchParams(window.location.search);
+			var child = params.get('child');
+			var frame = document.getElementById('child-frame');
+			if (child) {
+				frame.src = child;
+			} else if (frame && frame.parentNode) {
+				// Deepest level: no child, remove the empty trailing iframe so the tree
+				// ends cleanly at the tile grid.
+				frame.parentNode.removeChild(frame);
+			}
+		</script>
+	</body>
+</html>
+`;
+
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
@@ -584,4 +784,7 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'drag.html': DRAG,
 	'frame-parent.html': FRAME_PARENT,
 	'frame-child.html': FRAME_CHILD,
+	'coordinate.html': COORDINATE,
+	'screenshot.html': SCREENSHOT,
+	'nested-frame.html': NESTED_FRAME,
 };

@@ -6,6 +6,10 @@ import {
 } from 'playwright';
 import {AttachNoContextError, AttachNotChromiumError} from './errors.js';
 import {composeWithHands, type Hand, type HandContext} from './hand-host.js';
+import {
+	resolveScreenshotsDir,
+	type ProfileLocationOptions,
+} from './profile-location.js';
 import type {OpenTarget, Session, Transport} from './seam.js';
 
 /**
@@ -33,15 +37,26 @@ import type {OpenTarget, Session, Transport} from './seam.js';
  */
 export class PlaywrightAttachTransport implements Transport {
 	readonly #hands: readonly Hand[];
+	readonly #location: ProfileLocationOptions;
 
 	/**
 	 * @param hands explicitly-loaded third-party hands to compose alongside the
 	 *   built-ins (Phase 2, ADR-0007). These come from {@link loadHands} against
 	 *   the operator's explicit config; the transport does NOT discover them. Omit
 	 *   for the built-ins-only surface.
+	 * @param location overrides for the controller home root, used ONLY to resolve
+	 *   the managed SCREENSHOTS dir (`<homeRoot>/screenshots`) the Tier-4
+	 *   `screenshot` verb mints under — attach reuses the user's own browser, so it
+	 *   owns no profile dir, but the screenshot output location still honours the
+	 *   same `root`/`WEBHANDS_HOME` override so a test can isolate it. Omit in
+	 *   production to use `~/.webhands/screenshots`.
 	 */
-	constructor(hands: readonly Hand[] = []) {
+	constructor(
+		hands: readonly Hand[] = [],
+		location: ProfileLocationOptions = {},
+	) {
 		this.#hands = hands;
+		this.#location = location;
 	}
 
 	async open(target: OpenTarget): Promise<Session> {
@@ -77,7 +92,8 @@ export class PlaywrightAttachTransport implements Transport {
 			// browser exposes a context with no page yet (single active session in
 			// v1, PRD Out of Scope).
 			const pwPage = context.pages()[0] ?? (await context.newPage());
-			return makeAttachedSession(browser, pwPage, this.#hands);
+			const screenshotsDir = resolveScreenshotsDir(this.#location);
+			return makeAttachedSession(browser, pwPage, this.#hands, screenshotsDir);
 		} catch (cause) {
 			// On any open-time refusal, disconnect from the user's browser without
 			// closing it (a CDP connection close detaches; it does not kill the
@@ -107,6 +123,7 @@ function makeAttachedSession(
 	browser: Browser,
 	pwPage: Page,
 	extraHands: readonly Hand[],
+	screenshotsDir: string,
 ): Session {
 	const context: BrowserContext = pwPage.context();
 	let closed = false;
@@ -134,7 +151,12 @@ function makeAttachedSession(
 	// the same shared host the launch transport uses, so the verbs behave
 	// identically across both transports. The live `pwPage`/`context` stay
 	// in-process and never cross the seam (ADR-0003).
-	const handContext: HandContext = {pwPage, context, ensureOpen};
+	const handContext: HandContext = {
+		pwPage,
+		context,
+		ensureOpen,
+		screenshotsDir,
+	};
 	const {page, dispose: disposeHands} = composeWithHands(
 		handContext,
 		extraHands,

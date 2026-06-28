@@ -51,6 +51,7 @@ describe('hand-host composition primitive (no browser)', () => {
 			pwPage: {} as HandContext['pwPage'],
 			context: {} as HandContext['context'],
 			ensureOpen: () => {},
+			screenshotsDir: '/tmp/webhands-test-screenshots',
 		};
 	}
 
@@ -236,6 +237,10 @@ function restOfVerbsHand(): Hand {
 			async select() {},
 			async scroll() {},
 			async drag() {},
+			async mouse() {},
+			async screenshot() {
+				return {path: '', width: 0, height: 0};
+			},
 		},
 	});
 }

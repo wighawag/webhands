@@ -3,8 +3,11 @@ import {
 	validateSnapshotOptions,
 	type Cookie,
 	type EvalOptions,
+	type MouseInput,
 	type QueryOptions,
 	type QueryRow,
+	type Screenshot,
+	type ScreenshotOptions,
 	type ScrollTarget,
 	type SelectChoice,
 	type Snapshot,
@@ -115,6 +118,17 @@ export type SessionRpcBuiltInRequest =
 			readonly verb: 'drag';
 			readonly source: string;
 			readonly target: string;
+	  }
+	| {readonly verb: 'mouse'; readonly input: MouseInput}
+	| {
+			readonly verb: 'screenshot';
+			/**
+			 * The {@link ScreenshotOptions}, flattened onto the request. `locator`
+			 * (the `element` scope's clip target) is a branded {@link LocatorString}
+			 * that JSON flattens to a plain string; the server re-brands it with
+			 * {@link locator}. No image bytes ever cross — only the path comes back.
+			 */
+			readonly options?: ScreenshotOptions;
 	  };
 
 /**
@@ -221,6 +235,14 @@ export async function applySessionRpc(
 		case 'drag':
 			await page.drag(locator(request.source), locator(request.target));
 			return undefined;
+		case 'mouse':
+			await page.mouse(request.input);
+			return undefined;
+		case 'screenshot':
+			// Re-brand the `element`-scope clip locator (plain string over the wire)
+			// before it reaches the page; the rest of the options are plain. Only the
+			// returned {path,width,height} crosses back — never image bytes.
+			return page.screenshot(rebrandScreenshot(request.options));
 		case 'hand':
 			return applyHandVerb(page, request);
 	}
@@ -380,6 +402,15 @@ export function makeRpcPage(
 		async drag(source, target) {
 			await send({verb: 'drag', source, target});
 		},
+		async mouse(input) {
+			await send({verb: 'mouse', input});
+		},
+		async screenshot(options) {
+			return (await send({
+				verb: 'screenshot',
+				...(options !== undefined ? {options} : {}),
+			})) as Screenshot;
+		},
 	};
 }
 
@@ -429,4 +460,19 @@ function rebrandScroll(target: ScrollTarget): ScrollTarget {
 		return {to: locator(target.to)};
 	}
 	return target;
+}
+
+/**
+ * Re-brand a {@link ScreenshotOptions} that arrived as plain JSON: only the
+ * `element`-scope `locator` carries a branded {@link LocatorString}, flattened
+ * to a plain `string` over the wire, so we re-tag it before it reaches the page
+ * (mirrors {@link rebrandWait}/{@link rebrandScroll}). `scope`/`out` are plain.
+ */
+function rebrandScreenshot(
+	options?: ScreenshotOptions,
+): ScreenshotOptions | undefined {
+	if (options?.locator === undefined) {
+		return options;
+	}
+	return {...options, locator: locator(options.locator)};
 }

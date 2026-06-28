@@ -10,6 +10,7 @@ import {
 	NoLiveServerError,
 	SessionAlreadyActiveError,
 	CrossOriginFrameError,
+	ScreenshotPathError,
 	type OpenTarget,
 	type RunningSessionServer,
 	type Session,
@@ -62,6 +63,26 @@ function evalRejectingProvider(error: unknown): SessionProvider {
 		const session: Session = {
 			page: {
 				async eval() {
+					throw error;
+				},
+			} as unknown as Session['page'],
+			async close() {},
+			async waitForClose() {},
+		};
+		return session;
+	};
+}
+
+/**
+ * A provider whose session opens fine but whose `screenshot` REJECTS with
+ * `error`, so the verb-level error path is exercised — the shape the screenshot
+ * managed-dir error takes (raised by the `screenshot` verb, not at open).
+ */
+function screenshotRejectingProvider(error: unknown): SessionProvider {
+	return async () => {
+		const session: Session = {
+			page: {
+				async screenshot() {
 					throw error;
 				},
 			} as unknown as Session['page'],
@@ -187,6 +208,16 @@ describe('incur CLI wiring', () => {
 			{argv: ['select'], wantArgs: true, outputKeys: ['ok', 'verb', 'by']},
 			{argv: ['scroll'], wantArgs: false, outputKeys: ['ok', 'verb', 'form']},
 			{argv: ['drag'], wantArgs: true, outputKeys: ['ok', 'verb']},
+			{
+				argv: ['mouse'],
+				wantArgs: false,
+				outputKeys: ['ok', 'verb', 'action', 'x', 'y'],
+			},
+			{
+				argv: ['screenshot'],
+				wantArgs: false,
+				outputKeys: ['ok', 'verb', 'path', 'width', 'height'],
+			},
 			{argv: ['wait'], wantArgs: false, outputKeys: ['ok', 'verb', 'kind']},
 			{
 				argv: ['setup-profile'],
@@ -477,6 +508,104 @@ describe('incur CLI wiring', () => {
 				`page.locator('#src')`,
 				`page.locator('#dst')`,
 			]);
+		});
+	});
+
+	describe('Tier-4 coordinate + screenshot verb wiring (prd broaden-agent-verb-surface, R3/R5)', () => {
+		it('mouse forwards --action/--x/--y/--button into the seam mouse call', async () => {
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'mouse',
+				'--action',
+				'click',
+				'--x',
+				'120',
+				'--y',
+				'80',
+				'--button',
+				'right',
+			]);
+			expect(env.data).toMatchObject({
+				verb: 'mouse',
+				action: 'click',
+				x: 120,
+				y: 80,
+			});
+			const call = transport.calls.find((c) => c.verb === 'mouse');
+			// Plain numbers + an enum cross the seam (ADR-0003 as amended): no
+			// Playwright type, no OS coordinate.
+			expect(call?.args).toEqual([
+				{action: 'click', x: 120, y: 80, button: 'right'},
+			]);
+		});
+
+		it('mouse defaults action to click and button to left', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, ['mouse', '--x', '1', '--y', '2']);
+			expect(transport.calls.find((c) => c.verb === 'mouse')?.args).toEqual([
+				{action: 'click', x: 1, y: 2, button: 'left'},
+			]);
+		});
+
+		it('screenshot defaults to viewport scope and surfaces the path field', async () => {
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, ['screenshot']);
+			expect(env.ok).toBe(true);
+			// The attachment-capable `path` field (R5): the stub returns a stand-in
+			// path and the verb surfaces it (never image bytes).
+			expect(env.data).toMatchObject({
+				verb: 'screenshot',
+				path: 'stub://screenshot.png',
+			});
+			expect(
+				transport.calls.find((c) => c.verb === 'screenshot')?.args,
+			).toEqual([{scope: 'viewport'}]);
+		});
+
+		it('screenshot --scope element forwards the --locator + --out into the seam call', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'screenshot',
+				'--scope',
+				'element',
+				'--locator',
+				`page.locator('#widget')`,
+				'--out',
+				'sub/x.png',
+			]);
+			expect(
+				transport.calls.find((c) => c.verb === 'screenshot')?.args,
+			).toEqual([
+				{
+					scope: 'element',
+					locator: `page.locator('#widget')`,
+					out: 'sub/x.png',
+				},
+			]);
+		});
+
+		it('screenshot --scope element WITHOUT --locator is a loud error (like wait)', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'screenshot',
+				'--scope',
+				'element',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-screenshot');
+		});
+
+		it('screenshot --locator on a NON-element scope is a loud error', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'screenshot',
+				'--scope',
+				'viewport',
+				'--locator',
+				`page.locator('#widget')`,
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-screenshot');
 		});
 	});
 
@@ -948,6 +1077,26 @@ describe('incur CLI wiring', () => {
 			expect(env.error?.code).toBe('cross-origin-frame');
 			expect(env.error?.message).toMatch(/cross-origin/i);
 			expect(env.error?.message).toContain('SAME-ORIGIN');
+		});
+
+		it('maps the typed screenshot-path-outside-managed-dir condition to a fix', async () => {
+			// The managed-dir error is raised by the `screenshot` VERB (a caller --out
+			// escaping the managed dir), not at open, so it drives the verb-level
+			// fail() path. The CLI surfaces its code + a fix hint.
+			const provider = screenshotRejectingProvider(
+				new ScreenshotPathError(
+					'/etc/evil.png',
+					'/home/u/.webhands/screenshots',
+				),
+			);
+			const env = await runEnvelope(provider, [
+				'screenshot',
+				'--out',
+				'/etc/evil.png',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('screenshot-path-outside-managed-dir');
+			expect(env.error?.message).toContain('managed');
 		});
 
 		it('does NOT mistake a generic error for a typed condition (falls back to `unknown`)', async () => {

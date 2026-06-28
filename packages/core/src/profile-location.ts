@@ -30,6 +30,16 @@ export const CONTROLLER_HOME_ENV = 'WEBHANDS_HOME';
 /** The subdirectory under the home root that holds dedicated profiles. */
 export const PROFILES_DIRNAME = 'profiles';
 
+/**
+ * The subdirectory under the home root where the `screenshot` verb MINTS its
+ * PNG files (the Tier-4 managed screenshots dir, prd
+ * `broaden-agent-verb-surface`, R3). It lives BESIDE `profiles/` under the SAME
+ * overridable home root, so the same `root`/`WEBHANDS_HOME` override that
+ * isolates profiles in a test also isolates screenshots — nothing writes to the
+ * real `~/.webhands/screenshots` unless the home root points there.
+ */
+export const SCREENSHOTS_DIRNAME = 'screenshots';
+
 /** Inputs that influence where a profile resolves (all optional, for tests). */
 export interface ProfileLocationOptions {
 	/**
@@ -89,4 +99,19 @@ export function resolveProfileLocation(
 		profileDir: join(profilesRoot, profile),
 		profile,
 	};
+}
+
+/**
+ * Resolve the managed SCREENSHOTS directory (`<homeRoot>/screenshots`) the
+ * `screenshot` verb mints PNGs under (prd `broaden-agent-verb-surface`, R3).
+ * Like {@link resolveProfileLocation} it is PURE (creates no directory) and
+ * honours the same `root`/`WEBHANDS_HOME` precedence, so a test that points the
+ * home root at a temp dir isolates screenshots there and the real
+ * `~/.webhands/screenshots` stays untouched. The verb (in the transport) is
+ * responsible for creating the dir lazily on first write.
+ */
+export function resolveScreenshotsDir(
+	options: ProfileLocationOptions = {},
+): string {
+	return join(resolveHomeRoot(options), SCREENSHOTS_DIRNAME);
 }
