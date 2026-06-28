@@ -1,25 +1,9 @@
 ---
 title: Broaden the agent verb surface (extraction, rich input, frame scope) so an unaided agent can drive any site — including self-solving captchas with only a 2captcha key
 slug: broaden-agent-verb-surface
-needsAnswers: true
 ---
 
 > Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks.
-
-<!-- open-questions -->
-
-## Open questions
-
-These block AUTO-tasking; they are design choices the tasker must not guess.
-
-1. **CLI/MCP surface for the new verbs.** The new verbs must appear as both CLI
-   commands and MCP tools (incur gives both). Confirm the structured `query`
-   result and the input verbs (`press`, `select`, `hover`, `scroll`, plus any
-   Deliverable-4 coordinate/screenshot verbs) have a clean CLI shape (e.g. how
-   `attrs`/`props`/`pw` lists and a frame qualifier are passed as flags) — not
-   just a programmatic API.
-
-<!-- /open-questions -->
 
 ## Resolved decisions
 
@@ -56,6 +40,37 @@ as settled, not open.
    `frameLocator`/coordinate ops (R3). Net: locator-native now, `frame?`-everywhere
    stays a cheap, safe future toggle.
 
+- **R5 — CLI/MCP surface follows the EXISTING incur convention (no new
+   mechanism); the programmatic shapes (R1–R4) map to flags/args mechanically.**
+   Verified against the current `packages/cli/src/cli.ts` verb definitions
+   (Zod-schema'd `args` positional + `options` flags, a Zod `output` schema incur
+   renders token-cheap for the CLI agent AND as typed MCP tool I/O, boolean flags
+   get incur's `--no-` negation, `wait` sets the "exactly one of" loud-validation
+   precedent):
+  - **List flags are REPEATABLE, not comma-joined:** `query <locator> --attr href
+    --attr data-sitekey --prop innerText --prop type --pw visible --pw bbox
+    [--limit N] [--with-refs]`. Repeatable avoids the comma-in-value ambiguity.
+  - **`query` output** is a Zod schema (`rows: [{ ref?, attrs?, props?, pw? }]`),
+    rendered token-cheap (TOON) on the CLI and typed over MCP — exactly as
+    `snapshot` does today.
+  - **No `--frame` flag on locator-taking verbs** (R1): frame scope rides IN the
+    locator string (`frameLocator('#x').locator('#y')`). The ONLY `--frame
+    <selector>` flag is on `eval` (R1's one exception).
+  - **`screenshot`** output `{path, width, height}` (Zod); flags `--scope
+    viewport|full|element` (default `viewport`), `--locator <expr>` (REQUIRED when
+    `--scope element`, validated loud like `wait`), `--out <path>` (optional
+    override; validated to stay under the managed dir). The MCP result surfaces
+    the path as an attachment-capable field (the path-not-bytes choice, R3, is
+    what makes this clean).
+  - **`mouse`** flags: `--action click|move|down|up`, `--x <n>`, `--y <n>`,
+    `--button left|right|middle` (default left). Plain numbers/enums.
+  - **Tier-2 input verbs** are positional-arg + small-flag, mirroring `click`:
+    `press <key-or-chord> [--locator <expr>]`, `hover <locator>`, `select
+    <locator> --value <v>` (or `--label <l>`), `scroll (--to <locator> | --by
+    <dx,dy>)`, `drag <source-locator> <target-locator>`.
+  - **`exists`/`count`/`isVisible`/`getAttribute`** are positional-locator verbs
+    (+ `--name` for `getAttribute`), each with a tiny Zod `output` so an agent can
+    branch on the result from the CLI as easily as over RPC.
 - **R4 — addressing: locator/`.nth()` (A) FIRST; a `query`-minted durable DOM ref
    (B) as a KNOWN-CHEAP fast-follow (spiked, not deferred-blind).** ADR-0004's
    locator expression stays THE addressing spine, so `query` returns rows the
@@ -461,4 +476,6 @@ coordinate clicks) is recorded in that ADR.
   proof against the multi-origin fixture (depends on T6). T1’s acceptance MUST
   bake in the R1 reversibility invariant (options-object signatures + single
   frame-resolution helper) so a future `frame?`-everywhere AND the T1b `ref` field
-  both stay non-breaking.
+  both stay non-breaking. Each verb task SHIPS its CLI command + MCP tool together
+  (R5: same incur definition gives both) — there is no separate "CLI surface" task;
+  a verb without its CLI/MCP shape is incomplete.
