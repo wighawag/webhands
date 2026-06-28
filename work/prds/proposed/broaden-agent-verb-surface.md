@@ -81,22 +81,54 @@ as settled, not open.
   - A's `.nth(i)` SILENTLY clicks the wrong element after the list mutates between
     read and act (spike: clicked "Bravo" when it wanted "Charlie" after a row was
     prepended) — dangerous for checkout/captcha.
-  - B: `query` (opt-in) stamps `data-webhands-ref="<id>"` on each matched element
-    and returns the id as the row's `ref`; `click`/`type` accept a `ref` and
-    resolve it as the locator string `[data-webhands-ref="<id>"]` through the
-    EXISTING resolver. It is DURABLE across calls and ROBUST to index drift
-    (spike: clicked "Charlie" correctly after the prepend), and SEAM-CLEAN (a ref
-    is a string; resolution is a string locator; no ElementHandle, no Playwright
-    type — ADR-0003 intact).
+  - B — a `ref` PREFERENCE LADDER, computed by `query` per element (the ref is
+    ALWAYS just a locator string resolved through the existing resolver):
+      1. **Reuse a stable, unique EXISTING attribute** when the element has one —
+         in priority order `id`, then `data-testid`/`data-test`/`data-id`,
+         `name`, a link's `href`, a unique `aria-label` — PRESENT *and*
+         VERIFIED-UNIQUE on the page (per R1, within its frame). The ref IS the
+         real locator (`#buy-charlie`, `[data-testid="x"]`): durable across
+         framework reconciliation (the framework keeps its OWN meaningful attrs),
+         human-legible, and ZERO DOM mutation.
+      2. **MINT only as the fallback** for an anonymous element with no stable
+         unique address: stamp `data-webhands-ref="<id>"` (or the WeakMap variant,
+         below) and return it; `click`/`type` resolve `[data-webhands-ref="<id>"]`.
+    The spike proved the MOVE case (a prepend) survives — clicked "Charlie"
+    correctly after the reorder — and that a ref is SEAM-CLEAN (a string; no
+    ElementHandle; ADR-0003 intact). The ladder shrinks minting to exactly the
+    elements that had nothing stable, which are also where it matters least.
+  - **HONEST durability scope (folded in after the React/Svelte question).** A
+    minted ref is a SHORT-LIVED handle, not a stable element identity. The spike
+    tested only a DOM MOVE. NODE REPLACEMENT and ATTRIBUTE-STRIPPING are EXPECTED
+    on modern SPAs — React keyed-list reconciliation and Svelte `{#each}`/`{#if}`
+    re-creates nodes (a minted attr dies with the old node), and React may even
+    STRIP an unknown attribute we stamped on a node it keeps (the attr is not in
+    its virtual DOM). All of these MUST surface as a LOUD typed `StaleRefError`:
+    a ref resolving to ZERO elements is stale; a ref resolving to MORE THAN ONE
+    (a framework cloned a subtree carrying our attr) is also an error, never
+    "pick the first". A loud-stale handle is STRICTLY SAFER than A's SILENT
+    wrong-element click — the agent is told "re-`query`, the page changed", which
+    is its natural loop anyway. The minting MECHANISM (a `data-webhands-ref`
+    attribute vs. a page-world `WeakMap<Element,id>` that survives
+    attribute-stripping by keying on node identity) is left for the T1b spike to
+    decide against real React/Svelte re-renders.
+  - **Web 1.0 / full-page-reload sites: supported BY the stale contract, not a
+    gap.** A navigation destroys the document and every ref with it; the next
+    `query` re-mints against the fresh DOM. A ref simply never survives a reload,
+    and because staleness is DETECTED (resolve-to-zero → `StaleRefError`), the
+    agent re-`query`s rather than mis-clicks — which is exactly the act → reload
+    → re-read loop a Web 1.0 site already forces. So we deliberately do NOT try to
+    persist refs across navigation; the loud-stale + re-query path covers it.
   - Playwright's native `aria-ref` is REJECTED for this: it is positional/
     snapshot-scoped and resolved to the WRONG element after drift (spike).
-  - Read-only preserved: refs are minted ONLY when the caller asks (e.g. a
-    `withRefs`/`pw:['ref']` opt-in), so the default `query` stays a pure read; the
-    attribute is namespaced; a STALE ref (element replaced on re-render) fails
-    LOUD with a typed error, never a silent wrong-element click.
+  - Read-only preserved: refs/mints happen ONLY when the caller asks (a
+    `withRefs`/`pw:['ref']` opt-in), so the default `query` stays a pure read;
+    minted attributes are namespaced and single-`query`-scoped (a fresh `query`
+    supersedes/sweeps prior mints so a ref can't match a stale element from two
+    queries ago).
   - Fits R1's reversibility shape (a `ref` is an additive optional row field + the
     one existing resolver). Recommended task order: A in T1, B as a fast-follow
-    task right after (not "future").
+    task (T1b) right after (not "future").
 - **R2 — `query` has NO curated DOM field set; the agent names DOM data freely,
    plus a tiny Playwright-only extras set.** DOM attributes and JS properties ARE
    Playwright/DOM vocabulary the agent already knows, so webhands maintains NO
@@ -464,9 +496,15 @@ coordinate clicks) is recorded in that ADR.
   `query`-minted `data-webhands-ref` is a cheap durable cross-call handle that
   survives index drift; native `aria-ref` does not).
 - Suggested task fan-out (the tasker decides): T1 `query`+state verbs (locator/
-  `.nth()` addressing = A) (+fixtures); T1b the `query`-minted durable DOM ref (B)
-  fast-follow — opt-in `ref` row field + `click`/`type` accepting a ref resolved
-  as `[data-webhands-ref=..]`, default `query` stays read-only (depends on T1);
+  `.nth()` addressing = A) (+fixtures); T1b the `query` durable `ref` (B)
+  fast-follow: the prefer-stable-attribute LADDER (reuse a unique `id`/
+  `data-testid`/… when present; MINT only as fallback), `click`/`type` accept a
+  ref, opt-in so default `query` stays read-only, a stale/ambiguous ref fails
+  LOUD. T1b MUST OPEN WITH A SPIKE validating the ref against a real React
+  keyed-list re-render and a Svelte `{#each}` re-render ((i) a reused stable attr
+  survives reconciliation; (ii) a minted attr may be stripped/replaced; (iii)
+  attribute-mint vs. page-world `WeakMap<Element,id>` mint) and lets THAT spike
+  pick the minting mechanism (depends on T1);
   T2 frame-aware `query` read & the same-origin token-harvest captcha proof;
   T3 Tier-2 input verbs (`press`/`hover`/`select`/`scroll`/`drag`); T4
   frame-scoped `eval` (the only `frame?` qualifier; same-origin only); T5
