@@ -6,6 +6,7 @@ import {
 	type Page,
 } from 'playwright';
 import type {
+	ActionOptions,
 	BoundingBox,
 	Cookie,
 	EvalOptions,
@@ -22,7 +23,11 @@ import type {
 	WaitCondition,
 } from './seam.js';
 import {validateSnapshotOptions} from './seam.js';
-import {CrossOriginFrameError, ScreenshotPathError} from './errors.js';
+import {
+	CrossOriginFrameError,
+	ScreenshotPathError,
+	StaleRefError,
+} from './errors.js';
 import {mkdir} from 'node:fs/promises';
 import {isAbsolute, join, relative, resolve as resolvePath} from 'node:path';
 
@@ -316,15 +321,29 @@ export const snapshotHand: Hand = ({pwPage, ensureOpen}) => ({
 	},
 });
 
-/** The `click` + `type` verbs: page interaction by raw locator (ADR-0004). */
+/**
+ * The `click` + `type` verbs: page interaction by raw locator (ADR-0004).
+ *
+ * With `{byRef: true}` the target is a durable `query` {@link QueryRow.ref}: it
+ * is resolved through the SAME {@link resolveLocator} but FIRST asserted to match
+ * EXACTLY ONE element ({@link assertRefResolvesToOne}), so a stale (zero) or
+ * ambiguous (many) ref fails LOUD with a {@link StaleRefError} instead of
+ * silently acting on the wrong element — the safety the durable ref exists for.
+ */
 export const interactionHand: Hand = ({pwPage, ensureOpen}) => ({
 	verbs: {
-		async click(t): Promise<void> {
+		async click(t, options?: ActionOptions): Promise<void> {
 			ensureOpen();
+			if (options?.byRef === true) {
+				await assertRefResolvesToOne(pwPage, t, 'click');
+			}
 			await clickLocator(pwPage, t);
 		},
-		async type(t, text): Promise<void> {
+		async type(t, text, options?: ActionOptions): Promise<void> {
 			ensureOpen();
+			if (options?.byRef === true) {
+				await assertRefResolvesToOne(pwPage, t, 'type');
+			}
 			await resolveLocator(pwPage, t).fill(text);
 		},
 	},
@@ -829,17 +848,149 @@ export async function queryRows(
 	const attrs = options?.attrs ?? [];
 	const props = options?.props ?? [];
 	const pw = options?.pw ?? [];
+	const withRefs = options?.refs === true;
 	const base = resolveLocator(page, expression);
 	const total = await base.count();
 	const limit =
 		options?.limit !== undefined ? Math.max(0, options.limit) : total;
 	const rowCount = Math.min(total, limit);
 
+	// Refs are single-`query`-scoped: each `refs: true` query SWEEPS the PRIOR
+	// query's minted attributes FIRST (page-wide), so a ref can never resolve a
+	// stale element minted two queries ago. Reused stable attrs (ladder step 1)
+	// are the framework's own and are untouched. Done once, before iterating.
+	if (withRefs) {
+		await sweepPriorMints(page);
+	}
+
 	const rows: QueryRow[] = [];
 	for (let i = 0; i < rowCount; i++) {
-		rows.push(await readRow(base.nth(i), attrs, props, pw));
+		rows.push(await readRow(base.nth(i), attrs, props, pw, withRefs));
 	}
 	return rows;
+}
+
+/**
+ * The namespaced attribute the MINT fallback (ladder step 2) stamps on an
+ * anonymous element. A `query({refs: true})` sweeps every node carrying it
+ * before re-minting, so mints stay single-query-scoped.
+ */
+const REF_MINT_ATTR = 'data-webhands-ref';
+
+/**
+ * Remove EVERY {@link REF_MINT_ATTR} attribute currently in the document, the
+ * single-`query`-scope sweep run at the start of each `refs: true` query. This
+ * touches ONLY webhands' own minted attribute — never a framework's stable attrs
+ * (ladder step 1 reuses those, it does not stamp them), so a sweep cannot break
+ * a reused-attribute ref.
+ */
+async function sweepPriorMints(page: Page): Promise<void> {
+	await page.evaluate((attr) => {
+		document.querySelectorAll('[' + attr + ']').forEach((el) => {
+			el.removeAttribute(attr);
+		});
+	}, REF_MINT_ATTR);
+}
+
+/**
+ * Compute the durable {@link QueryRow.ref} for ONE matched element by the R4
+ * PREFERENCE LADDER, in page-world (the finding
+ * `query-ref-mint-mechanism-attribute-beats-weakmap` settled the mechanism: a
+ * `data-webhands-ref` ATTRIBUTE, not a WeakMap).
+ *
+ * Returns the ref as a LOCATOR EXPRESSION the ONE existing {@link resolveLocator}
+ * resolves — `p.locator('<css>')` — NOT a bare CSS string, so `click`/`type`
+ * feed it back through the exact same resolver path as any other locator (no new
+ * addressing engine, R1). The human-legible CSS the ladder picks rides INSIDE
+ * that expression (`p.locator('#buy-charlie')`).
+ *
+ * Ladder:
+ * 1. REUSE the element's own stable, VERIFIED-UNIQUE attribute, in priority
+ *    `id` > `data-testid`/`data-test`/`data-id` > `name` > a link's `href` >
+ *    a unique `aria-label`. The CSS IS the element's real address: durable
+ *    across reconciliation (the framework keeps its OWN attrs), legible, ZERO
+ *    DOM mutation. Uniqueness is VERIFIED with
+ *    `querySelectorAll(...).length === 1`; a duplicate (e.g. two equal ids)
+ *    FALLS THROUGH to the next rung.
+ * 2. MINT a namespaced {@link REF_MINT_ATTR} as the fallback for an anonymous
+ *    element with no stable unique address, addressed by
+ *    `[data-webhands-ref="<id>"]`.
+ *
+ * The minted-id counter lives on `window` so ids are unique within the page for
+ * the life of the document (the sweep clears stale ATTRIBUTES, not the counter,
+ * so a re-mint never reuses an id a still-resolvable ref might hold).
+ */
+async function computeRef(cell: Locator): Promise<string> {
+	const css = await cell.evaluate((el: Element, attr: string): string => {
+		const cssEscape = (v: string): string =>
+			typeof (window as {CSS?: {escape?: (s: string) => string}}).CSS
+				?.escape === 'function'
+				? (
+						window as unknown as {CSS: {escape: (s: string) => string}}
+					).CSS.escape(v)
+				: v.replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c);
+		const uniq = (selector: string): boolean =>
+			document.querySelectorAll(selector).length === 1;
+
+		// Ladder step 1: reuse a stable, VERIFIED-UNIQUE existing attribute.
+		const id = el.getAttribute('id');
+		if (id !== null && id !== '') {
+			const sel = '#' + cssEscape(id);
+			if (uniq(sel)) return sel;
+		}
+		for (const name of ['data-testid', 'data-test', 'data-id', 'name']) {
+			const value = el.getAttribute(name);
+			if (value !== null && value !== '') {
+				const sel = '[' + name + '="' + value.replace(/"/g, '\\"') + '"]';
+				if (uniq(sel)) return sel;
+			}
+		}
+		// A link's href (only meaningful on an anchor).
+		if (el.tagName === 'A') {
+			const href = el.getAttribute('href');
+			if (href !== null && href !== '') {
+				const sel = 'a[href="' + href.replace(/"/g, '\\"') + '"]';
+				if (uniq(sel)) return sel;
+			}
+		}
+		// A unique aria-label.
+		const aria = el.getAttribute('aria-label');
+		if (aria !== null && aria !== '') {
+			const sel = '[aria-label="' + aria.replace(/"/g, '\\"') + '"]';
+			if (uniq(sel)) return sel;
+		}
+
+		// Ladder step 2: MINT the namespaced attribute (the fallback).
+		const w = window as unknown as {__webhandsRefSeq?: number};
+		w.__webhandsRefSeq = (w.__webhandsRefSeq ?? 0) + 1;
+		const mintedId = 'wr' + w.__webhandsRefSeq;
+		el.setAttribute(attr, mintedId);
+		return '[' + attr + '="' + mintedId + '"]';
+	}, REF_MINT_ATTR);
+	// Wrap the chosen CSS in a `p.locator(...)` expression so the ref resolves
+	// through the SAME resolver as every other locator. JSON-encode the CSS so a
+	// quote/backslash in a reused attribute value cannot break out of the call.
+	return `p.locator(${JSON.stringify(css)})`;
+}
+
+/**
+ * Resolve a durable `query` `ref` and assert it matches EXACTLY ONE element,
+ * else throw a typed {@link StaleRefError} (resolve-to-ZERO = removed/replaced;
+ * resolve-to-MANY = a cloned subtree / non-unique attribute). The loud-stale
+ * guard `click`/`type` run BEFORE acting when `{byRef: true}`, so a stale or
+ * ambiguous ref NEVER silently acts on the wrong element (the safety a ref has
+ * over a positional `.nth(i)`). Resolved through the SAME {@link resolveLocator}
+ * the verbs already use — no parallel addressing path.
+ */
+export async function assertRefResolvesToOne(
+	page: Page,
+	ref: string,
+	verb: string,
+): Promise<void> {
+	const matched = await resolveLocator(page, ref).count();
+	if (matched !== 1) {
+		throw new StaleRefError(ref, matched, verb);
+	}
 }
 
 /**
@@ -853,11 +1004,13 @@ async function readRow(
 	attrs: readonly string[],
 	props: readonly string[],
 	pw: readonly string[],
+	withRef: boolean,
 ): Promise<QueryRow> {
 	const row: {
 		attrs?: Record<string, string | null>;
 		props?: Record<string, unknown>;
 		pw?: {visible?: boolean; bbox?: BoundingBox | null};
+		ref?: string;
 	} = {};
 
 	if (attrs.length > 0 || props.length > 0) {
@@ -912,6 +1065,13 @@ async function readRow(
 			extras.bbox = await cell.boundingBox();
 		}
 		row.pw = extras;
+	}
+
+	// The durable handle (opt-in). Computed by the R4 ladder in page-world:
+	// reuse a stable unique attribute, else mint `data-webhands-ref`. Done after
+	// the reads so a mint can never perturb an attr/prop read of this row.
+	if (withRef) {
+		row.ref = await computeRef(cell);
 	}
 
 	return row;

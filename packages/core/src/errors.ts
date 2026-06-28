@@ -26,7 +26,8 @@ export type ControllerErrorCode =
 	| 'no-live-server'
 	| 'session-already-active'
 	| 'cross-origin-frame'
-	| 'screenshot-path-outside-managed-dir';
+	| 'screenshot-path-outside-managed-dir'
+	| 'stale-ref';
 
 /**
  * Base class for every identifiable `core` error. Branch on {@link code}.
@@ -305,6 +306,60 @@ export class ScreenshotPathError extends ControllerError {
 		super(message, options);
 		this.path = path;
 		this.managedDir = managedDir;
+	}
+}
+
+/**
+ * A durable `query` `ref` (prd `broaden-agent-verb-surface`, R4; finding
+ * `query-ref-mint-mechanism-attribute-beats-weakmap`) failed to resolve to
+ * EXACTLY ONE element when an action verb (`click`/`type`) tried to act on it.
+ * A `ref` is a SHORT-LIVED handle, not a stable identity: between the `query`
+ * that minted it and the act, the page may have re-rendered (React keyed-list /
+ * Svelte `{#each}` NODE REPLACEMENT), navigated, or cloned a subtree carrying
+ * our minted attribute. Two stale shapes, BOTH this one error, never a silent
+ * wrong-element action:
+ *
+ * - resolve-to-ZERO ({@link matched} `=== 0`) — the element was removed or
+ *   replaced (its minted node is gone, or a reused stable attribute it carried
+ *   no longer exists). The agent must re-`query` against the fresh DOM.
+ * - resolve-to-MANY ({@link matched} `> 1`) — the ref matches more than one
+ *   element (a framework cloned a subtree carrying our minted attribute, or a
+ *   reused attribute turned out non-unique after a mutation). We refuse to
+ *   "pick the first", because that is exactly the silent wrong-element click the
+ *   ref exists to PREVENT.
+ *
+ * This is STRICTLY SAFER than re-addressing by a positional `.nth(i)`, which
+ * SILENTLY clicks whatever now sits at that index. The agent is told "re-query,
+ * the page changed" — its natural loop anyway. Mirrors the other typed
+ * conditions: the CLI maps {@link code} to a message, and
+ * {@link isControllerError} narrows it across a bundle boundary.
+ */
+export class StaleRefError extends ControllerError {
+	readonly code = 'stale-ref';
+	/** The ref locator string that went stale (echoed back so it is visible). */
+	readonly ref: string;
+	/** How many elements the ref resolved to (0 = removed/replaced, >1 = ambiguous). */
+	readonly matched: number;
+	/** Which verb tried to act on the stale ref (e.g. `click`, `type`). */
+	readonly verb: string;
+
+	constructor(
+		ref: string,
+		matched: number,
+		verb: string,
+		message: string = matched === 0
+			? `${verb}: the ref ${JSON.stringify(
+					ref,
+				)} is STALE — it now matches NO element (the page changed: the element was removed, replaced by a re-render, or the page navigated). Re-run query to get a fresh ref.`
+			: `${verb}: the ref ${JSON.stringify(
+					ref,
+				)} is AMBIGUOUS — it now matches ${matched} elements (the page changed: a subtree was cloned, or the attribute is no longer unique). Refusing to act on a guessed element; re-run query to get a fresh ref.`,
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+		this.ref = ref;
+		this.matched = matched;
+		this.verb = verb;
 	}
 }
 

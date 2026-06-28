@@ -1,4 +1,5 @@
 import type {
+	ActionOptions,
 	Cookie,
 	EvalOptions,
 	MouseInput,
@@ -77,13 +78,22 @@ export class StubTransport implements Transport {
 					content: '',
 				};
 			},
-			async click(t): Promise<void> {
+			async click(t, options?: ActionOptions): Promise<void> {
 				ensureOpen();
-				calls.push({verb: 'click', args: [t]});
+				// Record the ActionOptions only when given, so a plain-locator click
+				// stays `[t]` (the existing seam assertions) and a `{byRef}` click
+				// records `[t, {byRef: true}]`.
+				calls.push({
+					verb: 'click',
+					args: options !== undefined ? [t, options] : [t],
+				});
 			},
-			async type(t, text): Promise<void> {
+			async type(t, text, options?: ActionOptions): Promise<void> {
 				ensureOpen();
-				calls.push({verb: 'type', args: [t, text]});
+				calls.push({
+					verb: 'type',
+					args: options !== undefined ? [t, text, options] : [t, text],
+				});
 			},
 			async eval(expression: string, options?: EvalOptions): Promise<unknown> {
 				ensureOpen();

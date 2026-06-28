@@ -673,15 +673,28 @@ export function createCli(deps: CliDeps = {}) {
 			locator: z
 				.string()
 				.describe(
-					"A raw Playwright locator expression, e.g. getByRole('button', { name: 'Search' }).",
+					"A raw Playwright locator expression, e.g. getByRole('button', { name: 'Search' }). " +
+						'With --by-ref, a durable `ref` from `query --with-refs` instead.',
 				),
 		}),
-		options: connectionOptions,
+		options: connectionOptions.extend({
+			'by-ref': z
+				.boolean()
+				.default(false)
+				.describe(
+					'Treat the argument as a durable `ref` from `query --with-refs`: ' +
+						'resolve it but fail LOUD (stale-ref) if it now matches zero or more ' +
+						'than one element, instead of silently clicking the wrong one.',
+				),
+		}),
 		output: actionOutput.extend({verb: z.literal('click')}),
 		async run(c) {
 			try {
 				return await withSession(provider, targetFrom(c.options), async (s) => {
-					await s.page.click(locator(c.args.locator));
+					await s.page.click(
+						locator(c.args.locator),
+						c.options['by-ref'] ? {byRef: true} : undefined,
+					);
 					return c.ok(
 						{ok: true as const, verb: 'click' as const},
 						{cta: {commands: [nextSnapshot()]}},
@@ -699,15 +712,31 @@ export function createCli(deps: CliDeps = {}) {
 		args: z.object({
 			locator: z
 				.string()
-				.describe('A raw Playwright locator expression for the target input.'),
+				.describe(
+					'A raw Playwright locator expression for the target input. ' +
+						'With --by-ref, a durable `ref` from `query --with-refs` instead.',
+				),
 			text: z.string().describe('The text to type into the element.'),
 		}),
-		options: connectionOptions,
+		options: connectionOptions.extend({
+			'by-ref': z
+				.boolean()
+				.default(false)
+				.describe(
+					'Treat the locator argument as a durable `ref` from `query --with-refs`: ' +
+						'resolve it but fail LOUD (stale-ref) if it now matches zero or more ' +
+						'than one element, instead of silently typing into the wrong one.',
+				),
+		}),
 		output: actionOutput.extend({verb: z.literal('type')}),
 		async run(c) {
 			try {
 				return await withSession(provider, targetFrom(c.options), async (s) => {
-					await s.page.type(locator(c.args.locator), c.args.text);
+					await s.page.type(
+						locator(c.args.locator),
+						c.args.text,
+						c.options['by-ref'] ? {byRef: true} : undefined,
+					);
 					return c.ok(
 						{ok: true as const, verb: 'type' as const},
 						{cta: {commands: [nextSnapshot()]}},
@@ -812,6 +841,17 @@ export function createCli(deps: CliDeps = {}) {
 				.number()
 				.optional()
 				.describe('Bound the number of rows returned.'),
+			'with-refs': z
+				.boolean()
+				.default(false)
+				.describe(
+					'Also return a durable `ref` per row — a locator handle you feed back ' +
+						'to `click`/`type` --by-ref to act on THAT element even after the ' +
+						'list mutates (fixes the .nth() index-drift footgun). Reuses a ' +
+						'stable unique attribute (id/data-testid/…) when present, mints ' +
+						'a namespaced data-webhands-ref only as a fallback. Off by default: ' +
+						'the default query is a pure read and mutates nothing.',
+				),
 		}),
 		output: z.object({
 			ok: z.literal(true),
@@ -835,6 +875,13 @@ export function createCli(deps: CliDeps = {}) {
 									.optional(),
 							})
 							.optional(),
+						ref: z
+							.string()
+							.optional()
+							.describe(
+								'A durable locator handle for this element (only with --with-refs); ' +
+									'pass it to click/type --by-ref to act on it later.',
+							),
 					}),
 				)
 				.describe(
@@ -849,6 +896,7 @@ export function createCli(deps: CliDeps = {}) {
 						props: c.options.prop,
 						pw: c.options.pw,
 						...(c.options.limit !== undefined ? {limit: c.options.limit} : {}),
+						...(c.options['with-refs'] ? {refs: true} : {}),
 					});
 					return c.ok(
 						{ok: true as const, verb: 'query' as const, rows},

@@ -60,6 +60,12 @@ describe('query/state RPC dispatch (no browser)', () => {
 				calls.push({verb: 'getAttribute', args: [target, name]});
 				return 'sk-123';
 			},
+			async click(target: string, options: unknown) {
+				calls.push({verb: 'click', args: [target, options]});
+			},
+			async type(target: string, text: string, options: unknown) {
+				calls.push({verb: 'type', args: [target, text, options]});
+			},
 		} as unknown as WebHandsPage;
 		return {page, calls};
 	}
@@ -106,6 +112,39 @@ describe('query/state RPC dispatch (no browser)', () => {
 		expect(calls[3]?.args).toEqual(['l', 'data-sitekey']);
 	});
 
+	it('carries the `refs` opt-in through `query` options unchanged', async () => {
+		const {page, calls} = recordingPage();
+		await applySessionRpc(page, {
+			verb: 'query',
+			locator: `page.locator('.x')`,
+			options: {refs: true},
+		});
+		expect(calls[0]?.args).toEqual([`page.locator('.x')`, {refs: true}]);
+	});
+
+	it('routes `click`/`type` with the byRef ActionOptions, and omits it for a plain act', async () => {
+		const {page, calls} = recordingPage();
+		// byRef carried through.
+		await applySessionRpc(page, {
+			verb: 'click',
+			locator: 'ref-loc',
+			options: {byRef: true},
+		});
+		await applySessionRpc(page, {
+			verb: 'type',
+			locator: 'ref-loc',
+			text: 'x',
+			options: {byRef: true},
+		});
+		// No options => the verb is called with `undefined` (plain locator path).
+		await applySessionRpc(page, {verb: 'click', locator: 'plain'});
+		expect(calls).toEqual([
+			{verb: 'click', args: ['ref-loc', {byRef: true}]},
+			{verb: 'type', args: ['ref-loc', 'x', {byRef: true}]},
+			{verb: 'click', args: ['plain', undefined]},
+		]);
+	});
+
 	it('the typed client builds each request through the shared send', async () => {
 		const sent: SessionRpcRequest[] = [];
 		const send = async (request: SessionRpcRequest): Promise<unknown> => {
@@ -129,6 +168,25 @@ describe('query/state RPC dispatch (no browser)', () => {
 			{verb: 'exists', locator: 'l'},
 			{verb: 'isVisible', locator: 'l'},
 			{verb: 'getAttribute', locator: 'l', name: 'href'},
+		]);
+	});
+
+	it('the typed client carries byRef on click/type only when given', async () => {
+		const sent: SessionRpcRequest[] = [];
+		const send = async (request: SessionRpcRequest): Promise<unknown> => {
+			sent.push(request);
+			return undefined;
+		};
+		const page = makeRpcPage(send);
+		await page.click('ref' as never, {byRef: true});
+		await page.click('plain' as never);
+		await page.type('ref' as never, 'hi', {byRef: true});
+		await page.type('plain' as never, 'hi');
+		expect(sent).toEqual([
+			{verb: 'click', locator: 'ref', options: {byRef: true}},
+			{verb: 'click', locator: 'plain'},
+			{verb: 'type', locator: 'ref', text: 'hi', options: {byRef: true}},
+			{verb: 'type', locator: 'plain', text: 'hi'},
 		]);
 	});
 });
@@ -206,6 +264,37 @@ describe('query/state verbs over a live served session (real browser, fixture)',
 					'data-sitekey',
 				),
 			).toBe('sk-hidden-123');
+		} finally {
+			await client.close();
+		}
+	});
+
+	it('a durable ref survives an index drift over the wire; a stale ref fails loud', async () => {
+		const server = await startServer('ref-rpc');
+		const client = connectRemoteSession(server.endpoint.url);
+		try {
+			await client.page.navigate(`${fixture.url}/ref-list.html`);
+			// Opt-in refs over the wire: the ref crosses as a plain string.
+			const rows = await client.page.query(
+				`page.locator('.result .buy')` as never,
+				{refs: true},
+			);
+			const charlieRef = rows[2]!.ref!;
+			expect(typeof charlieRef).toBe('string');
+			// Index drift, then click --by-ref still hits Charlie over the RPC.
+			await client.page.eval('window.__prepend()');
+			await client.page.click(charlieRef as never, {byRef: true});
+			expect(
+				await client.page.eval(
+					"document.getElementById('clicklog').textContent",
+				),
+			).toBe('Charlie;');
+			// Replace Charlie's node; a by-ref act now fails loud (the typed error's
+			// message crosses the wire faithfully, exactly like an eval throw).
+			await client.page.eval('window.__replaceCharlie()');
+			await expect(
+				client.page.click(charlieRef as never, {byRef: true}),
+			).rejects.toThrow(/STALE/);
 		} finally {
 			await client.close();
 		}

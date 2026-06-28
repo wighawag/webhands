@@ -10,6 +10,7 @@ import {
 	SessionAlreadyActiveError,
 	CrossOriginFrameError,
 	ScreenshotPathError,
+	StaleRefError,
 	type ControllerError,
 	type ControllerErrorCode,
 } from '@webhands/core';
@@ -92,6 +93,13 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// only WITHIN that dir; the fix is to drop --out (let webhands mint a
 			// path) or pass one under the managed dir.
 			return `${binary} screenshot (drop --out to let webhands mint a path under ${(error as ScreenshotPathError).managedDir}, or pass an --out inside it)`;
+		case 'stale-ref':
+			// A durable `query` ref went stale (resolve-to-zero) or ambiguous
+			// (resolve-to-many) before the action ran: the page changed between the
+			// query and the act. There is no flag that revives a stale handle; the
+			// fix is to re-run `query --with-refs` against the fresh DOM and act on
+			// the NEW ref (the agent's natural read-then-act loop).
+			return `${binary} query '<locator>' --with-refs (re-read the page to get a fresh ref, then click/type --by-ref with it)`;
 		default: {
 			// Exhaustiveness guard: a new ControllerErrorCode must add a fix command
 			// here rather than silently fall through to a generic message.
@@ -139,5 +147,6 @@ export {
 	SessionAlreadyActiveError,
 	CrossOriginFrameError,
 	ScreenshotPathError,
+	StaleRefError,
 };
 export type {ControllerError, ControllerErrorCode};

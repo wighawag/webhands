@@ -396,6 +396,13 @@ export interface BoundingBox {
  * (the agent already knows DOM/Playwright vocabulary); `pw` is the one closed
  * set ({@link PwExtra}).
  *
+ * `refs` is the OPT-IN durable-handle switch (R4): default `query` is a PURE
+ * READ that mints nothing and returns no `ref`; `refs: true` adds a `ref` to
+ * each row (see {@link QueryRow.ref}). It is a dedicated boolean, NOT a member
+ * of `pw`, because a `ref` is not a Playwright-locator-derived FACT about the
+ * element (the closed `pw` set) — it is an ADDRESS the agent acts on later. The
+ * CLI exposes it as `--with-refs`.
+ *
  * The `attrs` vs `props` split is deliberate and LOUD — webhands NEVER
  * auto-detects which of the two a name like `value`/`checked` means, because a
  * silent attribute-vs-property guess is the footgun this repo's "loud over
@@ -421,6 +428,22 @@ export interface QueryOptions {
 	readonly pw?: readonly PwExtra[];
 	/** Bound the number of rows returned (token economy on a multi-match). */
 	readonly limit?: number;
+	/**
+	 * Opt-in to a durable element {@link QueryRow.ref} per row (R4; finding
+	 * `query-ref-mint-mechanism-attribute-beats-weakmap`). Default (omitted /
+	 * `false`) keeps `query` a PURE READ: no `ref` field, and the page is NOT
+	 * mutated. `true` computes a `ref` per matched element by the PREFERENCE
+	 * LADDER — REUSE the element's own stable UNIQUE attribute when present
+	 * (`id`/`data-testid`/…, ZERO DOM mutation), MINT a namespaced
+	 * `data-webhands-ref` attribute ONLY as the fallback for an anonymous element.
+	 *
+	 * Mints are single-`query`-scoped: each `refs: true` query SWEEPS the prior
+	 * query's mints first, so a ref can never match a stale element from two
+	 * queries ago. An action verb resolves a `ref` with loud staleness detection
+	 * (resolve-to-zero / resolve-to-many => {@link StaleRefError}); see
+	 * {@link ActionOptions.byRef}.
+	 */
+	readonly refs?: boolean;
 }
 
 /**
@@ -445,6 +468,41 @@ export interface QueryRow {
 		readonly visible?: boolean;
 		readonly bbox?: BoundingBox | null;
 	};
+	/**
+	 * The element's durable HANDLE, present ONLY when the caller asked
+	 * ({@link QueryOptions.refs}). It is a LOCATOR STRING the agent feeds back to
+	 * an action verb (`click`/`type`) with `{byRef: true}` to act on THIS element
+	 * later even after the list mutates — fixing the index-drift footgun where a
+	 * positional `.nth(i)` silently clicks the wrong row.
+	 *
+	 * It is computed by the LADDER (R4): when the element has a stable UNIQUE
+	 * attribute it IS that real locator (`#buy-charlie`, `[data-testid="x"]`),
+	 * durable across framework reconciliation and ZERO DOM mutation; otherwise it
+	 * is a minted `[data-webhands-ref="<id>"]` selector. Either way it is a plain
+	 * STRING resolved through the ONE existing resolver — no new addressing engine,
+	 * no Playwright type on the seam (ADR-0003/0004). It is a SHORT-LIVED handle:
+	 * acting on it after a NODE-REPLACEMENT re-render or a navigation fails LOUD
+	 * with {@link StaleRefError}, never a silent wrong-element action.
+	 */
+	readonly ref?: string;
+}
+
+/**
+ * Options for an ACTION verb that may act on a durable {@link QueryRow.ref}
+ * instead of a raw locator (R4). An OPTIONS OBJECT so it is an ADDITIVE,
+ * non-breaking extension of `click`/`type` (R1): a today call passing no options
+ * is unchanged.
+ *
+ * `byRef: true` tells the verb its `target` is a `ref` from a prior
+ * `query({refs: true})`, so it must enforce the loud-stale contract: resolve the
+ * ref through the SAME single resolver, then assert it matches EXACTLY ONE
+ * element — resolve-to-zero (removed/replaced) OR resolve-to-many (a cloned
+ * subtree) BOTH reject with a typed {@link StaleRefError}, never a silent
+ * wrong-element action. Omitted / `false` keeps the verb's plain locator
+ * behaviour (auto-waiting, first-match), unchanged.
+ */
+export interface ActionOptions {
+	readonly byRef?: boolean;
 }
 
 /**
@@ -462,10 +520,30 @@ export interface WebHandsPage {
 	 * ignored (see {@link validateSnapshotOptions}).
 	 */
 	snapshot(options?: SnapshotOptions): Promise<Snapshot>;
-	/** Click the element addressed by a raw Playwright locator string. */
-	click(target: LocatorString): Promise<void>;
-	/** Type text into the element addressed by a raw Playwright locator string. */
-	type(target: LocatorString, text: string): Promise<void>;
+	/**
+	 * Click the element addressed by a raw Playwright locator string.
+	 *
+	 * With `{byRef: true}` the `target` is treated as a durable
+	 * {@link QueryRow.ref} from a prior `query({refs: true})`: it is resolved
+	 * through the SAME resolver but MUST match EXACTLY ONE element, else a typed
+	 * {@link StaleRefError} (resolve-to-zero / resolve-to-many) — the loud-stale
+	 * guarantee that makes a ref strictly safer than a positional `.nth(i)`. The
+	 * options object is additive (R1); omitted keeps today's plain-locator click.
+	 */
+	click(target: LocatorString, options?: ActionOptions): Promise<void>;
+	/**
+	 * Type text into the element addressed by a raw Playwright locator string.
+	 *
+	 * With `{byRef: true}` the `target` is a durable {@link QueryRow.ref}, resolved
+	 * with the same EXACTLY-ONE loud-stale contract as {@link WebHandsPage.click}
+	 * (a typed {@link StaleRefError} on zero/many). The options object is additive
+	 * (R1); omitted keeps today's plain-locator type.
+	 */
+	type(
+		target: LocatorString,
+		text: string,
+		options?: ActionOptions,
+	): Promise<void>;
 	/**
 	 * Run a JavaScript EXPRESSION in the active page's context and return its
 	 * result, the `eval` escape hatch for cases no other verb covers (PRD story
@@ -533,9 +611,14 @@ export interface WebHandsPage {
 	 * (DOM attributes) and `props` (live JS properties), plus the closed `pw`
 	 * extras (R2). This kills the `eval`-returns-a-JSON-string pattern.
 	 *
-	 * The options are an OPTIONS OBJECT so a future `frame?` / `ref` field is a
+	 * The options are an OPTIONS OBJECT so a future `frame?` field is a
 	 * non-breaking addition (R1); the locator resolves through the SAME single
 	 * resolver `click`/`type`/`wait` use — no parallel addressing scheme.
+	 *
+	 * With `{refs: true}` (OPT-IN) each row also carries a durable
+	 * {@link QueryRow.ref} the agent feeds back to `click`/`type` (`{byRef: true}`)
+	 * to act on THAT element after the page mutates, fixing the index-drift
+	 * footgun. The default (no `refs`) is a PURE READ that mints nothing.
 	 *
 	 * Values cross by structured clone, the SAME contract as `eval` (ADR-0003: no
 	 * Playwright/CDP types on the seam). With no fields requested, each row is an

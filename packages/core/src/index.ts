@@ -1,4 +1,5 @@
 export type {
+	ActionOptions,
 	BoundingBox,
 	Cookie,
 	Driver,
@@ -83,6 +84,7 @@ export {
 	SessionAlreadyActiveError,
 	CrossOriginFrameError,
 	ScreenshotPathError,
+	StaleRefError,
 	isControllerError,
 	type ControllerErrorCode,
 } from './errors.js';

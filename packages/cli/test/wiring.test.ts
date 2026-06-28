@@ -11,6 +11,7 @@ import {
 	SessionAlreadyActiveError,
 	CrossOriginFrameError,
 	ScreenshotPathError,
+	StaleRefError,
 	type OpenTarget,
 	type RunningSessionServer,
 	type Session,
@@ -63,6 +64,26 @@ function evalRejectingProvider(error: unknown): SessionProvider {
 		const session: Session = {
 			page: {
 				async eval() {
+					throw error;
+				},
+			} as unknown as Session['page'],
+			async close() {},
+			async waitForClose() {},
+		};
+		return session;
+	};
+}
+
+/**
+ * A provider whose session opens fine but whose `click` REJECTS with `error`,
+ * so the verb-level error path is exercised — the shape the stale-ref error
+ * takes (raised by the `click` verb when a `--by-ref` resolve is zero/many).
+ */
+function clickRejectingProvider(error: unknown): SessionProvider {
+	return async () => {
+		const session: Session = {
+			page: {
+				async click() {
 					throw error;
 				},
 			} as unknown as Session['page'],
@@ -303,6 +324,48 @@ describe('incur CLI wiring', () => {
 			expect(env.ok).toBe(true);
 			// The stub returns no rows, but the declared shape is present.
 			expect(env.data).toMatchObject({verb: 'query', rows: []});
+		});
+
+		it('--with-refs forwards refs:true; default query forwards NO refs (opt-in)', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'query',
+				`page.locator('.result')`,
+				'--with-refs',
+			]);
+			const withRefs = transport.calls.find((c) => c.verb === 'query');
+			expect(withRefs?.args[1]).toMatchObject({refs: true});
+
+			const {provider: p2, transport: t2} = stubProvider();
+			await runEnvelope(p2, ['query', `page.locator('.result')`]);
+			const plain = t2.calls.find((c) => c.verb === 'query');
+			// Opt-in: the default carries no `refs` key (a pure read).
+			expect((plain?.args[1] as {refs?: unknown}).refs).toBeUndefined();
+		});
+
+		it('click/type --by-ref forward {byRef:true}; without it the ActionOptions is omitted', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'click',
+				`p.locator("#buy-charlie")`,
+				'--by-ref',
+			]);
+			await runEnvelope(provider, ['click', `getByRole('button')`]);
+			await runEnvelope(provider, [
+				'type',
+				`p.locator("#in")`,
+				'hello',
+				'--by-ref',
+			]);
+			const clicks = transport.calls.filter((c) => c.verb === 'click');
+			expect(clicks[0]?.args).toEqual([
+				`p.locator("#buy-charlie")`,
+				{byRef: true},
+			]);
+			// Plain click: the ActionOptions is omitted (the unchanged path).
+			expect(clicks[1]?.args).toEqual([`getByRole('button')`]);
+			const typed = transport.calls.find((c) => c.verb === 'type');
+			expect(typed?.args).toEqual([`p.locator("#in")`, 'hello', {byRef: true}]);
 		});
 
 		it('count/exists/is-visible/get-attribute each return their tiny structured result', async () => {
@@ -1097,6 +1160,24 @@ describe('incur CLI wiring', () => {
 			expect(env.ok).toBe(false);
 			expect(env.error?.code).toBe('screenshot-path-outside-managed-dir');
 			expect(env.error?.message).toContain('managed');
+		});
+
+		it('maps the typed stale-ref condition (raised by click --by-ref) to a re-query fix', async () => {
+			// A stale durable ref is raised by the `click` VERB (a --by-ref resolve to
+			// zero/many), not at open, so it drives the verb-level fail() path. The CLI
+			// surfaces its code + the loud message + a re-query fix hint.
+			const provider = clickRejectingProvider(
+				new StaleRefError(`p.locator("#buy-charlie")`, 0, 'click'),
+			);
+			const env = await runEnvelope(provider, [
+				'click',
+				`p.locator("#buy-charlie")`,
+				'--by-ref',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('stale-ref');
+			expect(env.error?.message).toMatch(/STALE/);
+			expect(env.error?.message).toContain('--with-refs');
 		});
 
 		it('does NOT mistake a generic error for a typed condition (falls back to `unknown`)', async () => {
