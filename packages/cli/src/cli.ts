@@ -86,7 +86,25 @@ export interface CliDeps {
 export type ServeSession = (
 	target: OpenTarget,
 	options: {root?: string; env?: NodeJS.ProcessEnv},
+	launchPolicy?: LaunchPolicy,
 ) => Promise<RunningSessionServer>;
+
+/**
+ * Transport-construction policy for a LAUNCH-mode open: the opt-in stealth
+ * toggle and the optional system browser to drive. Kept SEPARATE from
+ * {@link OpenTarget} so the seam stays free of Playwright/CDP/stealth concepts
+ * (ADR-0003); it rides alongside the target into the transport constructor only.
+ * Ignored for attach (the user's own browser is reused as-is).
+ */
+export interface LaunchPolicy {
+	/** Opt-in Patchright-backed stealth launch. Default off. */
+	readonly stealth?: boolean;
+	/**
+	 * Drive a browser already installed on the system (e.g. `'chrome'`) instead
+	 * of the bundled Chromium. Omit for bundled Chromium.
+	 */
+	readonly systemBrowser?: string;
+}
 
 // --- shared schema fragments ----------------------------------------------
 
@@ -119,6 +137,45 @@ function targetFrom(options: {profile: string; endpoint?: string}): OpenTarget {
 		return {mode: 'attach', endpoint: options.endpoint};
 	}
 	return {mode: 'launch', profile: options.profile};
+}
+
+/**
+ * Stealth launch options shared by `serve` and `launch`. Opt-in and default
+ * OFF: vanilla Playwright stays the default. These are CONSUMED when the single
+ * session is brought up (the `serve` path actually builds the transport with
+ * them, ADR-0005); see the work/ observation
+ * `launch-command-connection-options-vestigial-vs-serve`.
+ */
+const stealthOptions = z.object({
+	stealth: z
+		.boolean()
+		.default(false)
+		.describe(
+			'Launch via the optional Patchright fork to evade the CDP automation ' +
+				'tell (requires `pnpm add patchright`). Default: off (vanilla Playwright).',
+		),
+	'use-system-browser': z
+		.string()
+		.optional()
+		.describe(
+			"Drive a browser already installed on the system (e.g. 'chrome', " +
+				"'msedge') instead of the bundled Chromium.",
+		),
+});
+
+/** Resolve the {@link LaunchPolicy} from the shared stealth option fields. */
+function launchPolicyFrom(options: {
+	stealth?: boolean;
+	'use-system-browser'?: string;
+}): LaunchPolicy {
+	return {
+		stealth: options.stealth === true,
+		systemBrowser:
+			options['use-system-browser'] !== undefined &&
+			options['use-system-browser'] !== ''
+				? options['use-system-browser']
+				: undefined,
+	};
 }
 
 /** The structured output schema shared by verbs that act on a page but return no data. */
@@ -278,14 +335,18 @@ export function createCli(deps: CliDeps = {}) {
 				.boolean()
 				.default(false)
 				.describe('Show the browser window (default: headless).'),
+			...stealthOptions.shape,
 		}),
 		output: z.object({
 			mode: z.literal('launch'),
 			profile: z.string(),
 			headed: z.boolean(),
+			stealth: z.boolean(),
+			systemBrowser: z.string().optional(),
 		}),
 		async run(c) {
 			try {
+				const policy = launchPolicyFrom(c.options);
 				return await withSession(
 					provider,
 					{
@@ -299,6 +360,10 @@ export function createCli(deps: CliDeps = {}) {
 								mode: 'launch' as const,
 								profile: c.options.profile,
 								headed: c.options.headed,
+								stealth: policy.stealth === true,
+								...(policy.systemBrowser !== undefined
+									? {systemBrowser: policy.systemBrowser}
+									: {}),
 							},
 							{
 								cta: {
@@ -331,6 +396,7 @@ export function createCli(deps: CliDeps = {}) {
 				.boolean()
 				.default(false)
 				.describe('Show the browser window (default: headless).'),
+			...stealthOptions.shape,
 		}),
 		output: z.object({
 			ok: z.literal(true),
@@ -355,7 +421,11 @@ export function createCli(deps: CliDeps = {}) {
 								profile: c.options.profile,
 								headed: c.options.headed,
 							};
-				const server = await serveSession(target, home);
+				const server = await serveSession(
+					target,
+					home,
+					launchPolicyFrom(c.options),
+				);
 				// Explicit teardown on signal: closing the browser + clearing the
 				// endpoint file is the server's `stop`. We DO NOT auto-spawn and we DO
 				// NOT auto-teardown on anything but an explicit stop/signal (ADR-0005).
@@ -744,8 +814,15 @@ export function createCli(deps: CliDeps = {}) {
 async function defaultServeSession(
 	target: OpenTarget,
 	home: {root?: string; env?: NodeJS.ProcessEnv},
+	launchPolicy: LaunchPolicy = {},
 ): Promise<RunningSessionServer> {
-	const launch = new PlaywrightLaunchTransport(home);
+	// The launch transport is the ONE place the stealth policy takes effect
+	// (ADR-0005: serve is the one place a browser is launched). attach reuses the
+	// user's own browser, so the policy does not apply there.
+	const launch = new PlaywrightLaunchTransport(home, [], {
+		stealth: launchPolicy.stealth,
+		systemBrowser: launchPolicy.systemBrowser,
+	});
 	const attach = new PlaywrightAttachTransport();
 	const transport: Transport = {
 		open(t: OpenTarget): Promise<Session> {

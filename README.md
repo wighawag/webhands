@@ -114,34 +114,46 @@ This is **off by default** — vanilla Playwright stays the default. To enable i
 
    ```sh
    pnpm add patchright
-   # if you do NOT set systemBrowser: 'chrome', also fetch its browser:
+   # if you do NOT pass --use-system-browser chrome, also fetch its browser:
    #   pnpm exec patchright install chromium
    ```
 
-2. Construct the launch transport with stealth on. The realistic recipe also
-   drives your installed system browser (`systemBrowser: 'chrome'`) against a
+2. Bring the session up with `--stealth`. The realistic recipe also drives your
+   installed system browser (`--use-system-browser chrome`), headed, against a
    **warmed, logged-in profile**:
 
-   ```ts
-   import {PlaywrightLaunchTransport} from '@webhands/core';
-
-   const transport = new PlaywrightLaunchTransport(
-     {}, // profile location (omit for ~/.webhands)
-     [], // extra hands
-     {stealth: true, systemBrowser: 'chrome'},
-   );
-   // Stealth + headed + a real logged-in profile is the strongest recipe:
-   const session = await transport.open({
-     mode: 'launch',
-     profile: 'default',
-     headed: true,
-   });
+   ```sh
+   # serve consumes these (it is where the browser is launched, ADR-0005):
+   npx webhands serve --headed --stealth --use-system-browser chrome
    ```
 
-If `stealth: true` is set but `patchright` is not installed, `open` throws a
-typed `MissingStealthDependencyError` telling you to `pnpm add patchright`. It
-**never silently falls back** to vanilla Playwright, because that would put the
-tell back without telling you.
+   `--use-system-browser` is independent of `--stealth`: you can drive real
+   Chrome with or without the Patchright path, and stealth with or without a
+   system browser. Other channel names work too (e.g. `msedge`).
+
+Programmatic equivalent (the `--stealth` / `--use-system-browser` flags map onto
+these transport options):
+
+```ts
+import {PlaywrightLaunchTransport} from '@webhands/core';
+
+const transport = new PlaywrightLaunchTransport(
+  {}, // profile location (omit for ~/.webhands)
+  [], // extra hands
+  {stealth: true, systemBrowser: 'chrome'},
+);
+// Stealth + headed + a real logged-in profile is the strongest recipe:
+const session = await transport.open({
+  mode: 'launch',
+  profile: 'default',
+  headed: true,
+});
+```
+
+If stealth is enabled but `patchright` is not installed, the open throws a typed
+`MissingStealthDependencyError` (the CLI prints `pnpm add patchright` as the fix).
+It **never silently falls back** to vanilla Playwright, because that would put
+the tell back without telling you.
 
 **Honest caveat.** Stealth addresses ONLY the CDP `Runtime.enable` automation
 tell. It is **necessary-but-not-sufficient**: IP reputation and session/profile

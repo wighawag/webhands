@@ -28,9 +28,12 @@ an API-compatible Playwright fork, patches exactly these CDP leaks.
 - With `systemBrowser: 'chrome'`, a missing-binary failure is reported as a
   missing SYSTEM Chrome via `MissingBrowserBinaryError`.
 
-The `webhands` CLI maps the new `missing-stealth-dependency` condition to the
-exact `pnpm add patchright` fix command, alongside the existing typed-error
-mappings.
+The `webhands` CLI exposes the opt-in via `--stealth` and
+`--use-system-browser <name>` flags on `serve` and `launch` (both default off /
+bundled Chromium). `serve` is where they take effect (it is the one place a
+browser is launched, ADR-0005); the two flags are independent. The CLI also maps
+the new `missing-stealth-dependency` condition to the exact `pnpm add patchright`
+fix command, alongside the existing typed-error mappings.
 
 Honest caveat: this addresses ONLY the CDP automation tell. IP reputation and
 session/profile reputation still matter; the realistic recipe is stealth +

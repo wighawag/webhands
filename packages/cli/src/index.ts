@@ -20,6 +20,7 @@ export {
 	CLI_NAME,
 	DEFAULT_PROFILE,
 	type CliDeps,
+	type LaunchPolicy,
 	type ServeSession,
 } from './cli.js';
 

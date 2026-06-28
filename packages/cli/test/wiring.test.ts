@@ -15,6 +15,7 @@ import {
 import {
 	createCli,
 	CLI_NAME,
+	type LaunchPolicy,
 	type ServeSession,
 	type SessionProvider,
 } from '../src/index.js';
@@ -56,12 +57,15 @@ function throwingProvider(error: unknown): SessionProvider {
 function fakeServe(): {
 	serve: ServeSession;
 	targets: OpenTarget[];
+	policies: (LaunchPolicy | undefined)[];
 	stopped: boolean[];
 } {
 	const targets: OpenTarget[] = [];
+	const policies: (LaunchPolicy | undefined)[] = [];
 	const stopped: boolean[] = [];
-	const serve: ServeSession = async (target) => {
+	const serve: ServeSession = async (target, _options, launchPolicy) => {
 		targets.push(target);
+		policies.push(launchPolicy);
 		const index = stopped.push(false) - 1;
 		const server: RunningSessionServer = {
 			endpoint: {url: 'http://127.0.0.1:51999', pid: 4242},
@@ -71,7 +75,7 @@ function fakeServe(): {
 		};
 		return server;
 	};
-	return {serve, targets, stopped};
+	return {serve, targets, policies, stopped};
 }
 
 /** Run a command through `serve`, capturing stdout and exit code (no real process exit). */
@@ -253,6 +257,28 @@ describe('incur CLI wiring', () => {
 				expect.arrayContaining([`${CLI_NAME} goto`, `${CLI_NAME} snapshot`]),
 			);
 		});
+
+		it('`launch` defaults stealth off and omits systemBrowser', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, ['launch']);
+			expect(env.data).toMatchObject({mode: 'launch', stealth: false});
+			expect(env.data?.systemBrowser).toBeUndefined();
+		});
+
+		it('`launch --stealth --use-system-browser chrome` echoes the policy in output', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'launch',
+				'--stealth',
+				'--use-system-browser',
+				'chrome',
+			]);
+			expect(env.data).toMatchObject({
+				mode: 'launch',
+				stealth: true,
+				systemBrowser: 'chrome',
+			});
+		});
 	});
 
 	describe('agent discovery: --llms manifest + MCP server (story 14, no bespoke MCP code)', () => {
@@ -369,6 +395,38 @@ describe('incur CLI wiring', () => {
 			expect(targets).toEqual([
 				{mode: 'attach', endpoint: 'http://127.0.0.1:9222'},
 			]);
+		});
+
+		it('`serve` defaults to NO stealth and bundled Chromium (opt-in is off)', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			await runEnvelope(provider, ['serve', '--profile', 'work'], {
+				serveSession: serve,
+			});
+			expect(policies).toEqual([{stealth: false, systemBrowser: undefined}]);
+		});
+
+		it('`serve --stealth --use-system-browser chrome` forwards the launch policy', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies, targets} = fakeServe();
+			await runEnvelope(
+				provider,
+				[
+					'serve',
+					'--profile',
+					'work',
+					'--stealth',
+					'--use-system-browser',
+					'chrome',
+				],
+				{serveSession: serve},
+			);
+			// The policy rides ALONGSIDE the target (ADR-0003: target stays
+			// stealth/Playwright-free); both reach the serve seam.
+			expect(targets).toEqual([
+				{mode: 'launch', profile: 'work', headed: false},
+			]);
+			expect(policies).toEqual([{stealth: true, systemBrowser: 'chrome'}]);
 		});
 
 		it('`stop` with no live server is a friendly no-op (stopped:false), not an error', async () => {
