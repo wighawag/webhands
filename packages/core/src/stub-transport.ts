@@ -1,5 +1,6 @@
 import type {
 	Cookie,
+	EvalOptions,
 	OpenTarget,
 	WebHandsPage,
 	QueryOptions,
@@ -81,9 +82,9 @@ export class StubTransport implements Transport {
 				ensureOpen();
 				calls.push({verb: 'type', args: [t, text]});
 			},
-			async eval(expression: string): Promise<unknown> {
+			async eval(expression: string, options?: EvalOptions): Promise<unknown> {
 				ensureOpen();
-				calls.push({verb: 'eval', args: [expression]});
+				calls.push({verb: 'eval', args: [expression, options]});
 				return undefined;
 			},
 			async wait(condition: WaitCondition): Promise<void> {

@@ -490,6 +490,84 @@ const DRAG = `<!doctype html>
 </html>
 `;
 
+/**
+ * The SAME-ORIGIN child frame embedded by {@link FRAME_PARENT} (Tier-3
+ * frame-scoped `eval`, prd `broaden-agent-verb-surface`, story 13). It carries
+ * controlled, deterministic state the parent's top document CANNOT see, so a
+ * frame-scoped `eval` is proved to actually land IN the child:
+ *
+ * - `#child-marker` holds a text only present in the child document, so
+ *   `eval --frame` reading it proves the expression ran in the child (the top
+ *   document's `document.getElementById('child-marker')` is `null`).
+ * - `window.__childValue` is a runtime-only JS value the top frame's page world
+ *   cannot reach, the "read a runtime-only value" case.
+ * - `window.fireCallback()` flips `#callback-state` to `fired` and sets
+ *   `window.__callbackFired`, modelling a captcha `data-callback`: a frame-scoped
+ *   `eval` firing it has an OBSERVABLE effect inside the child (the
+ *   backward-compatible top-frame `eval` cannot reach it).
+ */
+const FRAME_CHILD = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>frame child fixture</title>
+	</head>
+	<body>
+		<h1 id="child-heading">Frame Child</h1>
+		<p id="child-marker">child-only-value</p>
+		<p id="callback-state">idle</p>
+		<script>
+			window.__childValue = 'runtime-only-child-value';
+			window.__callbackFired = false;
+			window.fireCallback = function () {
+				window.__callbackFired = true;
+				document.getElementById('callback-state').textContent = 'fired';
+				return 'callback-result';
+			};
+		</script>
+	</body>
+</html>
+`;
+
+/**
+ * The PARENT page for the Tier-3 frame-scoped `eval` (prd
+ * `broaden-agent-verb-surface`, story 13). It embeds {@link FRAME_CHILD} as a
+ * SAME-ORIGIN child frame (`#main-iframe`, relative `src`), mimicking the
+ * Imperva `#main-iframe` structure the idea names. The top document carries a
+ * DIFFERENT `#child-marker`-less state so a test can tell the top frame from the
+ * child frame:
+ *
+ * - `#top-marker` holds a top-document-only text; there is deliberately no
+ *   `#child-marker` in the top document, so `eval` with no frame reading
+ *   `document.getElementById('child-marker')` is `null` (backward-compatible
+ *   top-frame default) while `eval --frame '#main-iframe'` reading it is the
+ *   child value.
+ * - `#cross-iframe` is an iframe whose `src` is set by the TEST to a SECOND
+ *   fixture server (a different port == a different origin), so a frame-scoped
+ *   `eval` against it must fail LOUD with the cross-origin typed error. It is
+ *   left blank here and pointed cross-origin by the test (the fixture server
+ *   serves one origin, so the cross-origin half is wired in the test).
+ */
+const FRAME_PARENT = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>frame parent fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Frame Parent</h1>
+		<p id="top-marker">top-only-value</p>
+		<iframe
+			id="main-iframe"
+			name="main-iframe"
+			src="/frame-child.html"
+			width="320"
+			height="200"
+		></iframe>
+	</body>
+</html>
+`;
+
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
@@ -504,4 +582,6 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'select.html': SELECT,
 	'scroll.html': SCROLL,
 	'drag.html': DRAG,
+	'frame-parent.html': FRAME_PARENT,
+	'frame-child.html': FRAME_CHILD,
 };
