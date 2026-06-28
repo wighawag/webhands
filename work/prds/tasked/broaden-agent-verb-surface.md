@@ -329,130 +329,14 @@ already works. Tier 4 is what the vision/tile family additionally needs.
     bytes), so the result stays a plain string on the seam and I can read/attach
     the image.
 
-## Implementation Decisions
+## Implementation & Testing Decisions
 
-> Trimmed at tasking-time into tasks / ADRs.
-
-### Tier 1 `query` — no curated DOM list; agent names what it wants (R2)
-
-Resolved R2: there is NO curated DOM field set (DOM attrs/props are vocabulary the
-agent already knows). The caller names DOM data via `attrs`/`props`, plus a tiny
-fixed `pw` extras set for the two Playwright-locator-derived things DOM reads
-cannot express (`visible`, `bbox`). A row carries exactly what was asked for.
-
-`query` shape (decision-encoding sketch, NOT final API):
-
-```
-query(
-  locator: string,                 // frame-capable locator expression (R1)
-  {
-    attrs?: string[],              // DOM attributes by name        -> getAttribute(name)
-    props?: string[],              // live JS properties by name     -> el[name] (innerText, value, checked, ...)
-    pw?: ('visible' | 'bbox')[],   // Playwright-locator extras (NOT DOM-nameable)
-    limit?: number,                // bound rows returned
-  }?,
-): Promise<ReadonlyArray<QueryRow>>  // one row per matched element; each row holds ONLY what was asked
-```
-
-Returning ROWS (one per match) is what kills the `readSlotRows`/`readCentreOptions`
-IIFE loops in the iamhuman example. The evidence those sites read maps cleanly:
-centre name = `props:['innerText']`, link = `attrs:['href']`, sitekey =
-`attrs:['data-sitekey']`, input kind = `props:['type']`, queue visibility =
-`pw:['visible']`. The state verbs are thin, agent-legible shorthands over the
-same machinery: `count` returns the MATCH-SET size (not a row field), `exists` is
-`count > 0`, `isVisible(locator)` is `query(locator,{pw:['visible']})[0]`,
-`getAttribute(locator,name)` is `query(locator,{attrs:[name]})[0]`. They exist as
-named verbs because an agent branches on them constantly.
-
-SIGNATURE INVARIANT (R1): the options bag is an OPTIONS OBJECT, leaving room for a
-future additive optional `frame?` field with zero breakage.
-
-### Frame scope (resolved R1) — reuse addressing; keep `frame?` a safe future add
-
-Locator-expression-native for all locator-taking verbs (`query`/state verbs take
-the same `frameLocator(...)` expression `click`/`type` already accept); an
-explicit transport-neutral `frame?` STRING (iframe selector / frame name|url
-fragment, never a Playwright `Frame` handle — ADR-0003) ONLY on `eval` (Tier 3),
-because page-world JS cannot carry a `frameLocator` (spike: `ReferenceError: p is
-not defined`). Cross-origin frame on `eval` ⇒ typed LOUD error, never silent
-empty.
-
-The REVERSIBILITY INVARIANT (R1) is load-bearing for the tasks: shape every
-locator-taking verb's signature as an OPTIONS OBJECT with room for a future
-optional `frame?`, and resolve ALL frame scoping through ONE internal helper, so
-a later `frame?`-everywhere is additive sugar over the same resolver with zero
-breakage. A task that gives a verb a positional-only signature, or stands up a
-second frame-resolution path, VIOLATES this invariant and must be rejected in
-review.
-
-### Tier 2 input verbs — promote page-level Playwright actions to the seam
-
-`press` (key or chord string, addressed at a locator or the focused element),
-`hover` (locator), `select` (locator + option value/label), `scroll`
-(to-locator or by-offset), `drag` (source locator → target locator, or by
-offset). All addressing stays a locator string (ADR-0004); all are
-structured-result-free (they act, then the agent re-`snapshot`s/`query`s). These
-are exactly the ops a HAND already has on `pwPage`; Tier 2 is "lift them to the
-verb seam so a seam-only agent gets them too."
-
-### Tier 4 (committed, R3) — coordinate + screenshot + cross-origin read, seam-clean
-
-The ops, all string/number-typed so nothing Playwright-shaped crosses the seam:
-
-- `mouse({action: 'click'|'move'|'down'|'up', x, y, button?})` — VIEWPORT
-  CSS-pixel coordinates (Playwright `page.mouse` semantics), NOT OS screen
-  coordinates. Plain numbers.
-- `screenshot(options?) -> {path, width, height}` — webhands MINTS a PNG under a
-  managed dir and returns its PATH (a string; no bytes on the seam). Scopes:
-  `viewport` (default, coordinate-matched to `mouse`), `full` (full-page, for
-  reading scrolled-out content, NOT coordinate-matched — spec says so), and a
-  locator-CLIPPED element shot (just the captcha widget). Caller MAY override the
-  output path; webhands validates it stays under a sane dir.
-- cross-origin frame READ — the read counterpart to the already-working
-  cross-origin `click`: a `frameLocator(...).frameLocator(...)`-chained read that
-  returns structured-cloned values across cross-origin boundaries (so the agent
-  can read the tile/challenge state two frames deep).
-
-A NEW ADR amends/supersedes the relevant part of ADR-0003 to admit this narrow
-surface (numbers + a path string + a cross-origin read), with the rationale in
-## Resolved decisions (R3): the priority is agent-digestible types, and extension
-transport is no longer a driving constraint. The honest caveat (an extension
-transport could do viewport coordinates but not necessarily OOPIF cross-origin
-coordinate clicks) is recorded in that ADR.
-
-## Testing Decisions
-
-> Trimmed at tasking-time into tasks' acceptance criteria.
-
-- Real-browser + LOCAL FIXTURE tests, mirroring the existing seam tests
-  (`packages/core/test/*-verbs.test.ts`) — never a third-party site whose DOM
-  rots. Add fixtures: a structured-list page (for `query` rows), a
-  same-origin nested-frame page carrying a sitekey div + token-sink textarea +
-  callback (already prototyped in the spike `/tmp/frame-spike/spike.mjs` — fold it
-  into a committed fixture), a keyboard-game-ish page (for `press`/`scroll`), a
-  `<select>`/drag page, and a NESTED CROSS-ORIGIN frame page (multi-origin, like
-  the cross-origin spike) for Tier-4 cross-origin read + coordinate click +
-  element-clipped screenshot.
-- Each new verb asserts EXTERNAL behaviour (the row data returned, the input's
-  value after `select`, the element reached after `scroll`, the callback fired
-  after a frame-scoped `eval`, the FILE written + its dimensions after
-  `screenshot`, the element reached after a coordinate `mouse` click), not
-  Playwright internals.
-- Cross-origin honesty: a frame-scoped EVAL (Tier 3) against a CROSS-ORIGIN frame
-  returns the typed loud error (eval cannot cross), while the Tier-4 cross-origin
-  READ + coordinate click SUCCEED against the multi-origin fixture (the two are
-  deliberately different: page-world JS cannot cross, but a `frameLocator`/
-  coordinate op can).
-- Screenshot isolation: `screenshot` writes under a per-test temp/managed dir
-  (never the real managed location); assert the path returned exists and the file
-  is a non-empty PNG, and that a caller-supplied path outside the sane dir is
-  rejected.
-- Coordinate-frame contract: assert a VIEWPORT screenshot's element position maps
-  to a `mouse` click that hits that element (the look-then-click loop holds);
-  full-page is NOT asserted to coordinate-match.
-- Shared-write isolation: every launch points its profile root at a per-test temp
-  dir; the real `~/.webhands` is asserted untouched (existing convention).
-- A changeset per change (repo convention; `changeset status` is the verify gate).
+> Tasked. The build-level detail that lived here (the per-verb shapes, the
+> `query` field model, the Tier-4 coordinate/screenshot/cross-origin design, the
+> testing seams) moved into the task files under `work/tasks/` and, where it is
+> durable rationale, into ADRs (notably the Tier-4 task carries the ADR amending
+> ADR-0003). The design FORKS and their WHY are preserved above in ## Resolved
+> decisions (R1-R5).
 
 ## Out of Scope
 
