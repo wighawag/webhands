@@ -114,13 +114,13 @@ This is **off by default** — vanilla Playwright stays the default. To enable i
 
    ```sh
    pnpm add patchright
-   # if you do NOT use channel: 'chrome', also fetch its browser:
+   # if you do NOT set systemBrowser: 'chrome', also fetch its browser:
    #   pnpm exec patchright install chromium
    ```
 
 2. Construct the launch transport with stealth on. The realistic recipe also
-   drives the system Chrome binary (`channel: 'chrome'`) against a **warmed,
-   logged-in profile**:
+   drives your installed system browser (`systemBrowser: 'chrome'`) against a
+   **warmed, logged-in profile**:
 
    ```ts
    import {PlaywrightLaunchTransport} from '@webhands/core';
@@ -128,7 +128,7 @@ This is **off by default** — vanilla Playwright stays the default. To enable i
    const transport = new PlaywrightLaunchTransport(
      {}, // profile location (omit for ~/.webhands)
      [], // extra hands
-     {stealth: true, channel: 'chrome'},
+     {stealth: true, systemBrowser: 'chrome'},
    );
    // Stealth + headed + a real logged-in profile is the strongest recipe:
    const session = await transport.open({
@@ -145,8 +145,9 @@ tell back without telling you.
 
 **Honest caveat.** Stealth addresses ONLY the CDP `Runtime.enable` automation
 tell. It is **necessary-but-not-sufficient**: IP reputation and session/profile
-reputation still matter. The realistic recipe is stealth + `channel: 'chrome'` +
-headed + a warmed, logged-in profile + a residential IP (see
+reputation still matter. The realistic recipe is stealth +
+`systemBrowser: 'chrome'` + headed + a warmed, logged-in profile + a residential
+IP (see
 [`docs/adr/0002`](docs/adr/0002-real-session-over-fingerprint-spoofing.md)).
 
 ## Security note (the `serve` endpoint runs arbitrary code)

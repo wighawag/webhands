@@ -57,12 +57,18 @@ export interface PlaywrightLaunchTransportOptions {
 	 */
 	readonly stealth?: boolean;
 	/**
-	 * Browser channel to launch (e.g. `'chrome'` to drive the system Chrome
-	 * binary, Patchright's recommended setup). Applies to BOTH stealth and vanilla
-	 * launches when set. When omitted, Playwright/Patchright's bundled Chromium is
-	 * used.
+	 * Drive a browser ALREADY INSTALLED ON THE SYSTEM instead of the bundled
+	 * Chromium, named by its install identity (e.g. `'chrome'` to drive the system
+	 * Google Chrome, Patchright's recommended setup; also `'msedge'`,
+	 * `'chrome-beta'`, ...). Applies to BOTH stealth and vanilla launches when set.
+	 * When omitted, Playwright/Patchright's bundled Chromium is used.
+	 *
+	 * Maps to Playwright's `channel` launch option internally; we name it
+	 * `systemBrowser` so the public surface speaks domain language ("use a browser
+	 * I already have installed") rather than the Playwright term (ADR-0003 keeps
+	 * Playwright vocabulary out of the public surface).
 	 */
-	readonly channel?: string;
+	readonly systemBrowser?: string;
 	/**
 	 * INTERNAL test seam: override how the stealth chromium is imported. Omit in
 	 * production (defaults to `import('patchright')`). See
@@ -116,7 +122,7 @@ export class PlaywrightLaunchTransport implements Transport {
 	readonly #location: ProfileLocationOptions;
 	readonly #hands: readonly Hand[];
 	readonly #stealth: boolean;
-	readonly #channel: string | undefined;
+	readonly #systemBrowser: string | undefined;
 	readonly #importStealthChromium: StealthChromiumImporter;
 
 	/**
@@ -128,9 +134,9 @@ export class PlaywrightLaunchTransport implements Transport {
 	 *   the operator's explicit config; the transport does NOT discover them. Omit
 	 *   for the built-ins-only surface.
 	 * @param options transport-construction policy, notably the opt-in `stealth`
-	 *   toggle and optional browser `channel` (see
+	 *   toggle and optional `systemBrowser` (see
 	 *   {@link PlaywrightLaunchTransportOptions}). Defaults to vanilla Playwright,
-	 *   no channel, stealth OFF.
+	 *   bundled Chromium, stealth OFF.
 	 */
 	constructor(
 		location: ProfileLocationOptions = {},
@@ -140,7 +146,7 @@ export class PlaywrightLaunchTransport implements Transport {
 		this.#location = location;
 		this.#hands = hands;
 		this.#stealth = options.stealth === true;
-		this.#channel = options.channel;
+		this.#systemBrowser = options.systemBrowser;
 		this.#importStealthChromium =
 			options.importStealthChromium ?? defaultStealthImporter;
 	}
@@ -175,15 +181,15 @@ export class PlaywrightLaunchTransport implements Transport {
 			? await this.#resolveStealthLauncher()
 			: chromium;
 
-		// Launch options: forward headless, the optional channel (e.g.
-		// channel: 'chrome' to drive system Chrome, Patchright's recommended
+		// Launch options: forward headless, the optional systemBrowser (Playwright's
+		// `channel`, e.g. 'chrome' to drive system Chrome, Patchright's recommended
 		// setup), and for stealth drop Playwright's automation-flavoured default
 		// args so they cannot re-add the fingerprint Patchright just removed.
 		const launchOptions: Parameters<
 			typeof chromium.launchPersistentContext
 		>[1] = {headless};
-		if (this.#channel !== undefined) {
-			launchOptions.channel = this.#channel;
+		if (this.#systemBrowser !== undefined) {
+			launchOptions.channel = this.#systemBrowser;
 		}
 		if (this.#stealth) {
 			launchOptions.ignoreDefaultArgs = ['--enable-automation'];
@@ -197,11 +203,10 @@ export class PlaywrightLaunchTransport implements Transport {
 			);
 		} catch (cause) {
 			if (isMissingBrowserBinary(cause)) {
-				// With channel: 'chrome' the "binary missing" failure means the SYSTEM
-				// Chrome is absent, not the bundled Chromium; name what is actually
-				// missing so the CLI's fix message is accurate.
-				const browser =
-					this.#channel === undefined ? 'chromium' : this.#channel;
+				// With systemBrowser set (e.g. 'chrome') the "binary missing" failure
+				// means the SYSTEM browser is absent, not the bundled Chromium; name
+				// what is actually missing so the CLI's fix message is accurate.
+				const browser = this.#systemBrowser ?? 'chromium';
 				throw new MissingBrowserBinaryError(browser, undefined, {cause});
 			}
 			throw cause;

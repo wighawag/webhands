@@ -12,10 +12,12 @@ before the page even renders. [Patchright](https://github.com/Kaliiiiiiiiii-Viny
 an API-compatible Playwright fork, patches exactly these CDP leaks.
 
 - New third constructor argument `PlaywrightLaunchTransportOptions`:
-  `{stealth?, channel?}`. Stealth is a transport-construction policy and stays
-  OFF by default; vanilla Playwright remains the default. The transport seam
-  (`OpenTarget`) is unchanged and still carries no Playwright/CDP types
-  (ADR-0003).
+  `{stealth?, systemBrowser?}`. Stealth is a transport-construction policy and
+  stays OFF by default; vanilla Playwright remains the default. `systemBrowser`
+  (e.g. `'chrome'`) drives a browser already installed on the system instead of
+  the bundled Chromium (it maps to Playwright's `channel` internally; the public
+  name stays domain-level per ADR-0003). The transport seam (`OpenTarget`) is
+  unchanged and still carries no Playwright/CDP types.
 - `patchright` is an OPTIONAL dependency imported LAZILY (`await import(...)`)
   only when `stealth: true`, so users who never opt in are not forced to install
   it and the module load never fails when it is absent.
@@ -23,8 +25,8 @@ an API-compatible Playwright fork, patches exactly these CDP leaks.
   new typed `MissingStealthDependencyError` (with the `pnpm add patchright` fix
   in its message). It NEVER silently falls back to vanilla, which would
   re-introduce the exact tell without telling anyone.
-- With `channel: 'chrome'`, a missing-binary failure is reported as a missing
-  SYSTEM Chrome via `MissingBrowserBinaryError`.
+- With `systemBrowser: 'chrome'`, a missing-binary failure is reported as a
+  missing SYSTEM Chrome via `MissingBrowserBinaryError`.
 
 The `webhands` CLI maps the new `missing-stealth-dependency` condition to the
 exact `pnpm add patchright` fix command, alongside the existing typed-error
@@ -32,5 +34,5 @@ mappings.
 
 Honest caveat: this addresses ONLY the CDP automation tell. IP reputation and
 session/profile reputation still matter; the realistic recipe is stealth +
-`channel: 'chrome'` + headed + a warmed, logged-in profile + a residential IP
-(ADR-0002). Stealth alone is necessary-but-not-sufficient.
+`systemBrowser: 'chrome'` + headed + a warmed, logged-in profile + a residential
+IP (ADR-0002). Stealth alone is necessary-but-not-sufficient.

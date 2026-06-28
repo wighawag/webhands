@@ -82,7 +82,7 @@ describe('PlaywrightLaunchTransport stealth opt-in (hermetic)', () => {
 		expect(importSpy).not.toHaveBeenCalled();
 	});
 
-	it('launches via the injected stealth chromium (not vanilla) with channel + headless forwarded', async () => {
+	it('launches via the injected stealth chromium (not vanilla) with systemBrowser + headless forwarded', async () => {
 		const {root} = await makeSetUpProfile('stealthy');
 
 		const launchSpy = vi.fn(async () => fakeContext());
@@ -92,7 +92,7 @@ describe('PlaywrightLaunchTransport stealth opt-in (hermetic)', () => {
 
 		const transport = new PlaywrightLaunchTransport({root}, [], {
 			stealth: true,
-			channel: 'chrome',
+			systemBrowser: 'chrome',
 			importStealthChromium,
 		});
 
@@ -106,6 +106,7 @@ describe('PlaywrightLaunchTransport stealth opt-in (hermetic)', () => {
 		expect(launchSpy).toHaveBeenCalledTimes(1);
 		const [profileDir, options] = launchSpy.mock.calls[0]!;
 		expect(profileDir).toContain('stealthy');
+		// systemBrowser maps to Playwright's `channel` on the actual launch call.
 		expect(options).toMatchObject({
 			headless: false,
 			channel: 'chrome',
@@ -133,7 +134,7 @@ describe('PlaywrightLaunchTransport stealth opt-in (hermetic)', () => {
 
 		const [, options] = launchSpy.mock.calls[0]!;
 		expect((options as {headless?: boolean}).headless).toBe(true);
-		// No channel configured => none passed.
+		// No systemBrowser configured => no Playwright channel passed.
 		expect((options as {channel?: unknown}).channel).toBeUndefined();
 	});
 
