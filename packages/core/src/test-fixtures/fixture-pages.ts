@@ -199,6 +199,84 @@ const COOKIES = `<!doctype html>
 </html>
 `;
 
+/**
+ * A structured-LIST page for the Tier-1 `query` extraction verb plus the state
+ * verbs `exists`/`count`/`isVisible`/`getAttribute` (prd
+ * `broaden-agent-verb-surface`, R2). Controlled, deterministic markup the seam
+ * tests assert one ROW PER MATCH against, never third-party DOM:
+ *
+ * - `.result` is a LIST of three rows (a mini shopping result set), each with a
+ *   distinct `data-asin` attribute, a `.title` text, a `.price` text, and an
+ *   anchor with an `href` — so a multi-match `query` returns three rows and
+ *   `--limit` can bound them. The title/price live in CHILD elements so a row's
+ *   `innerText` property carries the whole composed text (proving `props` reads
+ *   live runtime state, not markup).
+ * - `#optin` is a checkbox whose `checked` ATTRIBUTE is absent in the markup but
+ *   whose live `checked` PROPERTY is set `true` by script after load — the
+ *   controlled attrs-vs-props DIVERGENCE: `attrs:['checked']` reads `null`
+ *   (no markup attribute) while `props:['checked']` reads `true` (live state).
+ *   It also carries `value="on"` (a present markup attribute) and a runtime
+ *   `type` property, so an attribute and a property that genuinely differ are
+ *   both observable on one element.
+ * - `#hidden-row` is a present-but-HIDDEN element (`display:none`) carrying a
+ *   `data-sitekey`, so `pw:['visible']` reads `false` for it (actionability-
+ *   grade visibility) while a `getAttribute('data-sitekey')` still reads its
+ *   value, and a VISIBLE `#shown-row` reads `pw:['visible'] === true`.
+ * - There is deliberately NO `.absent` element, so a `query`/`count`/`exists`
+ *   against `.absent` exercises the empty match-set (`[]` / `0` / `false`).
+ */
+const QUERY_LIST = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>query list fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Query List Fixture</h1>
+
+		<ul id="results">
+			<li class="result" data-asin="A001">
+				<a class="link" href="/item/A001"
+					><span class="title">Alpha Widget</span></a
+				>
+				<span class="price">$10.00</span>
+			</li>
+			<li class="result" data-asin="B002">
+				<a class="link" href="/item/B002"
+					><span class="title">Bravo Widget</span></a
+				>
+				<span class="price">$20.00</span>
+			</li>
+			<li class="result" data-asin="C003">
+				<a class="link" href="/item/C003"
+					><span class="title">Charlie Widget</span></a
+				>
+				<span class="price">$30.00</span>
+			</li>
+		</ul>
+
+		<!-- attrs-vs-props divergence: no \`checked\` attribute in markup, but the
+		     live \`checked\` property is set true after load. -->
+		<input id="optin" type="checkbox" value="on" />
+
+		<!-- a present-but-hidden element carrying a readable attribute -->
+		<div
+			id="hidden-row"
+			class="sitekey"
+			data-sitekey="sk-hidden-123"
+			style="display: none"
+		></div>
+		<div id="shown-row" class="sitekey" data-sitekey="sk-shown-456">visible</div>
+
+		<script>
+			// Toggle the live property WITHOUT touching the markup attribute, so
+			// attrs:['checked'] (null) and props:['checked'] (true) genuinely differ.
+			document.getElementById('optin').checked = true;
+		</script>
+	</body>
+</html>
+`;
+
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
@@ -207,4 +285,5 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'redirecting.html': REDIRECTING,
 	'eval.html': EVAL,
 	'cookies.html': COOKIES,
+	'query-list.html': QUERY_LIST,
 };

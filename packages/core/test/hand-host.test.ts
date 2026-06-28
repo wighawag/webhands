@@ -164,7 +164,7 @@ describe('hand-host composition primitive (no browser)', () => {
 		expect(disposed).toContain('last');
 	});
 
-	it('built-in composition yields a complete page (eight built-in verbs)', () => {
+	it('built-in composition yields a complete page (all built-in verbs)', () => {
 		const {page} = composeBuiltInPage(fakeContext());
 		const verbNames: ReadonlyArray<keyof WebHandsPage> = [
 			'navigate',
@@ -175,6 +175,11 @@ describe('hand-host composition primitive (no browser)', () => {
 			'wait',
 			'cookies',
 			'setCookies',
+			'query',
+			'count',
+			'exists',
+			'isVisible',
+			'getAttribute',
 		];
 		for (const name of verbNames) {
 			expect(typeof page[name]).toBe('function');
@@ -206,6 +211,21 @@ function restOfVerbsHand(): Hand {
 				return [];
 			},
 			async setCookies() {},
+			async query() {
+				return [];
+			},
+			async count() {
+				return 0;
+			},
+			async exists() {
+				return false;
+			},
+			async isVisible() {
+				return false;
+			},
+			async getAttribute() {
+				return null;
+			},
 		},
 	});
 }

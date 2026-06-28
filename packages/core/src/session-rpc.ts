@@ -2,6 +2,8 @@ import {
 	locator,
 	validateSnapshotOptions,
 	type Cookie,
+	type QueryOptions,
+	type QueryRow,
 	type Snapshot,
 	type SnapshotOptions,
 	type WaitCondition,
@@ -71,7 +73,20 @@ export type SessionRpcBuiltInRequest =
 	| {readonly verb: 'eval'; readonly expression: string}
 	| {readonly verb: 'wait'; readonly condition: WaitCondition}
 	| {readonly verb: 'cookies'}
-	| {readonly verb: 'setCookies'; readonly cookies: readonly Cookie[]};
+	| {readonly verb: 'setCookies'; readonly cookies: readonly Cookie[]}
+	| {
+			readonly verb: 'query';
+			readonly locator: string;
+			readonly options?: QueryOptions;
+	  }
+	| {readonly verb: 'count'; readonly locator: string}
+	| {readonly verb: 'exists'; readonly locator: string}
+	| {readonly verb: 'isVisible'; readonly locator: string}
+	| {
+			readonly verb: 'getAttribute';
+			readonly locator: string;
+			readonly name: string;
+	  };
 
 /**
  * The OPEN escape for a dynamically-loaded third-party hand verb (Phase 2,
@@ -144,6 +159,16 @@ export async function applySessionRpc(
 		case 'setCookies':
 			await page.setCookies(request.cookies);
 			return undefined;
+		case 'query':
+			return page.query(locator(request.locator), request.options);
+		case 'count':
+			return page.count(locator(request.locator));
+		case 'exists':
+			return page.exists(locator(request.locator));
+		case 'isVisible':
+			return page.isVisible(locator(request.locator));
+		case 'getAttribute':
+			return page.getAttribute(locator(request.locator), request.name);
 		case 'hand':
 			return applyHandVerb(page, request);
 	}
@@ -251,6 +276,29 @@ export function makeRpcPage(
 		},
 		async setCookies(cookies) {
 			await send({verb: 'setCookies', cookies});
+		},
+		async query(target, options) {
+			return (await send({
+				verb: 'query',
+				locator: target,
+				options,
+			})) as QueryRow[];
+		},
+		async count(target) {
+			return (await send({verb: 'count', locator: target})) as number;
+		},
+		async exists(target) {
+			return (await send({verb: 'exists', locator: target})) as boolean;
+		},
+		async isVisible(target) {
+			return (await send({verb: 'isVisible', locator: target})) as boolean;
+		},
+		async getAttribute(target, name) {
+			return (await send({
+				verb: 'getAttribute',
+				locator: target,
+				name,
+			})) as string | null;
 		},
 	};
 }

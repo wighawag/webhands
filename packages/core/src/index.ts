@@ -1,8 +1,12 @@
 export type {
+	BoundingBox,
 	Cookie,
 	Driver,
 	LocatorString,
 	OpenTarget,
+	PwExtra,
+	QueryOptions,
+	QueryRow,
 	WebHandsPage,
 	Session,
 	Snapshot,
