@@ -119,6 +119,42 @@ describe('PlaywrightLaunchTransport stealth opt-in (hermetic)', () => {
 		void session; // no verbs invoked; nothing real to close.
 	});
 
+	it('defaults noViewport to TRUE under stealth (viewport: null) and is overridable', async () => {
+		// Stealth on, noViewport unset => Patchright recipe default: viewport null.
+		{
+			const {root} = await makeSetUpProfile('stealth-noviewport-default');
+			const launchSpy = vi.fn(async () => fakeContext());
+			const transport = new PlaywrightLaunchTransport({root}, [], {
+				stealth: true,
+				importStealthChromium: async () => ({
+					chromium: {launchPersistentContext: launchSpy as never},
+				}),
+			});
+			await transport.open({
+				mode: 'launch',
+				profile: 'stealth-noviewport-default',
+			});
+			const [, options] = launchSpy.mock.calls[0]!;
+			expect((options as {viewport?: unknown}).viewport).toBeNull();
+		}
+
+		// Stealth on, noViewport explicitly false => fixed viewport kept (no null).
+		{
+			const {root} = await makeSetUpProfile('stealth-noviewport-off');
+			const launchSpy = vi.fn(async () => fakeContext());
+			const transport = new PlaywrightLaunchTransport({root}, [], {
+				stealth: true,
+				noViewport: false,
+				importStealthChromium: async () => ({
+					chromium: {launchPersistentContext: launchSpy as never},
+				}),
+			});
+			await transport.open({mode: 'launch', profile: 'stealth-noviewport-off'});
+			const [, options] = launchSpy.mock.calls[0]!;
+			expect('viewport' in (options as object)).toBe(false);
+		}
+	});
+
 	it('forwards headless: true by default (no headed flag) on the stealth path', async () => {
 		const {root} = await makeSetUpProfile('stealth-headless');
 
@@ -136,6 +172,111 @@ describe('PlaywrightLaunchTransport stealth opt-in (hermetic)', () => {
 		expect((options as {headless?: boolean}).headless).toBe(true);
 		// No systemBrowser configured => no Playwright channel passed.
 		expect((options as {channel?: unknown}).channel).toBeUndefined();
+	});
+
+	it('sets viewport: null when noViewport=true is opted in explicitly', async () => {
+		// noViewport is a generic hardening knob. We exercise launchOptions
+		// construction hermetically through the stealth launch SPY (the SAME
+		// launchOptions object is built for vanilla and stealth alike).
+		const {root} = await makeSetUpProfile('noviewport-explicit');
+		const launchSpy = vi.fn(async () => fakeContext());
+		const transport = new PlaywrightLaunchTransport({root}, [], {
+			stealth: true,
+			noViewport: true,
+			importStealthChromium: async () => ({
+				chromium: {launchPersistentContext: launchSpy as never},
+			}),
+		});
+		await transport.open({mode: 'launch', profile: 'noviewport-explicit'});
+		const [, options] = launchSpy.mock.calls[0]!;
+		expect((options as {viewport?: unknown}).viewport).toBeNull();
+	});
+
+	it('preserves current behavior when noViewport is unset and sets no UA/locale/timezone/headers by default', async () => {
+		// noViewport explicitly false reproduces the "unset, no-viewport-default"
+		// launchOptions (`this.#noViewport ?? this.#stealth` => false): no viewport
+		// override is added. Crucially we ALSO assert the transport never sets
+		// user-agent/locale/timezone/headers by default (Patchright warns a wrong UA
+		// is a bigger tell than none).
+		const {root} = await makeSetUpProfile('viewport-default');
+		const launchSpy = vi.fn(async () => fakeContext());
+		const transport = new PlaywrightLaunchTransport({root}, [], {
+			stealth: true,
+			noViewport: false,
+			importStealthChromium: async () => ({
+				chromium: {launchPersistentContext: launchSpy as never},
+			}),
+		});
+		await transport.open({mode: 'launch', profile: 'viewport-default'});
+		const [, options] = launchSpy.mock.calls[0]!;
+		// noViewport:false => no viewport key at all (Playwright default preserved).
+		expect('viewport' in (options as object)).toBe(false);
+		// No args were requested => no args key (only the hardening escape hatch sets it).
+		expect('args' in (options as object)).toBe(false);
+		// We never set user-agent/locale/timezone/headers by default.
+		for (const key of [
+			'userAgent',
+			'locale',
+			'timezoneId',
+			'extraHTTPHeaders',
+		]) {
+			expect(key in (options as object)).toBe(false);
+		}
+	});
+
+	it('forwards extraLaunchArgs verbatim to launchOptions.args', async () => {
+		const {root} = await makeSetUpProfile('extra-args');
+		const launchSpy = vi.fn(async () => fakeContext());
+		const args = ['--disable-blink-features=AutomationControlled', '--foo'];
+		const transport = new PlaywrightLaunchTransport({root}, [], {
+			stealth: true,
+			extraLaunchArgs: args,
+			importStealthChromium: async () => ({
+				chromium: {launchPersistentContext: launchSpy as never},
+			}),
+		});
+		await transport.open({mode: 'launch', profile: 'extra-args'});
+		const [, options] = launchSpy.mock.calls[0]!;
+		expect((options as {args?: unknown}).args).toEqual(args);
+	});
+
+	it('passes ignoreDefaultArgs through (boolean true) overriding the stealth default', async () => {
+		const {root} = await makeSetUpProfile('ignore-all');
+		const launchSpy = vi.fn(async () => fakeContext());
+		const transport = new PlaywrightLaunchTransport({root}, [], {
+			stealth: true,
+			ignoreDefaultArgs: true,
+			importStealthChromium: async () => ({
+				chromium: {launchPersistentContext: launchSpy as never},
+			}),
+		});
+		await transport.open({mode: 'launch', profile: 'ignore-all'});
+		const [, options] = launchSpy.mock.calls[0]!;
+		// The explicit passthrough REPLACES the built-in ['--enable-automation'].
+		expect((options as {ignoreDefaultArgs?: unknown}).ignoreDefaultArgs).toBe(
+			true,
+		);
+	});
+
+	it('passes ignoreDefaultArgs through (explicit list) as given', async () => {
+		const {root} = await makeSetUpProfile('ignore-list');
+		const launchSpy = vi.fn(async () => fakeContext());
+		const drop = [
+			'--enable-automation',
+			'--enable-blink-features=IdleDetection',
+		];
+		const transport = new PlaywrightLaunchTransport({root}, [], {
+			stealth: true,
+			ignoreDefaultArgs: drop,
+			importStealthChromium: async () => ({
+				chromium: {launchPersistentContext: launchSpy as never},
+			}),
+		});
+		await transport.open({mode: 'launch', profile: 'ignore-list'});
+		const [, options] = launchSpy.mock.calls[0]!;
+		expect(
+			(options as {ignoreDefaultArgs?: unknown}).ignoreDefaultArgs,
+		).toEqual(drop);
 	});
 
 	it('throws a typed MissingStealthDependencyError when patchright is not importable (no fallback)', async () => {

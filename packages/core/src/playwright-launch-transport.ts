@@ -70,6 +70,53 @@ export interface PlaywrightLaunchTransportOptions {
 	 */
 	readonly systemBrowser?: string;
 	/**
+	 * Don't impose a fixed emulated viewport: let the browser window drive its own
+	 * size, exactly as a real user's browser does. Maps to Playwright's
+	 * `viewport: null` on the persistent context.
+	 *
+	 * Why this matters for hardening: Playwright's DEFAULT is a fixed 1280x720
+	 * emulated viewport that does NOT match the real OS window, a discrepancy
+	 * (e.g. `window.outerWidth`/`innerWidth`/`screen` mismatches, no real resize
+	 * behaviour) that fingerprinting scripts read as a headless/automation tell.
+	 * Patchright's official recommended recipe sets `no_viewport=True` for this
+	 * reason.
+	 *
+	 * Default: `undefined` leaves Playwright's behaviour as-is, EXCEPT that when
+	 * {@link stealth} is enabled it defaults to `true` (the Patchright recipe).
+	 * Pass an explicit `false` to keep the fixed emulated viewport even under
+	 * stealth (e.g. when a caller deliberately wants a deterministic size). We pick
+	 * the stealth-on default because shipping the stealth engine while leaving the
+	 * tell it is meant to hide in place would be self-defeating; making it an
+	 * explicit, overridable default keeps that honest and discoverable.
+	 */
+	readonly noViewport?: boolean;
+	/**
+	 * Extra command-line args appended to the browser launch (Playwright's
+	 * `args`). An escape hatch for well-known hardening flags Patchright/Chromium
+	 * users pass (e.g. `--disable-blink-features=AutomationControlled`) WITHOUT
+	 * leaking a Playwright type across the seam: this is a plain `string[]`, kept
+	 * confined to this transport-construction policy and deliberately NOT on
+	 * {@link OpenTarget} (ADR-0003). Default: none.
+	 *
+	 * Caveat: args are passed THROUGH verbatim; a wrong or contradictory flag can
+	 * itself become a tell or break the launch. Opt-in only.
+	 */
+	readonly extraLaunchArgs?: readonly string[];
+	/**
+	 * Passthrough for Playwright's `ignoreDefaultArgs`: either `true` to drop ALL
+	 * of Playwright's default launch args, or a list of specific default args to
+	 * drop, so a caller can strip more automation-flavoured defaults than the
+	 * built-in stealth subset.
+	 *
+	 * When omitted, the stealth path still drops `--enable-automation` on its own
+	 * (unchanged behaviour). When provided, this value REPLACES that built-in
+	 * choice, so a caller opting in owns the full list (pass
+	 * `['--enable-automation', ...]` to keep it). Like {@link extraLaunchArgs}
+	 * this is a plain value confined to this module, never on {@link OpenTarget}.
+	 * Default: none.
+	 */
+	readonly ignoreDefaultArgs?: boolean | readonly string[];
+	/**
 	 * INTERNAL test seam: override how the stealth chromium is imported. Omit in
 	 * production (defaults to `import('patchright')`). See
 	 * {@link StealthChromiumImporter}.
@@ -123,6 +170,9 @@ export class PlaywrightLaunchTransport implements Transport {
 	readonly #hands: readonly Hand[];
 	readonly #stealth: boolean;
 	readonly #systemBrowser: string | undefined;
+	readonly #noViewport: boolean | undefined;
+	readonly #extraLaunchArgs: readonly string[] | undefined;
+	readonly #ignoreDefaultArgs: boolean | readonly string[] | undefined;
 	readonly #importStealthChromium: StealthChromiumImporter;
 
 	/**
@@ -134,9 +184,11 @@ export class PlaywrightLaunchTransport implements Transport {
 	 *   the operator's explicit config; the transport does NOT discover them. Omit
 	 *   for the built-ins-only surface.
 	 * @param options transport-construction policy, notably the opt-in `stealth`
-	 *   toggle and optional `systemBrowser` (see
+	 *   toggle, optional `systemBrowser`, and the launch-hardening knobs
+	 *   (`noViewport`, `extraLaunchArgs`, `ignoreDefaultArgs`; see
 	 *   {@link PlaywrightLaunchTransportOptions}). Defaults to vanilla Playwright,
-	 *   bundled Chromium, stealth OFF.
+	 *   bundled Chromium, stealth OFF. The hardening knobs are confined to this
+	 *   module and never reach {@link OpenTarget} (ADR-0003).
 	 */
 	constructor(
 		location: ProfileLocationOptions = {},
@@ -147,6 +199,9 @@ export class PlaywrightLaunchTransport implements Transport {
 		this.#hands = hands;
 		this.#stealth = options.stealth === true;
 		this.#systemBrowser = options.systemBrowser;
+		this.#noViewport = options.noViewport;
+		this.#extraLaunchArgs = options.extraLaunchArgs;
+		this.#ignoreDefaultArgs = options.ignoreDefaultArgs;
 		this.#importStealthChromium =
 			options.importStealthChromium ?? defaultStealthImporter;
 	}
@@ -191,8 +246,35 @@ export class PlaywrightLaunchTransport implements Transport {
 		if (this.#systemBrowser !== undefined) {
 			launchOptions.channel = this.#systemBrowser;
 		}
-		if (this.#stealth) {
+		// no_viewport: explicit caller choice wins; otherwise default to TRUE under
+		// stealth (Patchright's recommended recipe), and leave Playwright's default
+		// fixed viewport in place when stealth is off. `viewport: null` is how
+		// Playwright expresses "let the real window drive the size".
+		const noViewport = this.#noViewport ?? this.#stealth;
+		if (noViewport) {
+			launchOptions.viewport = null;
+		}
+		// ignoreDefaultArgs: an explicit passthrough REPLACES the built-in stealth
+		// choice (the caller then owns the full list). With no passthrough, the
+		// stealth path keeps dropping just `--enable-automation` so it cannot re-add
+		// the fingerprint Patchright just removed.
+		if (this.#ignoreDefaultArgs !== undefined) {
+			launchOptions.ignoreDefaultArgs =
+				typeof this.#ignoreDefaultArgs === 'boolean'
+					? this.#ignoreDefaultArgs
+					: [...this.#ignoreDefaultArgs];
+		} else if (this.#stealth) {
 			launchOptions.ignoreDefaultArgs = ['--enable-automation'];
+		}
+		// Extra launch args (the hardening escape hatch) are appended verbatim. We do
+		// NOT set user-agent/locale/timezone/headers here: a wrong UA is a bigger
+		// tell than none (Patchright warns against overriding them), so those stay
+		// untouched by default.
+		if (
+			this.#extraLaunchArgs !== undefined &&
+			this.#extraLaunchArgs.length > 0
+		) {
+			launchOptions.args = [...this.#extraLaunchArgs];
 		}
 
 		let context: BrowserContext;

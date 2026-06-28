@@ -104,6 +104,14 @@ export interface LaunchPolicy {
 	 * of the bundled Chromium. Omit for bundled Chromium.
 	 */
 	readonly systemBrowser?: string;
+	/**
+	 * Don't impose a fixed emulated viewport (Playwright's `viewport: null`): let
+	 * the real window drive its own size, a hardening tweak Patchright recommends
+	 * for its stealth recipe. When omitted, `core` leaves Playwright's default in
+	 * place EXCEPT under stealth, where it defaults the no-viewport on. Set `false`
+	 * to keep the fixed viewport even under stealth.
+	 */
+	readonly noViewport?: boolean;
 }
 
 // --- shared schema fragments ----------------------------------------------
@@ -161,12 +169,27 @@ const stealthOptions = z.object({
 			"Drive a browser already installed on the system (e.g. 'chrome', " +
 				"'msedge') instead of the bundled Chromium.",
 		),
+	// Modelled as a `viewport` boolean so incur's `--no-<flag>` negation gives the
+	// task-mandated `--no-viewport`: passing `--no-viewport` sets `viewport=false`
+	// (i.e. noViewport=true). Absent => undefined => core decides the default
+	// (no-viewport defaults ON under --stealth). Pass `--viewport` to force the
+	// fixed emulated viewport even under stealth.
+	viewport: z
+		.boolean()
+		.optional()
+		.describe(
+			'Emulate a fixed viewport. Use --no-viewport to let the real browser ' +
+				'window drive its own size (a hardening tweak Patchright recommends). ' +
+				'When unset, --no-viewport behaviour defaults ON under --stealth. ' +
+				'Reduces but does not eliminate detection.',
+		),
 });
 
 /** Resolve the {@link LaunchPolicy} from the shared stealth option fields. */
 function launchPolicyFrom(options: {
 	stealth?: boolean;
 	'use-system-browser'?: string;
+	viewport?: boolean;
 }): LaunchPolicy {
 	return {
 		stealth: options.stealth === true,
@@ -175,6 +198,10 @@ function launchPolicyFrom(options: {
 			options['use-system-browser'] !== ''
 				? options['use-system-browser']
 				: undefined,
+		// Tri-state: `viewport` undefined leaves core's (stealth-driven) default;
+		// `--no-viewport` (viewport=false) => noViewport:true; `--viewport` => false.
+		// Only forward when the flag was given.
+		...(options.viewport !== undefined ? {noViewport: !options.viewport} : {}),
 	};
 }
 
@@ -343,6 +370,7 @@ export function createCli(deps: CliDeps = {}) {
 			headed: z.boolean(),
 			stealth: z.boolean(),
 			systemBrowser: z.string().optional(),
+			noViewport: z.boolean().optional(),
 		}),
 		async run(c) {
 			try {
@@ -363,6 +391,9 @@ export function createCli(deps: CliDeps = {}) {
 								stealth: policy.stealth === true,
 								...(policy.systemBrowser !== undefined
 									? {systemBrowser: policy.systemBrowser}
+									: {}),
+								...(policy.noViewport !== undefined
+									? {noViewport: policy.noViewport}
 									: {}),
 							},
 							{
@@ -822,6 +853,9 @@ async function defaultServeSession(
 	const launch = new PlaywrightLaunchTransport(home, [], {
 		stealth: launchPolicy.stealth,
 		systemBrowser: launchPolicy.systemBrowser,
+		...(launchPolicy.noViewport !== undefined
+			? {noViewport: launchPolicy.noViewport}
+			: {}),
 	});
 	const attach = new PlaywrightAttachTransport();
 	const transport: Transport = {

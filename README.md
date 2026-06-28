@@ -131,8 +131,18 @@ This is **off by default** — vanilla Playwright stays the default. To enable i
    Chrome with or without the Patchright path, and stealth with or without a
    system browser. Other channel names work too (e.g. `msedge`).
 
-Programmatic equivalent (the `--stealth` / `--use-system-browser` flags map onto
-these transport options):
+3. Optional extra hardening. `--no-viewport` lets the real browser window drive
+   its own size instead of Playwright's fixed 1280x720 emulated viewport (a
+   known headless tell). It is **defaulted ON under `--stealth`** (Patchright's
+   recommended recipe) and is overridable; pass `--viewport` to keep the fixed
+   viewport even under stealth. webhands deliberately does **not** override
+   `user-agent`, `locale`, `timezone`, or `headers`: a wrong UA is a bigger tell
+   than none.
+
+Programmatic equivalent (the `--stealth` / `--use-system-browser` /
+`--no-viewport` flags map onto these transport options; the constructor also
+takes `extraLaunchArgs` and `ignoreDefaultArgs` escape hatches for additional
+hardening flags, none of which touch the `OpenTarget` seam):
 
 ```ts
 import {PlaywrightLaunchTransport} from '@webhands/core';
@@ -140,7 +150,7 @@ import {PlaywrightLaunchTransport} from '@webhands/core';
 const transport = new PlaywrightLaunchTransport(
   {}, // profile location (omit for ~/.webhands)
   [], // extra hands
-  {stealth: true, systemBrowser: 'chrome'},
+  {stealth: true, systemBrowser: 'chrome'}, // noViewport defaults to true here
 );
 // Stealth + headed + a real logged-in profile is the strongest recipe:
 const session = await transport.open({
@@ -156,7 +166,9 @@ It **never silently falls back** to vanilla Playwright, because that would put
 the tell back without telling you.
 
 **Honest caveat.** Stealth addresses ONLY the CDP `Runtime.enable` automation
-tell. It is **necessary-but-not-sufficient**: IP reputation and session/profile
+tell, and the launch-hardening knobs (`--no-viewport`, `extraLaunchArgs`,
+`ignoreDefaultArgs`) reduce but do **not** eliminate detection. They are
+**necessary-but-not-sufficient**: IP reputation and session/profile
 reputation still matter. The realistic recipe is stealth +
 `systemBrowser: 'chrome'` + headed + a warmed, logged-in profile + a residential
 IP (see

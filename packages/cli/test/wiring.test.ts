@@ -279,6 +279,18 @@ describe('incur CLI wiring', () => {
 				systemBrowser: 'chrome',
 			});
 		});
+
+		it('`launch --no-viewport` echoes noViewport:true in output', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, ['launch', '--no-viewport']);
+			expect(env.data).toMatchObject({mode: 'launch', noViewport: true});
+		});
+
+		it('`launch` without --no-viewport omits noViewport (core decides the default)', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, ['launch']);
+			expect(env.data?.noViewport).toBeUndefined();
+		});
 	});
 
 	describe('agent discovery: --llms manifest + MCP server (story 14, no bespoke MCP code)', () => {
@@ -427,6 +439,28 @@ describe('incur CLI wiring', () => {
 				{mode: 'launch', profile: 'work', headed: false},
 			]);
 			expect(policies).toEqual([{stealth: true, systemBrowser: 'chrome'}]);
+		});
+
+		it('`serve --no-viewport` forwards noViewport:true in the launch policy', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			await runEnvelope(
+				provider,
+				['serve', '--profile', 'work', '--no-viewport'],
+				{serveSession: serve},
+			);
+			expect(policies).toEqual([
+				{stealth: false, systemBrowser: undefined, noViewport: true},
+			]);
+		});
+
+		it('`serve` without --no-viewport omits noViewport from the policy', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			await runEnvelope(provider, ['serve', '--profile', 'work'], {
+				serveSession: serve,
+			});
+			expect(policies).toEqual([{stealth: false, systemBrowser: undefined}]);
 		});
 
 		it('`stop` with no live server is a friendly no-op (stopped:false), not an error', async () => {
