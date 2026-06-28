@@ -768,6 +768,185 @@ const NESTED_FRAME = `<!doctype html>
 </html>
 `;
 
+/**
+ * The Tier-4 VISION/TILE captcha fixture (prd `broaden-agent-verb-surface`, R3,
+ * story 17; the `vision-tile-captcha-end-to-end-proof` task). It mirrors the
+ * doubly-nested CROSS-ORIGIN tree the finding
+ * `playwright-cross-origin-frame-captcha-mechanics.md` spike-verified, but unlike
+ * the read-only {@link NESTED_FRAME} fixture its deepest level is an INTERACTIVE
+ * tile challenge that ADVANCES when the right tiles are clicked:
+ *
+ * ```
+ * top (host)
+ *  └─ iframe#child-frame       ← CROSS-ORIGIN (a second fixture-server origin, the WAF level)
+ *     └─ iframe#child-frame    ← CROSS-ORIGIN AGAIN (a third origin, the captcha level)
+ *        └─ the interactive 3x3 tile grid + challenge state
+ * ```
+ *
+ * Cross-origin composition is the SAME `?child=<url>` mechanism
+ * {@link NESTED_FRAME} uses (the fixture server serves identical pages on every
+ * port, so the test threads three distinct origins by passing each child's
+ * absolute URL). Every level shares the iframe id `#child-frame`, so a
+ * `frameLocator('#child-frame').frameLocator('#child-frame')` chain reaches the
+ * deepest (captcha) level two cross-origin boundaries deep.
+ *
+ * The deepest level (no `?child`) is the challenge. It is the part that makes
+ * this a vision/tile PROOF rather than a static read:
+ *
+ * - A 3x3 grid of `.tile` cells, each absolutely positioned at a KNOWN, distinct
+ *   spot (so an element-clipped/viewport screenshot of the widget shows them at
+ *   stable coordinates, and a `bbox` read gives each tile's VIEWPORT-relative
+ *   centre — the coordinate<->screenshot bridge). Each tile carries `data-tile`
+ *   (its index `0..8`) and `data-target` (`"1"` for the tiles the challenge wants
+ *   selected, `"0"` otherwise). The TARGET set is fixed in the markup, so the
+ *   test's selection is DETERMINISTIC (it stands in for a vision model's
+ *   decision; webhands ships no solver).
+ * - Clicking a tile (a real coordinate `mouse` click runs the tile's own click
+ *   handler) toggles its `selected` state and appends its index to `#selection`.
+ *   Clicking a tile that is NOT a target marks the attempt `wrong` (so a sloppy
+ *   coordinate that hit the neighbouring tile is OBSERVABLE, not silently
+ *   tolerated — the coordinate contract is load-bearing).
+ * - `#submit` checks the selection against the target set; when EXACTLY the
+ *   target tiles are selected it flips `#challenge-state` to `solved` and sets
+ *   `window.__solved = true` (the challenge ADVANCES). Until then it reads
+ *   `pending` (or `wrong` after a mis-click), so the proof asserts a real state
+ *   transition the verbs drove, not a no-op.
+ *
+ * All challenge state lives in the deepest frame's DOM, so the proof reads it
+ * through the SAME cross-origin `frameLocator` chain the clicks act through.
+ */
+const TILE_CAPTCHA = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>tile captcha fixture</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				padding: 0;
+			}
+			/* #grid is the positioned WIDGET (a known size), so an element-clipped
+			   screenshot of it clips the tile grid, and the absolutely-positioned
+			   tiles lay out relative to IT at stable, distinct coordinates. */
+			#grid {
+				position: relative;
+				width: 300px;
+				height: 300px;
+			}
+			.tile {
+				position: absolute;
+				width: 90px;
+				height: 90px;
+				background: #cdd;
+				box-sizing: border-box;
+				border: 1px solid #899;
+			}
+			.tile.selected {
+				background: #3a7;
+			}
+		</style>
+	</head>
+	<body>
+		<!-- The child iframe comes FIRST and is pinned to the top-left, so on a
+		     PARENT level (one with ?child) the nested tree starts at the viewport
+		     origin and the deepest grid stays IN the viewport — the coordinate<->
+		     screenshot contract only holds for on-screen tiles. The challenge UI is
+		     hidden on parent levels (it is meaningful only at the deepest level). -->
+		<iframe id="child-frame" name="child-frame" width="380" height="560"></iframe>
+		<!-- The interactive challenge, present at EVERY level (so the chain is
+		     uniform) but meaningful only at the deepest (no-child) one the proof
+		     reads + clicks into. -->
+		<div id="challenge" class="challenge">
+			<p id="prompt">Select the marked tiles</p>
+			<p id="challenge-state">pending</p>
+			<p id="selection"></p>
+			<div id="grid"></div>
+			<button id="submit" type="button">Verify</button>
+		</div>
+		<script>
+			// The fixed TARGET set (the tiles the challenge wants). Deterministic, so
+			// the proof's selection stands in for a vision model with zero solver code.
+			var TARGETS = [0, 4, 8];
+			var GRID = document.getElementById('grid');
+			var selection = [];
+			for (var i = 0; i < 9; i++) {
+				(function (index) {
+					var tile = document.createElement('div');
+					tile.className = 'tile';
+					tile.id = 'tile-' + index;
+					tile.setAttribute('data-tile', String(index));
+					tile.setAttribute(
+						'data-target',
+						TARGETS.indexOf(index) >= 0 ? '1' : '0',
+					);
+					tile.style.left = (index % 3) * 100 + 'px';
+					tile.style.top = Math.floor(index / 3) * 100 + 'px';
+					tile.textContent = String(index);
+					tile.addEventListener('click', function () {
+						var at = selection.indexOf(index);
+						if (at >= 0) {
+							selection.splice(at, 1);
+							tile.classList.remove('selected');
+						} else {
+							selection.push(index);
+							tile.classList.add('selected');
+						}
+						document.getElementById('selection').textContent = selection
+							.slice()
+							.sort(function (a, b) {
+								return a - b;
+							})
+							.join(',');
+					});
+					GRID.appendChild(tile);
+				})(i);
+			}
+
+			window.__solved = false;
+			document.getElementById('submit').addEventListener('click', function () {
+				var chosen = selection.slice().sort(function (a, b) {
+					return a - b;
+				});
+				var want = TARGETS.slice().sort(function (a, b) {
+					return a - b;
+				});
+				var ok =
+					chosen.length === want.length &&
+					chosen.every(function (v, i) {
+						return v === want[i];
+					});
+				var state = document.getElementById('challenge-state');
+				if (ok) {
+					window.__solved = true;
+					state.textContent = 'solved';
+				} else {
+					state.textContent = 'wrong';
+				}
+			});
+
+			// Cross-origin composition, mirroring NESTED_FRAME: read this level's
+			// ?child=<url> and point #child-frame at it. On a PARENT level we HIDE this
+			// level's own challenge UI and pin the iframe to the top, so the only thing
+			// occupying the viewport is the nested tree — keeping the DEEPEST grid on
+			// screen (its tiles' viewport coordinates are what the mouse verb clicks).
+			// The
+			// deepest level (no child) removes the empty trailing iframe and shows the
+			// challenge.
+			var params = new URLSearchParams(window.location.search);
+			var child = params.get('child');
+			var frame = document.getElementById('child-frame');
+			if (child) {
+				frame.src = child;
+				document.getElementById('challenge').style.display = 'none';
+			} else if (frame && frame.parentNode) {
+				frame.parentNode.removeChild(frame);
+			}
+		</script>
+	</body>
+</html>
+`;
+
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
@@ -787,4 +966,5 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'coordinate.html': COORDINATE,
 	'screenshot.html': SCREENSHOT,
 	'nested-frame.html': NESTED_FRAME,
+	'tile-captcha.html': TILE_CAPTCHA,
 };

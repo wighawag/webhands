@@ -1,0 +1,10 @@
+---
+'@webhands/core': patch
+---
+
+Add a VISION/TILE captcha capability proof and its multi-origin tile fixture (the "broaden the agent verb surface" prd, R3, story 17). This proves the Tier-4 surface COMPOSES into the vision/tile captcha family the way the frame-aware `query` proved token-harvest: an agent SEES the cross-origin tile grid (an element-clipped `screenshot` of the widget) and CLICKS it at VIEWPORT coordinates (`mouse`), reading challenge state through the cross-origin frame READ, two cross-origin frames deep, with NO iamhuman and NO solver.
+
+- A new exported fixture page (`tile-captcha.html`) presents an INTERACTIVE 3x3 tile grid two cross-origin frames deep (a WAF-like frame embedding an hCaptcha-like challenge frame, composed across three distinct fixture-server origins via the same `?child=<url>` mechanism the read-only `nested-frame.html` uses). The deepest level is a real challenge: clicking the marked tiles (deterministic `data-target` markers stand in for a vision model's decision) and submitting flips its `#challenge-state` from `pending` to `solved`; a wrong selection reads `wrong`.
+- A real-browser seam test drives the verbs-only loop end to end: cross-origin READ of the grid/state -> element-clipped + viewport `screenshot` -> VIEWPORT-coordinate `mouse` clicks (each tile's coordinate is its `bbox`, read THROUGH the cross-origin chain, so the coordinate<->screenshot contract holds across both cross-origin boundaries) -> the challenge advances. A negative test proves the coordinate mapping is tight (a click on a non-target tile selects exactly that tile and leaves the challenge unsolved), so a mis-mapped coordinate could not pass by accident.
+
+No webhands product surface changed beyond the test fixture: the loop uses only verbs that already shipped (`query`/`getAttribute`/`count`/`exists`, `screenshot`, `mouse`). Screenshot output + profile paths are isolated to per-test temp dirs; the real `~/.webhands` (and its screenshots dir) stay untouched.
