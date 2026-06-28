@@ -3,7 +3,7 @@ title: Tier-1 `query` + state verbs (exists/count/isVisible/getAttribute)
 slug: query-and-state-verbs
 prd: broaden-agent-verb-surface
 blockedBy: []
-covers: [1, 2, 3, 4, 5]
+covers: [1, 2, 3, 4, 5, 14]
 ---
 
 ## What to build

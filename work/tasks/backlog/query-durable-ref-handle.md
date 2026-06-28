@@ -94,9 +94,10 @@ mechanism — exactly as the A-vs-B spike picked B
 > stripped/replaced, (iii) a page-world `WeakMap<Element,id>` mint (keyed on node
 > identity) survives the attribute-stripping case. Let THAT evidence pick the
 > minting mechanism — do not assume; the prior A-vs-B and frame spikes are the
-> model. (The previous ref spike `/tmp/frame-spike/ref-spike.mjs` only tested a
-> DOM MOVE; node replacement + attribute stripping are the harder cases this spike
-> must close.)
+> model. (The prior ref spike recorded in
+> `work/notes/findings/query-minted-dom-ref-is-a-cheap-durable-handle.md` only
+> tested a DOM MOVE; node replacement + attribute stripping are the harder cases
+> this spike must close.)
 >
 > Domain vocabulary: a **ref** is a short-lived locator-string handle to a matched
 > element. The LADDER: prefer the element's own stable UNIQUE attribute

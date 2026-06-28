@@ -38,7 +38,8 @@ frame-capable resolver (still no new addressing scheme).
 
 - [ ] A local SAME-ORIGIN nested-frame fixture carries a `.h-captcha[data-sitekey]`
       + a response-sink `<textarea>` + a page callback in a child `#main-iframe`
-      (fold in the structure from the frame spike `/tmp/frame-spike/spike.mjs`).
+      (build the structure described in
+      `work/notes/findings/click-and-type-already-frame-scoped-via-framelocator.md`).
 - [ ] `query` reads the sitekey from the child frame via a `frameLocator(...)`
       locator expression (no `--frame` flag; frame scope is in the locator).
 - [ ] The full token-harvest loop passes using ONLY verbs (`query` read -> token

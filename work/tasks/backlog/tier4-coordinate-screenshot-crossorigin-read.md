@@ -23,8 +23,10 @@ that admits this narrow surface:
   reading scrolled-out content, NOT coordinate-matched — document this), and an
   element-CLIPPED shot (a locator — just the captcha widget). Caller MAY override
   the output path; validate it stays under a sane managed dir.
-- cross-origin frame READ — the read counterpart to the already-working
-  cross-origin `click`: a `frameLocator(...).frameLocator(...)`-chained read
+- cross-origin frame READ — the read counterpart to the spike-verified-mechanism
+  cross-origin `click` (the cross-origin frameLocator mechanism is verified on a
+  synthetic tree per the finding below; the live-Imperva end-to-end stays open):
+  a `frameLocator(...).frameLocator(...)`-chained read
   returning structured-cloned values across cross-origin boundaries (so the agent
   can read the tile/challenge state two frames deep). Distinct from Tier-3
   frame-scoped `eval`, which is same-origin only (page-world JS cannot cross);
