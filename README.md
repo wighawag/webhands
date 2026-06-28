@@ -83,10 +83,26 @@ This is a **personal-use** tool. Its whole premise is that you drive a browser
 [`docs/adr/0002`](docs/adr/0002-real-session-over-fingerprint-spoofing.md)). It is
 deliberately local and single-session by design.
 
-- **No login-bypass, no CAPTCHA-solving.** The human does the one-time login and
-  clears any anti-bot challenge in the headed `setup-profile` step. This tool
-  does NOT bypass authentication or solve CAPTCHAs programmatically, and it is not
-  intended to.
+- **No login-bypass, no built-in CAPTCHA solver.** The human does the one-time
+  login and clears any anti-bot challenge in the headed `setup-profile` step.
+  webhands ships NO captcha solver and NO provider key, and does not bypass
+  authentication itself. What changed: the verb surface is now rich enough that it
+  no longer STANDS IN THE WAY of a capable agent that brings its OWN key. Such an
+  agent can get past a captcha by poking the page with verbs, both families: the
+  token-harvest family by reading the sitekey with a frame-aware `query`, `type`ing
+  a provider token into the response sink, and firing the callback; the vision/tile
+  family with the coordinate `mouse`, the element-clipped `screenshot`, and the
+  cross-origin frame read. We do not solve it; we no longer stand in the way. The
+  agent supplies its own key and its own logic (or uses a hand, below). webhands
+  is capable, not a solver.
+- **Hands are the simpler path (still).** A *hand* is a third-party capability
+  module (`iamhuman` today, a future buy-on-amazon hand) that closes over the live
+  page and makes the hard thing ONE call. A dumb agent plus a hand still gets there
+  in a single call, even though a capable agent can now do the same over several
+  verb turns. The two paths coexist: the verb surface is the floor that makes the
+  unaided path POSSIBLE; a hand is the ramp that makes it EASY. (A hand is a
+  trusted in-process peer, loaded only when you name it in `hands.json`; see
+  [`docs/adr/0007`](docs/adr/0007-public-hand-contract-and-explicit-declarative-loading.md).)
 - **No fingerprint-spoofing / anti-detect tricks.** It leans on being a *real*
   browser/profile/IP rather than spoofing. There is no proxy *rotation* or
   anti-detect build here. (A single, user-chosen SOCKS proxy for traffic/DNS
