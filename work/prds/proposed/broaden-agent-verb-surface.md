@@ -12,13 +12,7 @@ needsAnswers: true
 
 These block AUTO-tasking; they are design choices the tasker must not guess.
 
-1. **Snapshot refs vs. `query` refs vs. locator strings — one addressing story.**
-   `snapshot` already emits `[ref=eN]` element refs. Does `query` return rows
-   keyed by those same refs (so an agent reads `query`, picks a row, and
-   `click`s its ref), or only by index/locator? Reusing snapshot refs is the
-   coherent answer but needs the ref scheme to be stable across a `query` +
-   `click` pair. CONFIRM the addressing story is unified, not three parallel ones.
-2. **CLI/MCP surface for the new verbs.** The new verbs must appear as both CLI
+1. **CLI/MCP surface for the new verbs.** The new verbs must appear as both CLI
    commands and MCP tools (incur gives both). Confirm the structured `query`
    result and the input verbs (`press`, `select`, `hover`, `scroll`, plus any
    Deliverable-4 coordinate/screenshot verbs) have a clean CLI shape (e.g. how
@@ -62,6 +56,32 @@ as settled, not open.
    `frameLocator`/coordinate ops (R3). Net: locator-native now, `frame?`-everywhere
    stays a cheap, safe future toggle.
 
+- **R4 — addressing: locator/`.nth()` (A) FIRST; a `query`-minted durable DOM ref
+   (B) as a KNOWN-CHEAP fast-follow (spiked, not deferred-blind).** ADR-0004's
+   locator expression stays THE addressing spine, so `query` returns rows the
+   agent re-addresses by locator (`(<locator>).nth(i)` or, better, a
+   content-anchored locator like `getByText(title)`). But the spike
+   (`work/notes/findings/query-minted-dom-ref-is-a-cheap-durable-handle.md`)
+   showed B is ~5 lines and FIXES a real footgun:
+  - A's `.nth(i)` SILENTLY clicks the wrong element after the list mutates between
+    read and act (spike: clicked "Bravo" when it wanted "Charlie" after a row was
+    prepended) — dangerous for checkout/captcha.
+  - B: `query` (opt-in) stamps `data-webhands-ref="<id>"` on each matched element
+    and returns the id as the row's `ref`; `click`/`type` accept a `ref` and
+    resolve it as the locator string `[data-webhands-ref="<id>"]` through the
+    EXISTING resolver. It is DURABLE across calls and ROBUST to index drift
+    (spike: clicked "Charlie" correctly after the prepend), and SEAM-CLEAN (a ref
+    is a string; resolution is a string locator; no ElementHandle, no Playwright
+    type — ADR-0003 intact).
+  - Playwright's native `aria-ref` is REJECTED for this: it is positional/
+    snapshot-scoped and resolved to the WRONG element after drift (spike).
+  - Read-only preserved: refs are minted ONLY when the caller asks (e.g. a
+    `withRefs`/`pw:['ref']` opt-in), so the default `query` stays a pure read; the
+    attribute is namespaced; a STALE ref (element replaced on re-render) fails
+    LOUD with a typed error, never a silent wrong-element click.
+  - Fits R1's reversibility shape (a `ref` is an additive optional row field + the
+    one existing resolver). Recommended task order: A in T1, B as a fast-follow
+    task right after (not "future").
 - **R2 — `query` has NO curated DOM field set; the agent names DOM data freely,
    plus a tiny Playwright-only extras set.** DOM attributes and JS properties ARE
    Playwright/DOM vocabulary the agent already knows, so webhands maintains NO
@@ -422,10 +442,16 @@ coordinate clicks) is recorded in that ADR.
 - Key finding to read before tasking:
   `work/notes/findings/click-and-type-already-frame-scoped-via-framelocator.md`
   (the spike: `click`/`type` are already frame-scoped; the only same-origin
-  captcha gap is a frame-aware READ) and
+  captcha gap is a frame-aware READ),
   `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md` (the
-  cross-origin boundary that gates Tier 4).
-- Suggested task fan-out (the tasker decides): T1 `query`+state verbs (+fixtures);
+  cross-origin boundary Tier 4 crosses), and
+  `work/notes/findings/query-minted-dom-ref-is-a-cheap-durable-handle.md` (R4: a
+  `query`-minted `data-webhands-ref` is a cheap durable cross-call handle that
+  survives index drift; native `aria-ref` does not).
+- Suggested task fan-out (the tasker decides): T1 `query`+state verbs (locator/
+  `.nth()` addressing = A) (+fixtures); T1b the `query`-minted durable DOM ref (B)
+  fast-follow — opt-in `ref` row field + `click`/`type` accepting a ref resolved
+  as `[data-webhands-ref=..]`, default `query` stays read-only (depends on T1);
   T2 frame-aware `query` read & the same-origin token-harvest captcha proof;
   T3 Tier-2 input verbs (`press`/`hover`/`select`/`scroll`/`drag`); T4
   frame-scoped `eval` (the only `frame?` qualifier; same-origin only); T5
@@ -434,4 +460,5 @@ coordinate clicks) is recorded in that ADR.
   ADR-0003 (this task carries the ADR); T7 the vision/tile end-to-end captcha
   proof against the multi-origin fixture (depends on T6). T1’s acceptance MUST
   bake in the R1 reversibility invariant (options-object signatures + single
-  frame-resolution helper) so a future `frame?`-everywhere stays non-breaking.
+  frame-resolution helper) so a future `frame?`-everywhere AND the T1b `ref` field
+  both stay non-breaking.
