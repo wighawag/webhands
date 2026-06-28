@@ -12,39 +12,20 @@ needsAnswers: true
 
 These block AUTO-tasking; they are design choices the tasker must not guess.
 
-1. **Frame-scope expression (the #3 investigation residue).** The spike
-   (`work/notes/findings/click-and-type-already-frame-scoped-via-framelocator.md`)
-   proved `click`/`type` already reach same-origin frames via a
-   `frameLocator(...)` locator EXPRESSION, and that the ONE gap is a frame-aware
-   READ. Two ways to express frame scope on the new read/state verbs, and the
-   choice must be consistent across the whole surface:
-   - (a) **Locator-expression-native:** the addressing string itself carries the
-     frame hop (`p.frameLocator('#main-iframe').locator('.h-captcha')`), exactly
-     as `click`/`type` already accept. No new param anywhere. Cheapest, most
-     consistent with ADR-0004, but the locator string gets long and the agent must
-     know the `frameLocator` grammar.
-   - (b) **An explicit `frame?` qualifier** (a transport-neutral selector string
-     for the iframe element) on each addressing verb, resolved to a same-origin
-     frame internally. More legible for an agent; adds a parallel addressing
-     concept the seam must define and keep cross-origin-honest.
-   - Lean: (a) for the locator-addressing verbs (it already works, zero new
-     concept), and confine any `frame?` qualifier to the places a bare expression
-     can't reach (notably a frame-scoped `eval`, which today cannot take a
-     `frameLocator` at all). CONFIRM this split, or pick one uniform mechanism.
-2. **`query` return contract — the known field set + the open extension (the #4
+1. **`query` return contract — the known field set + the open extension (the #4
    decision).** Agreed shape: a CLOSED, documented field set the verb always
    knows how to produce, PLUS a caller-supplied extension for arbitrary
    attributes/properties. Pin the exact closed set (the draft below is
    evidence-derived from every `eval`-extraction site in the iamhuman example) and
    the extension syntax (named attributes vs. named JS properties vs. both). See
    ## Implementation Decisions.
-3. **Snapshot refs vs. `query` refs vs. locator strings — one addressing story.**
+2. **Snapshot refs vs. `query` refs vs. locator strings — one addressing story.**
    `snapshot` already emits `[ref=eN]` element refs. Does `query` return rows
    keyed by those same refs (so an agent reads `query`, picks a row, and
    `click`s its ref), or only by index/locator? Reusing snapshot refs is the
    coherent answer but needs the ref scheme to be stable across a `query` +
    `click` pair. CONFIRM the addressing story is unified, not three parallel ones.
-4. **CLI/MCP surface for the new verbs.** The new verbs must appear as both CLI
+3. **CLI/MCP surface for the new verbs.** The new verbs must appear as both CLI
    commands and MCP tools (incur gives both). Confirm the structured `query`
    result and the input verbs (`press`, `select`, `hover`, `scroll`, plus any
    Deliverable-4 coordinate/screenshot verbs) have a clean CLI shape (e.g. how a
@@ -57,6 +38,36 @@ These block AUTO-tasking; they are design choices the tasker must not guess.
 
 Decisions taken with the user during planning; recorded so the tasker treats them
 as settled, not open.
+
+- **R1 — frame scope is LOCATOR-EXPRESSION-NATIVE for every locator-taking verb;
+   an explicit `frame?` qualifier is confined to `eval` only — AND the surface is
+   shaped so adding `frame?` everywhere later is a NON-BREAKING change.** The
+   spike proved `click`/`type` already reach same-origin frames via a
+   `frameLocator(...)` expression, and the agent already needs locator-expression
+   grammar to use them at all, so `frameLocator` is the same skill, not a new one.
+   So `query`/`exists`/`count`/`isVisible`/`getAttribute` take the SAME locator
+   expressions (frame hop in the string); only `eval` gets a transport-neutral
+   `frame?` selector string (it is page-world JS and cannot carry a
+   `frameLocator`). REVERSIBILITY IS A BUILT-IN INVARIANT, not a future promise:
+   if live testing shows agents fumble the `frameLocator` grammar, a `frame?`
+   qualifier can be added to the locator-taking verbs as PURE SUGAR with zero
+   breakage, GUARANTEED by two shape constraints the tasks MUST preserve:
+     1. **Additive-only signatures.** Every locator-taking verb takes its
+        options as an OPTIONS OBJECT (or is trivially wrappable into one) with
+        room for a future optional `frame?` field — never a new positional arg,
+        never a changed type. A call passing a frame-qualified locator string
+        today keeps working unchanged after `frame?` is added; the two become two
+        ways to say the same thing and the string way is never broken.
+     2. **One frame-resolution seam.** Frame scoping resolves through a SINGLE
+        internal helper (the one that already turns a `frameLocator(...)`
+        expression into a live same-origin frame locator). A future `frame?`
+        routes through that SAME helper (resolve the `frame` selector to a
+        same-origin frame, then resolve the locator within it) — it is wiring one
+        new input into the existing resolver, NOT a parallel addressing scheme.
+   Cross-origin frame on `eval` ⇒ a typed, LOUD "cross-origin frame unreachable"
+   error (page-world JS cannot cross); cross-origin DOES work for the Tier-4
+   `frameLocator`/coordinate ops (R3). Net: locator-native now, `frame?`-everywhere
+   stays a cheap, safe future toggle.
 
 - **R3 — the vision/tile (cross-origin) captcha family IS promoted to the SEAM
    (Tier 4 is a committed deliverable, ordered LAST).** The user wants an unaided
@@ -285,18 +296,23 @@ loops. The state verbs (`exists`/`count`/`isVisible`/`getAttribute`) are thin,
 agent-legible shorthands over the same machinery (a `count` is `query(...).length`;
 they exist as named verbs because an agent branches on them constantly).
 
-### Frame scope (Q1) — reuse addressing, do not invent a parallel scheme
+### Frame scope (resolved R1) — reuse addressing; keep `frame?` a safe future add
 
-The spike showed `click`/`type` already accept `frameLocator(...)` expressions for
-same-origin frames. `query`/state verbs SHOULD accept the same expression form
-(option a), so frame scope needs NO new concept there. The ONLY place a new
-mechanism is unavoidable is **frame-scoped `eval`** (Tier 3): `eval` runs
-page-world JS and cannot take a `frameLocator` (spike: `ReferenceError: p is not
-defined`), so it needs an explicit `frame?` selector that the transport resolves
-to a same-origin frame and evaluates in. Keep `frame` a transport-neutral STRING
-(a selector for the iframe element / a frame name|url fragment), never a
-Playwright `Frame` handle (ADR-0003). Cross-origin frame ⇒ a typed, LOUD
-"cross-origin frame is unreachable" error, never a silent empty.
+Locator-expression-native for all locator-taking verbs (`query`/state verbs take
+the same `frameLocator(...)` expression `click`/`type` already accept); an
+explicit transport-neutral `frame?` STRING (iframe selector / frame name|url
+fragment, never a Playwright `Frame` handle — ADR-0003) ONLY on `eval` (Tier 3),
+because page-world JS cannot carry a `frameLocator` (spike: `ReferenceError: p is
+not defined`). Cross-origin frame on `eval` ⇒ typed LOUD error, never silent
+empty.
+
+The REVERSIBILITY INVARIANT (R1) is load-bearing for the tasks: shape every
+locator-taking verb's signature as an OPTIONS OBJECT with room for a future
+optional `frame?`, and resolve ALL frame scoping through ONE internal helper, so
+a later `frame?`-everywhere is additive sugar over the same resolver with zero
+breakage. A task that gives a verb a positional-only signature, or stands up a
+second frame-resolution path, VIOLATES this invariant and must be rejected in
+review.
 
 ### Tier 2 input verbs — promote page-level Playwright actions to the seam
 
@@ -408,7 +424,10 @@ coordinate clicks) is recorded in that ADR.
 - Suggested task fan-out (the tasker decides): T1 `query`+state verbs (+fixtures);
   T2 frame-aware `query` read & the same-origin token-harvest captcha proof;
   T3 Tier-2 input verbs (`press`/`hover`/`select`/`scroll`/`drag`); T4
-  frame-scoped `eval`; T5 README/CONTEXT scope-honesty update; T6 Tier-4
-  `mouse` + `screenshot` (path-returning, 3 scopes) + cross-origin read, PLUS the
-  new ADR amending ADR-0003 (this task carries the ADR); T7 the vision/tile
-  end-to-end captcha proof against the multi-origin fixture (depends on T6).
+  frame-scoped `eval` (the only `frame?` qualifier; same-origin only); T5
+  README/CONTEXT scope-honesty update; T6 Tier-4 `mouse` + `screenshot`
+  (path-returning, 3 scopes) + cross-origin read, PLUS the new ADR amending
+  ADR-0003 (this task carries the ADR); T7 the vision/tile end-to-end captcha
+  proof against the multi-origin fixture (depends on T6). T1’s acceptance MUST
+  bake in the R1 reversibility invariant (options-object signatures + single
+  frame-resolution helper) so a future `frame?`-everywhere stays non-breaking.
