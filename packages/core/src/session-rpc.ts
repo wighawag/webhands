@@ -1,6 +1,7 @@
 import {
 	locator,
 	validateSnapshotOptions,
+	type ActionOptions,
 	type Cookie,
 	type EvalOptions,
 	type MouseInput,
@@ -74,8 +75,24 @@ export type SessionRpcRequest =
 export type SessionRpcBuiltInRequest =
 	| {readonly verb: 'navigate'; readonly url: string}
 	| {readonly verb: 'snapshot'; readonly full?: boolean}
-	| {readonly verb: 'click'; readonly locator: string}
-	| {readonly verb: 'type'; readonly locator: string; readonly text: string}
+	| {
+			readonly verb: 'click';
+			readonly locator: string;
+			/**
+			 * Optional {@link ActionOptions}: `{byRef: true}` marks `locator` as a
+			 * durable `query` `ref` so the server resolves it with the loud-stale
+			 * EXACTLY-ONE contract ({@link StaleRefError}). Omitted == plain locator
+			 * click (additive, R1).
+			 */
+			readonly options?: ActionOptions;
+	  }
+	| {
+			readonly verb: 'type';
+			readonly locator: string;
+			readonly text: string;
+			/** Optional {@link ActionOptions} (`{byRef}`); see the `click` request. */
+			readonly options?: ActionOptions;
+	  }
 	| {
 			readonly verb: 'eval';
 			readonly expression: string;
@@ -187,10 +204,19 @@ export async function applySessionRpc(
 			// rather than silently dropping them and returning the wrong view.
 			return page.snapshot(snapshotOptionsFromRequest(request));
 		case 'click':
-			await page.click(locator(request.locator));
+			// Forward the optional ActionOptions only when given, so a plain-locator
+			// click stays `click(target)` (the byRef path is opt-in).
+			await page.click(
+				locator(request.locator),
+				request.options !== undefined ? request.options : undefined,
+			);
 			return undefined;
 		case 'type':
-			await page.type(locator(request.locator), request.text);
+			await page.type(
+				locator(request.locator),
+				request.text,
+				request.options !== undefined ? request.options : undefined,
+			);
 			return undefined;
 		case 'eval':
 			// Forward the optional frame selector only when present, so a bare
@@ -333,11 +359,22 @@ export function makeRpcPage(
 				full: options?.full,
 			})) as Snapshot;
 		},
-		async click(target) {
-			await send({verb: 'click', locator: target});
+		async click(target, options) {
+			// Carry the optional ActionOptions only when given, so a plain click sends
+			// no `options` key (mirrors `eval`'s optional frame).
+			await send({
+				verb: 'click',
+				locator: target,
+				...(options !== undefined ? {options} : {}),
+			});
 		},
-		async type(target, text) {
-			await send({verb: 'type', locator: target, text});
+		async type(target, text, options) {
+			await send({
+				verb: 'type',
+				locator: target,
+				text,
+				...(options !== undefined ? {options} : {}),
+			});
 		},
 		async eval(expression, options) {
 			// Carry the optional frame selector only when given, so the focused

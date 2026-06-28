@@ -1046,6 +1046,123 @@ const TILE_CAPTCHA = `<!doctype html>
 </html>
 `;
 
+/**
+ * A page for the durable `query` `ref` (prd `broaden-agent-verb-surface`, R4;
+ * task `query-durable-ref-handle`). A results list whose rows exercise the
+ * REF PREFERENCE LADDER and the loud-stale contract WITHOUT any framework, by
+ * driving the exact reconciliation shapes the React/Svelte spike measured via
+ * plain DOM mutations:
+ *
+ * - Each `.result` has a per-row buy button. Charlie's button carries a STABLE
+ *   UNIQUE id (`#buy-charlie`) and a `data-testid` (ladder step 1 reuse). Other
+ *   buy buttons are ANONYMOUS (no id/testid/name), so a ref for them must MINT
+ *   (ladder step 2).
+ * - `#dupe-a` / `#dupe-b` rows both carry `data-testid="dupe"` (NON-unique), so a
+ *   ref must VERIFY uniqueness and fall through (mint) rather than reuse it.
+ * - `window.__prepend()` inserts a NEW row at the TOP (index drift): a positional
+ *   `.nth(i)` now points at the wrong row, but a ref rides with its element.
+ * - `window.__replaceCharlie()` REMOVES Charlie's row and inserts a fresh node in
+ *   its place (the keyed NODE-REPLACEMENT case): a MINTED ref on it goes stale
+ *   (resolve-to-zero), a reused `#buy-charlie` ref also goes stale if the new
+ *   node lacks it — both must fail LOUD, never act on the wrong element.
+ * - `window.__cloneAnon(id)` deep-clones an anonymous row carrying a minted attr,
+ *   so its ref resolves to MORE THAN ONE element (ambiguous) — also loud-stale.
+ */
+const REF_LIST = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>ref list fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Ref List Fixture</h1>
+		<ul id="results">
+			<li class="result" data-name="Alpha">
+				<span class="title">Alpha Widget</span>
+				<button class="buy">Buy</button>
+			</li>
+			<li class="result" data-name="Bravo">
+				<span class="title">Bravo Widget</span>
+				<button class="buy">Buy</button>
+			</li>
+			<li class="result" data-name="Charlie" id="row-charlie">
+				<span class="title">Charlie Widget</span>
+				<button class="buy" id="buy-charlie" data-testid="buy-charlie">
+					Buy
+				</button>
+			</li>
+			<li class="result" data-name="Delta">
+				<span class="title">Delta Widget</span>
+				<button class="buy">Buy</button>
+			</li>
+		</ul>
+
+		<!-- two rows sharing a NON-unique data-testid, to prove uniqueness is
+		     VERIFIED and a duplicate falls through the ladder to a mint. -->
+		<ul id="dupes">
+			<li class="dupe-row" data-testid="dupe"><button class="buy">A</button></li>
+			<li class="dupe-row" data-testid="dupe"><button class="buy">B</button></li>
+		</ul>
+
+		<!-- a recorder so a test can prove WHICH buy button was clicked, not merely
+		     that the click did not throw. -->
+		<pre id="clicklog"></pre>
+
+		<script>
+			document.addEventListener('click', function (e) {
+				var btn = e.target.closest('button.buy');
+				if (!btn) return;
+				var row = btn.closest('.result, .dupe-row');
+				var label = row ? row.getAttribute('data-name') || row.textContent.trim() : '?';
+				document.getElementById('clicklog').textContent += label + ';';
+			});
+
+			function makeRow(name) {
+				var li = document.createElement('li');
+				li.className = 'result';
+				li.setAttribute('data-name', name);
+				var title = document.createElement('span');
+				title.className = 'title';
+				title.textContent = name + ' Widget';
+				var buy = document.createElement('button');
+				buy.className = 'buy';
+				buy.textContent = 'Buy';
+				li.appendChild(title);
+				li.appendChild(buy);
+				return li;
+			}
+
+			// Index drift: a NEW row at the TOP. Existing element nodes are KEPT (a
+			// reused stable attr AND a minted attr ride with them); only positions
+			// shift, so a positional .nth(i) now picks the wrong row.
+			window.__prepend = function () {
+				var ul = document.getElementById('results');
+				ul.insertBefore(makeRow('Zeta'), ul.firstElementChild);
+			};
+
+			// NODE REPLACEMENT: remove Charlie's row entirely and insert a FRESH node
+			// in its place (no minted attr, no #buy-charlie). A ref minted on the old
+			// Charlie button resolves to ZERO; a reused #buy-charlie ref also to ZERO.
+			window.__replaceCharlie = function () {
+				var old = document.getElementById('row-charlie');
+				var fresh = makeRow('Charlie');
+				old.parentNode.replaceChild(fresh, old);
+			};
+
+			// AMBIGUITY: deep-clone a node carrying a minted attribute so the ref now
+			// resolves to MORE THAN ONE element.
+			window.__cloneByAttr = function (attr, value) {
+				var el = document.querySelector('[' + attr + '="' + value + '"]');
+				if (!el) return false;
+				var host = document.getElementById('results');
+				host.appendChild(el.closest('.result, .dupe-row, button').cloneNode(true));
+				return true;
+			};
+		</script>
+	</body>
+</html>
+`;
+
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
@@ -1055,6 +1172,7 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'eval.html': EVAL,
 	'cookies.html': COOKIES,
 	'query-list.html': QUERY_LIST,
+	'ref-list.html': REF_LIST,
 	'keyboard.html': KEYBOARD,
 	'hover.html': HOVER,
 	'select.html': SELECT,
