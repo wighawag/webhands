@@ -74,6 +74,37 @@ export interface Cookie {
 	readonly sameSite?: 'Strict' | 'Lax' | 'None';
 }
 
+/**
+ * Options for the {@link WebHandsPage.eval} verb.
+ *
+ * This is an OPTIONS OBJECT, not a positional argument, on purpose (R1, the
+ * reversibility invariant): the optional `frame` qualifier is an ADDITION to
+ * this object, so a call passing no options keeps `eval`'s today behaviour
+ * unchanged. `eval` is the ONE verb that carries a `frame?` qualifier, because
+ * it runs page-world JS and CANNOT carry a `frameLocator(...)` expression the
+ * way the locator-taking verbs do (the spike confirmed `ReferenceError`); the
+ * other verbs reach a same-origin frame through a `frameLocator(...)` hop in
+ * their locator string instead (R1).
+ */
+export interface EvalOptions {
+	/**
+	 * A transport-neutral SELECTOR for a SAME-ORIGIN child frame to evaluate the
+	 * expression in — a CSS selector for the `<iframe>` element (e.g.
+	 * `#main-iframe`), the form the single frame resolver understands. NEVER a
+	 * Playwright `Frame` handle (no Playwright type crosses the seam, ADR-0003).
+	 *
+	 * Omitted == today's top-document `eval` (backward compatible). When given,
+	 * the expression runs in the named frame and its result crosses the seam by
+	 * the SAME structured-clone contract `eval` already has.
+	 *
+	 * SAME-ORIGIN ONLY: a cross-origin frame is a browser security boundary
+	 * page-world JS cannot cross, so a selector that resolves to a CROSS-ORIGIN
+	 * frame fails LOUD with a typed error (never a silent empty); cross-origin
+	 * reach is the separate Tier-4 frameLocator/coordinate surface.
+	 */
+	readonly frame?: string;
+}
+
 /** What to wait for in the {@link WebHandsPage.wait} verb. */
 export type WaitCondition =
 	| {readonly kind: 'timeout'; readonly ms: number}
@@ -359,8 +390,19 @@ export interface WebHandsPage {
 	 * narrow it. This is deliberately a thin passthrough to the transport's
 	 * serialize-and-return: `eval` does not re-encode or wrap the result, so an
 	 * agent gets exactly what the page produced.
+	 *
+	 * FRAME SCOPE ({@link EvalOptions.frame}). With no `frame` this is exactly
+	 * the top-document `eval` above. With a `frame` selector the expression runs
+	 * in that NAMED SAME-ORIGIN child frame instead (e.g. to fire a captcha
+	 * `data-callback` or read a runtime-only value the top document cannot see),
+	 * returning by the same structured clone. The frame resolves through the
+	 * SAME single resolver `click`/`type` use (a `frameLocator(...)` over the
+	 * selector; R1), so there is no parallel frame-addressing path. A selector
+	 * that resolves to a CROSS-ORIGIN frame REJECTS with a typed
+	 * cross-origin-frame error (page-world JS cannot cross a security boundary),
+	 * never a silent empty result.
 	 */
-	eval(expression: string): Promise<unknown>;
+	eval(expression: string, options?: EvalOptions): Promise<unknown>;
 	/** Pace actions by waiting for a condition. */
 	wait(condition: WaitCondition): Promise<void>;
 	/** Read the session's cookies. */

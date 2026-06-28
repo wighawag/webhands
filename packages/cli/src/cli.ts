@@ -726,7 +726,19 @@ export function createCli(deps: CliDeps = {}) {
 					'A JS expression evaluated in the page context (e.g. document.title).',
 				),
 		}),
-		options: connectionOptions,
+		// The ONE `--frame` flag on the surface (R1): `eval` runs page-world JS and
+		// cannot carry a `frameLocator(...)` the way locator-taking verbs do, so it
+		// gets an explicit SAME-ORIGIN frame selector. Omitted == top-document eval.
+		options: connectionOptions.extend({
+			frame: z
+				.string()
+				.optional()
+				.describe(
+					'Evaluate inside the named SAME-ORIGIN child frame instead of the top ' +
+						"document: a CSS selector for the iframe element (e.g. '#main-iframe'). " +
+						'A cross-origin frame is unreachable and fails loud.',
+				),
+		}),
 		output: z.object({
 			ok: z.literal(true),
 			verb: z.literal('eval'),
@@ -737,7 +749,12 @@ export function createCli(deps: CliDeps = {}) {
 		async run(c) {
 			try {
 				return await withSession(provider, targetFrom(c.options), async (s) => {
-					const result = await s.page.eval(c.args.expression);
+					const result = await s.page.eval(
+						c.args.expression,
+						c.options.frame !== undefined
+							? {frame: c.options.frame}
+							: undefined,
+					);
 					return c.ok(
 						{ok: true as const, verb: 'eval' as const, result},
 						{cta: {commands: [nextSnapshot()]}},

@@ -1,12 +1,14 @@
 import {
 	errors as pwErrors,
 	type BrowserContext,
+	type Frame,
 	type Locator,
 	type Page,
 } from 'playwright';
 import type {
 	BoundingBox,
 	Cookie,
+	EvalOptions,
 	WebHandsPage,
 	QueryOptions,
 	QueryRow,
@@ -17,6 +19,7 @@ import type {
 	WaitCondition,
 } from './seam.js';
 import {validateSnapshotOptions} from './seam.js';
+import {CrossOriginFrameError} from './errors.js';
 
 /**
  * The hand-host primitive (Phase 1 of the "hands" prd,
@@ -224,6 +227,17 @@ function assertCompletePage(verbs: Partial<WebHandsPage>): WebHandsPage {
  */
 const NORMAL_CLICK_TIMEOUT_MS = 1_000;
 
+/**
+ * How long {@link resolveSameOriginFrame} waits for the `frame` selector to
+ * resolve to an iframe element before treating it as "no such frame". Short on
+ * purpose: a frame-scoped `eval` against a bad selector should fail LOUD fast,
+ * not burn Playwright's 30s default auto-wait (the same reasoning as
+ * {@link NORMAL_CLICK_TIMEOUT_MS}). An iframe present in the markup resolves
+ * immediately and never approaches this bound; it is the latency cost paid ONLY
+ * on the no-such-frame path.
+ */
+const FRAME_RESOLVE_TIMEOUT_MS = 1_000;
+
 // ---------------------------------------------------------------------------
 // Built-in hands: webhands' OWN eight verbs, each a hand over the host.
 //
@@ -301,22 +315,9 @@ export const interactionHand: Hand = ({pwPage, ensureOpen}) => ({
 /** The `eval` escape hatch: run a JS EXPRESSION in the page, return by value. */
 export const evalHand: Hand = ({pwPage, ensureOpen}) => ({
 	verbs: {
-		async eval(expression: string): Promise<unknown> {
+		async eval(expression: string, options?: EvalOptions): Promise<unknown> {
 			ensureOpen();
-			// The `eval` escape hatch (PRD story 9): run the raw JS EXPRESSION in the
-			// page and return its serializable result. Playwright's `evaluate`
-			// already IS the seam's serialization contract (see {@link WebHandsPage.eval}):
-			// it passes a string as an expression, awaits a returned Promise, and
-			// structurally clones the result out of the page by VALUE. That clone is
-			// richer than JSON: it preserves NaN/Infinity/BigInt and circular
-			// structures (back-refs become a `[Circular]` marker), yields `undefined`
-			// for functions/symbols, and returns an opaque preview string for a live
-			// host object (a DOM node never crosses the process boundary). A page-side
-			// throw rejects. We pass it straight through rather than re-encode it:
-			// wrapping the value in a transport-specific envelope would invent a
-			// dialect the seam deliberately avoids. The thrown error is a plain
-			// `Error`, so no Playwright/CDP type leaks across the seam (ADR-0003).
-			return pwPage.evaluate(expression);
+			return evalExpression(pwPage, expression, options);
 		},
 	},
 });
@@ -548,6 +549,144 @@ export async function waitFor(
 			// eslint-disable-next-line @typescript-eslint/no-deprecated
 			await page.waitForNavigation();
 			return;
+	}
+}
+
+/**
+ * Run the `eval` verb against a Playwright page (PRD story 9; frame scope from
+ * prd `broaden-agent-verb-surface`, Tier-3), shared by both Playwright
+ * transports (via the built-in eval hand) so the verb behaves identically (no
+ * parallel second implementation).
+ *
+ * With no `frame`, this is the top-document escape hatch: Playwright's
+ * `evaluate` IS the seam's serialization contract (see {@link WebHandsPage.eval}):
+ * it passes a string as an expression, awaits a returned Promise, and
+ * structurally clones the result out of the page by VALUE. That clone is richer
+ * than JSON: it preserves NaN/Infinity/BigInt and circular structures (back-refs
+ * become a `[Circular]` marker), yields `undefined` for functions/symbols, and
+ * returns an opaque preview string for a live host object (a DOM node never
+ * crosses the process boundary). A page-side throw rejects. We pass it straight
+ * through rather than re-encode it: wrapping the value in a transport-specific
+ * envelope would invent a dialect the seam deliberately avoids. The thrown error
+ * is a plain `Error`, so no Playwright/CDP type leaks across the seam (ADR-0003).
+ *
+ * With a `frame` selector, the SAME structured-clone contract holds, but the
+ * expression runs in the named SAME-ORIGIN child frame (resolved through the
+ * single {@link resolveSameOriginFrame}, which reuses the same
+ * {@link resolveLocator} the locator-taking verbs use). A cross-origin frame
+ * REJECTS with a typed {@link CrossOriginFrameError} (see that resolver).
+ */
+export async function evalExpression(
+	page: Page,
+	expression: string,
+	options?: EvalOptions,
+): Promise<unknown> {
+	if (options?.frame === undefined) {
+		return page.evaluate(expression);
+	}
+	const frame = await resolveSameOriginFrame(page, options.frame);
+	// `frame.evaluate` honours the SAME structured-clone contract as
+	// `page.evaluate` (it is the same Playwright serialization), so the
+	// frame-scoped result crosses the seam by value exactly as the top-document
+	// `eval` does.
+	return frame.evaluate(expression);
+}
+
+/**
+ * Resolve a `frame` SELECTOR string to a live, SAME-ORIGIN Playwright
+ * {@link Frame} for a frame-scoped `eval` (prd `broaden-agent-verb-surface`,
+ * Tier-3, R1). This is the SINGLE frame resolver: it reuses the very same
+ * {@link resolveLocator} the locator-taking verbs use (a `frameLocator(...)`
+ * over the selector), then walks the iframe element handle to its content
+ * frame — there is no parallel frame-addressing scheme.
+ *
+ * SAME-ORIGIN ONLY, enforced LOUD. Playwright will happily `evaluate` inside a
+ * CROSS-ORIGIN OOPIF (it attaches out-of-band), so a cross-origin frame would
+ * NOT throw on its own — it would silently succeed, which is exactly the
+ * contract violation this verb forbids (page-world JS cannot cross a security
+ * boundary; the seam is same-origin only). So we DETECT cross-origin by
+ * comparing the frame's origin to the page's main-frame origin and reject with a
+ * typed {@link CrossOriginFrameError} when they differ, never returning a frame
+ * the page world could not legitimately reach.
+ *
+ * Failure modes are loud/typed: a selector that matches NO iframe element
+ * rejects (the locator resolves nothing); a matched frame with no content frame
+ * rejects; a cross-origin frame rejects with {@link CrossOriginFrameError}.
+ */
+export async function resolveSameOriginFrame(
+	page: Page,
+	selector: string,
+): Promise<Frame> {
+	// Reuse the ONE resolver: treat the selector as the argument to
+	// `frameLocator(...)`, exactly how a locator-taking verb would frame-hop. We
+	// build the expression with a JSON-encoded selector so an arbitrary CSS
+	// selector cannot break out of the call.
+	const frameLocator = resolveLocator(
+		page,
+		`p.frameLocator(${JSON.stringify(selector)})`,
+	) as unknown as {owner(): Locator};
+	// Bound the resolve: a selector that matches NO iframe must fail LOUD quickly
+	// rather than burn Playwright's 30s default auto-wait (mirrors the short
+	// bound `clickLocator` uses for a non-actionable element). `elementHandle`
+	// throws a TimeoutError on no match within the bound; we map it to a clear
+	// "no iframe matched" error.
+	let handle: Awaited<ReturnType<Locator['elementHandle']>>;
+	try {
+		handle = await frameLocator
+			.owner()
+			.elementHandle({timeout: FRAME_RESOLVE_TIMEOUT_MS});
+	} catch (cause) {
+		if (cause instanceof pwErrors.TimeoutError) {
+			throw new Error(
+				`eval --frame: no iframe element matched selector ${JSON.stringify(
+					selector,
+				)}.`,
+			);
+		}
+		throw cause;
+	}
+	if (handle === null) {
+		throw new Error(
+			`eval --frame: no iframe element matched selector ${JSON.stringify(
+				selector,
+			)}.`,
+		);
+	}
+	try {
+		const frame = await handle.contentFrame();
+		if (frame === null) {
+			throw new Error(
+				`eval --frame: the element matched by selector ${JSON.stringify(
+					selector,
+				)} is not a frame.`,
+			);
+		}
+		const pageOrigin = originOf(page.mainFrame().url());
+		const frameOrigin = originOf(frame.url());
+		if (frameOrigin === null || frameOrigin !== pageOrigin) {
+			throw new CrossOriginFrameError(selector, {
+				frameOrigin: frameOrigin ?? undefined,
+				pageOrigin: pageOrigin ?? undefined,
+			});
+		}
+		return frame;
+	} finally {
+		await handle.dispose();
+	}
+}
+
+/**
+ * The origin (`scheme://host:port`) of a frame/page URL, or `null` when the URL
+ * has no parseable origin (e.g. `about:blank`). Used to compare a child frame's
+ * origin against the page's, the same-origin check the frame-scoped `eval`
+ * enforces. An unparseable / opaque origin reads as NOT same-origin (loud over
+ * silent): the frame is not provably reachable, so we treat it as cross-origin.
+ */
+function originOf(url: string): string | null {
+	try {
+		return new URL(url).origin;
+	} catch {
+		return null;
 	}
 }
 

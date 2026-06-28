@@ -8,6 +8,7 @@ import {
 	AttachNoContextError,
 	NoLiveServerError,
 	SessionAlreadyActiveError,
+	CrossOriginFrameError,
 	type ControllerError,
 	type ControllerErrorCode,
 } from '@webhands/core';
@@ -78,6 +79,13 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// A session is already live; v1 holds exactly one. The fix is to tear it
 			// down before starting another.
 			return `${binary} stop`;
+		case 'cross-origin-frame':
+			// `eval --frame` reaches the top document and SAME-ORIGIN child frames
+			// only (page-world JS cannot cross a security boundary). There is no
+			// flag that makes a cross-origin frame reachable here; the fix is to
+			// target a same-origin frame, or omit --frame for the top document. (The
+			// cross-origin reach is the separate Tier-4 surface.)
+			return `${binary} eval '<expression>' (drop --frame for the top document, or pass a SAME-ORIGIN frame selector)`;
 		default: {
 			// Exhaustiveness guard: a new ControllerErrorCode must add a fix command
 			// here rather than silently fall through to a generic message.
@@ -123,5 +131,6 @@ export {
 	AttachNoContextError,
 	NoLiveServerError,
 	SessionAlreadyActiveError,
+	CrossOriginFrameError,
 };
 export type {ControllerError, ControllerErrorCode};

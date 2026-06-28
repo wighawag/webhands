@@ -24,7 +24,8 @@ export type ControllerErrorCode =
 	| 'attach-not-chromium'
 	| 'attach-no-context'
 	| 'no-live-server'
-	| 'session-already-active';
+	| 'session-already-active'
+	| 'cross-origin-frame';
 
 /**
  * Base class for every identifiable `core` error. Branch on {@link code}.
@@ -227,6 +228,47 @@ export class SessionAlreadyActiveError extends ControllerError {
 		options?: {cause?: unknown},
 	) {
 		super(message, options);
+	}
+}
+
+/**
+ * A frame-scoped `eval` (or any same-origin-frame op) addressed a CROSS-ORIGIN
+ * child frame. Page-world JS cannot cross a browser security boundary, so the
+ * frame-scoped `eval` reaches the top document and SAME-ORIGIN descendant frames
+ * ONLY (the idea's honest-scope note); a cross-origin frame is unreachable BY
+ * DESIGN, not a missing feature. We refuse LOUDLY with this typed condition
+ * rather than return a silent empty result, because a silent empty would let an
+ * agent believe its callback fired / its read succeeded when the security
+ * boundary actually blocked it.
+ *
+ * Cross-origin frame reach is the SEPARATE Tier-4 `frameLocator`/coordinate
+ * surface, not this verb; the message points there so the agent is not left
+ * guessing. Mirrors the other typed conditions: the CLI maps {@link code} to a
+ * message, and {@link isControllerError} narrows it across a bundle boundary.
+ */
+export class CrossOriginFrameError extends ControllerError {
+	readonly code = 'cross-origin-frame';
+	/** The frame selector the caller passed (echoed back so it is visible). */
+	readonly frame: string;
+	/** The cross-origin frame's origin, when known (e.g. `https://hcaptcha.com`). */
+	readonly frameOrigin?: string;
+	/** The page's own (main-frame) origin the frame had to match. */
+	readonly pageOrigin?: string;
+
+	constructor(
+		frame: string,
+		details?: {frameOrigin?: string; pageOrigin?: string},
+		message: string = `The frame ${JSON.stringify(frame)} is CROSS-ORIGIN${
+			details?.frameOrigin !== undefined && details?.pageOrigin !== undefined
+				? ` (frame origin ${details.frameOrigin}, page origin ${details.pageOrigin})`
+				: ''
+		} and is unreachable from page-world JS. eval --frame reaches the top document and SAME-ORIGIN child frames only; a cross-origin frame is a browser security boundary. Reach cross-origin frames with the Tier-4 frameLocator/coordinate ops instead.`,
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+		this.frame = frame;
+		this.frameOrigin = details?.frameOrigin;
+		this.pageOrigin = details?.pageOrigin;
 	}
 }
 

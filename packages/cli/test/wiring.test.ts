@@ -9,6 +9,7 @@ import {
 	AttachNoContextError,
 	NoLiveServerError,
 	SessionAlreadyActiveError,
+	CrossOriginFrameError,
 	type OpenTarget,
 	type RunningSessionServer,
 	type Session,
@@ -47,6 +48,27 @@ function stubProvider(): {provider: SessionProvider; transport: StubTransport} {
 function throwingProvider(error: unknown): SessionProvider {
 	return async () => {
 		throw error;
+	};
+}
+
+/**
+ * A provider whose session opens fine but whose `eval` REJECTS with `error`, so
+ * the verb-level error path (not the open path) is exercised — the shape the
+ * cross-origin frame error takes (raised by the `eval` verb itself, not at
+ * session open).
+ */
+function evalRejectingProvider(error: unknown): SessionProvider {
+	return async () => {
+		const session: Session = {
+			page: {
+				async eval() {
+					throw error;
+				},
+			} as unknown as Session['page'],
+			async close() {},
+			async waitForClose() {},
+		};
+		return session;
 	};
 }
 
@@ -287,6 +309,31 @@ describe('incur CLI wiring', () => {
 			]);
 			const call = transport.calls.find((c) => c.verb === 'getAttribute');
 			expect(call?.args).toEqual([`page.locator('.x')`, 'href']);
+		});
+	});
+
+	describe('Tier-3 frame-scoped eval wiring (prd broaden-agent-verb-surface, R1/R5)', () => {
+		it('eval WITHOUT --frame passes no options (backward compatible)', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, ['eval', '1 + 1']);
+			const call = transport.calls.find((c) => c.verb === 'eval');
+			// The top-document form carries no frame: the options arg is `undefined`.
+			expect(call?.args).toEqual(['1 + 1', undefined]);
+		});
+
+		it('eval --frame forwards the SAME-ORIGIN frame selector into the eval call', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'eval',
+				'window.__childValue',
+				'--frame',
+				'#main-iframe',
+			]);
+			const call = transport.calls.find((c) => c.verb === 'eval');
+			expect(call?.args).toEqual([
+				'window.__childValue',
+				{frame: '#main-iframe'},
+			]);
 		});
 	});
 
@@ -879,6 +926,28 @@ describe('incur CLI wiring', () => {
 			expect(env.ok).toBe(false);
 			expect(env.error?.code).toBe('session-already-active');
 			expect(env.error?.message).toContain(`${CLI_NAME} stop`);
+		});
+
+		it('maps the typed cross-origin-frame condition (raised by eval --frame) to a same-origin fix', async () => {
+			// The cross-origin frame error is raised by the `eval` VERB, not at
+			// session open, so it drives the verb-level fail() path. The CLI surfaces
+			// its machine-readable code + the loud message with a fix hint.
+			const provider = evalRejectingProvider(
+				new CrossOriginFrameError('#cross-iframe', {
+					frameOrigin: 'https://hcaptcha.com',
+					pageOrigin: 'http://127.0.0.1:5000',
+				}),
+			);
+			const env = await runEnvelope(provider, [
+				'eval',
+				'1 + 1',
+				'--frame',
+				'#cross-iframe',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('cross-origin-frame');
+			expect(env.error?.message).toMatch(/cross-origin/i);
+			expect(env.error?.message).toContain('SAME-ORIGIN');
 		});
 
 		it('does NOT mistake a generic error for a typed condition (falls back to `unknown`)', async () => {

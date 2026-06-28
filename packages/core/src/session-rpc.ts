@@ -2,6 +2,7 @@ import {
 	locator,
 	validateSnapshotOptions,
 	type Cookie,
+	type EvalOptions,
 	type QueryOptions,
 	type QueryRow,
 	type ScrollTarget,
@@ -72,7 +73,16 @@ export type SessionRpcBuiltInRequest =
 	| {readonly verb: 'snapshot'; readonly full?: boolean}
 	| {readonly verb: 'click'; readonly locator: string}
 	| {readonly verb: 'type'; readonly locator: string; readonly text: string}
-	| {readonly verb: 'eval'; readonly expression: string}
+	| {
+			readonly verb: 'eval';
+			readonly expression: string;
+			/**
+			 * Optional SAME-ORIGIN child-frame selector to evaluate in (Tier-3 frame
+			 * scope). A plain string on the wire; the server passes it as the seam
+			 * {@link EvalOptions.frame}. Omitted == top-document `eval`.
+			 */
+			readonly frame?: string;
+	  }
 	| {readonly verb: 'wait'; readonly condition: WaitCondition}
 	| {readonly verb: 'cookies'}
 	| {readonly verb: 'setCookies'; readonly cookies: readonly Cookie[]}
@@ -169,7 +179,12 @@ export async function applySessionRpc(
 			await page.type(locator(request.locator), request.text);
 			return undefined;
 		case 'eval':
-			return page.eval(request.expression);
+			// Forward the optional frame selector only when present, so a bare
+			// top-document eval stays `eval(expression)` (no options object).
+			return page.eval(
+				request.expression,
+				request.frame !== undefined ? {frame: request.frame} : undefined,
+			);
 		case 'wait':
 			await page.wait(rebrandWait(request.condition));
 			return undefined;
@@ -302,8 +317,15 @@ export function makeRpcPage(
 		async type(target, text) {
 			await send({verb: 'type', locator: target, text});
 		},
-		async eval(expression) {
-			return send({verb: 'eval', expression});
+		async eval(expression, options) {
+			// Carry the optional frame selector only when given, so the focused
+			// top-document form sends no `frame` key (mirrors `press`'s optional
+			// locator).
+			return send({
+				verb: 'eval',
+				expression,
+				...(options?.frame !== undefined ? {frame: options.frame} : {}),
+			});
 		},
 		async wait(condition) {
 			await send({verb: 'wait', condition});

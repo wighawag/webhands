@@ -2,6 +2,7 @@ export type {
 	BoundingBox,
 	Cookie,
 	Driver,
+	EvalOptions,
 	LocatorString,
 	OpenTarget,
 	PwExtra,
@@ -74,6 +75,7 @@ export {
 	AttachNoContextError,
 	NoLiveServerError,
 	SessionAlreadyActiveError,
+	CrossOriginFrameError,
 	isControllerError,
 	type ControllerErrorCode,
 } from './errors.js';
