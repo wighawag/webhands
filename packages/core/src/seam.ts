@@ -142,6 +142,122 @@ export type ScrollTarget =
 	| {readonly by: {readonly dx: number; readonly dy: number}};
 
 /**
+ * Which mouse button the {@link WebHandsPage.mouse} verb uses (prd
+ * `broaden-agent-verb-surface`, Tier-4, R3; story 17). Plain string enum, the
+ * Playwright `page.mouse` button vocabulary, so nothing Playwright-shaped
+ * crosses the seam (ADR-0003 as amended by the Tier-4 ADR).
+ */
+export type MouseButton = 'left' | 'right' | 'middle';
+
+/**
+ * What the {@link WebHandsPage.mouse} verb does at the given coordinate (prd
+ * `broaden-agent-verb-surface`, Tier-4, R3):
+ *
+ * - `'click'` — a full press-and-release at `(x, y)` (`mouse.click`).
+ * - `'move'` — move the pointer to `(x, y)` without pressing (`mouse.move`),
+ *   e.g. to trigger a hover affordance at a raw coordinate.
+ * - `'down'` / `'up'` — press / release the button at the current position
+ *   (`mouse.down` / `mouse.up`), the two halves of a manual drag.
+ */
+export type MouseAction = 'click' | 'move' | 'down' | 'up';
+
+/**
+ * A coordinate mouse input (prd `broaden-agent-verb-surface`, Tier-4, R3, story
+ * 17). The coordinate-input counterpart to the locator-addressing `click`, for
+ * the VISION/TILE captcha family and any task that must act at a raw pixel an
+ * agent SAW in a screenshot rather than at a DOM element.
+ *
+ * COORDINATE FRAME (load-bearing). `x`/`y` are VIEWPORT CSS-pixels (the
+ * Playwright `page.mouse` frame), NOT OS-level screen coordinates (webhands
+ * never injects OS input). A pixel `(x, y)` in a VIEWPORT {@link Screenshot}
+ * maps DIRECTLY to a `mouse` click `(x, y)` — that is the look-then-click
+ * contract the agent relies on. A FULL-PAGE screenshot is NOT coordinate-matched
+ * (it includes off-viewport content), so its pixels do not map to `mouse`
+ * coordinates (see {@link ScreenshotScope}).
+ *
+ * Plain numbers + a string enum only, so nothing Playwright-shaped crosses the
+ * seam (ADR-0003 as amended by the Tier-4 ADR).
+ */
+export interface MouseInput {
+	/** What to do at the coordinate (click / move / down / up). */
+	readonly action: MouseAction;
+	/** Viewport CSS-pixel X (left-relative), the `page.mouse` frame. */
+	readonly x: number;
+	/** Viewport CSS-pixel Y (top-relative), the `page.mouse` frame. */
+	readonly y: number;
+	/** Which button for `click`/`down`/`up`. Defaults to `'left'`. */
+	readonly button?: MouseButton;
+}
+
+/**
+ * Which region a {@link WebHandsPage.screenshot} captures (prd
+ * `broaden-agent-verb-surface`, Tier-4, R3; stories 17-19):
+ *
+ * - `'viewport'` — the DEFAULT: exactly the visible viewport. Its pixels are
+ *   COORDINATE-MATCHED to the `mouse` verb (a pixel at `(x, y)` is the `mouse`
+ *   click `(x, y)`), so it is the shot the look-then-click loop uses.
+ * - `'full'` — the whole scrollable page (`fullPage`), for READING scrolled-out
+ *   content. It is NOT coordinate-matched (it includes off-viewport content), so
+ *   its pixels must NOT be fed back as `mouse` coordinates.
+ * - `'element'` — clipped to the element a locator addresses (just the captcha
+ *   widget, ideal for focusing a vision model). REQUIRES a
+ *   {@link ScreenshotOptions.locator}; absent, the verb rejects LOUD (like
+ *   `wait`'s mutually-exclusive validation).
+ */
+export type ScreenshotScope = 'viewport' | 'full' | 'element';
+
+/**
+ * Options for the {@link WebHandsPage.screenshot} verb (prd
+ * `broaden-agent-verb-surface`, Tier-4, R3; R5). An OPTIONS OBJECT so future
+ * fields stay additive (R1).
+ *
+ * The seam stays ADR-0003-clean (as amended by the Tier-4 ADR): the verb takes
+ * STRINGS + an enum and returns a file PATH — NEVER image bytes.
+ */
+export interface ScreenshotOptions {
+	/**
+	 * Which region to capture. Defaults to `'viewport'` (the coordinate-matched
+	 * shot the `mouse` loop uses). See {@link ScreenshotScope}.
+	 */
+	readonly scope?: ScreenshotScope;
+	/**
+	 * The element to clip to for `scope: 'element'`, a raw Playwright locator
+	 * EXPRESSION resolved through the SAME resolver the other verbs use (so a
+	 * `frameLocator(...)` hop reaches a frame widget). REQUIRED for `'element'`
+	 * and rejected (loud, like `wait`) for the other scopes.
+	 */
+	readonly locator?: LocatorString;
+	/**
+	 * Caller override for the output PNG path. When omitted, webhands MINTS a
+	 * unique path under its managed screenshots dir. When given, it is VALIDATED
+	 * to stay UNDER that managed dir (a path that escapes it is rejected with a
+	 * typed error), so the verb never writes to an arbitrary filesystem location.
+	 * A plain string — no bytes cross the seam.
+	 */
+	readonly out?: string;
+}
+
+/**
+ * The result of a {@link WebHandsPage.screenshot}: the file PATH webhands wrote
+ * the PNG to, plus its pixel dimensions (prd `broaden-agent-verb-surface`,
+ * Tier-4, R3, story 19).
+ *
+ * `path` is a plain STRING — the load-bearing ADR-0003 (as amended) choice: a
+ * path, not image bytes, crosses the seam, so the seam stays string/number-typed
+ * and the agent reads/attaches the file itself. `width`/`height` are the PNG's
+ * pixel dimensions, so an agent knows the coordinate space of a VIEWPORT shot
+ * before it maps a pixel to a `mouse` click.
+ */
+export interface Screenshot {
+	/** The filesystem PATH of the written PNG (a string; never bytes). */
+	readonly path: string;
+	/** The PNG's pixel width. */
+	readonly width: number;
+	/** The PNG's pixel height. */
+	readonly height: number;
+}
+
+/**
  * Which page view a {@link Snapshot} carries.
  *
  * - `'accessibility'` — the DEFAULT, token-cheap structured view: the
@@ -489,6 +605,39 @@ export interface WebHandsPage {
 	 * resolved through the SAME resolver as `click`/`type` (ADR-0004).
 	 */
 	drag(source: LocatorString, target: LocatorString): Promise<void>;
+	/**
+	 * Coordinate mouse input at VIEWPORT CSS-pixels (prd
+	 * `broaden-agent-verb-surface`, Tier-4, R3, story 17): click / move / press /
+	 * release at a raw `(x, y)` the agent SAW in a VIEWPORT {@link
+	 * WebHandsPage.screenshot}, the input half of the look-then-click loop. This
+	 * is the coordinate counterpart to the locator-addressing {@link
+	 * WebHandsPage.click}, for the vision/tile captcha family and any pixel-level
+	 * task. It uses Playwright `page.mouse` semantics (viewport-relative CSS
+	 * pixels), NOT OS-level screen input — see {@link MouseInput}.
+	 *
+	 * Plain numbers + a string enum cross the seam (ADR-0003 as amended by the
+	 * Tier-4 ADR); no Playwright/CDP type leaks.
+	 */
+	mouse(input: MouseInput): Promise<void>;
+	/**
+	 * Capture the page to a PNG FILE and return its PATH (prd
+	 * `broaden-agent-verb-surface`, Tier-4, R3; stories 17-19). webhands MINTS the
+	 * PNG under its managed screenshots dir and returns `{path, width, height}`;
+	 * NO image bytes cross the seam (the load-bearing ADR-0003-as-amended choice),
+	 * so an agent reads / attaches the file by path.
+	 *
+	 * Three scopes ({@link ScreenshotScope}): `viewport` (default,
+	 * COORDINATE-MATCHED to {@link WebHandsPage.mouse} — a pixel `(x, y)` here is
+	 * the `mouse` click `(x, y)`), `full` (the whole scrollable page, for reading
+	 * scrolled-out content, NOT coordinate-matched), and `element` (clipped to the
+	 * element a locator addresses; the locator is REQUIRED and validated loud like
+	 * `wait`).
+	 *
+	 * A caller MAY override the path ({@link ScreenshotOptions.out}); it is
+	 * validated to stay UNDER the managed dir (an escaping path rejects with a
+	 * typed error), so the verb never writes to an arbitrary location.
+	 */
+	screenshot(options?: ScreenshotOptions): Promise<Screenshot>;
 }
 
 /**

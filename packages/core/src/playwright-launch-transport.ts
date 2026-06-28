@@ -8,6 +8,7 @@ import {
 import {composeWithHands, type Hand, type HandContext} from './hand-host.js';
 import {
 	resolveProfileLocation,
+	resolveScreenshotsDir,
 	type ProfileLocationOptions,
 } from './profile-location.js';
 import {hostResolverRulesArg, parseSocksProxy} from './socks-proxy.js';
@@ -346,7 +347,11 @@ export class PlaywrightLaunchTransport implements Transport {
 		// the single active page (PRD: single active session in v1). Create one if
 		// the build ever changes that invariant.
 		const pwPage = context.pages()[0] ?? (await context.newPage());
-		return makeSession(context, pwPage, this.#hands);
+		// The managed screenshots dir resolves from the SAME location override as
+		// profiles (`<homeRoot>/screenshots`), so a test's temp `root` isolates
+		// screenshots too and the real `~/.webhands/screenshots` stays untouched.
+		const screenshotsDir = resolveScreenshotsDir(this.#location);
+		return makeSession(context, pwPage, this.#hands, screenshotsDir);
 	}
 
 	/**
@@ -427,6 +432,7 @@ function makeSession(
 	context: BrowserContext,
 	pwPage: Page,
 	extraHands: readonly Hand[],
+	screenshotsDir: string,
 ): Session {
 	let closed = false;
 	const ensureOpen = () => {
@@ -453,7 +459,12 @@ function makeSession(
 	// Build the verb surface from the built-in hands over a live hand-context.
 	// The host keeps the live `pwPage`/`context` in-process (they never cross the
 	// seam, ADR-0003); the hand-context carries live page access only.
-	const handContext: HandContext = {pwPage, context, ensureOpen};
+	const handContext: HandContext = {
+		pwPage,
+		context,
+		ensureOpen,
+		screenshotsDir,
+	};
 	const {page, dispose: disposeHands} = composeWithHands(
 		handContext,
 		extraHands,

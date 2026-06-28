@@ -25,7 +25,8 @@ export type ControllerErrorCode =
 	| 'attach-no-context'
 	| 'no-live-server'
 	| 'session-already-active'
-	| 'cross-origin-frame';
+	| 'cross-origin-frame'
+	| 'screenshot-path-outside-managed-dir';
 
 /**
  * Base class for every identifiable `core` error. Branch on {@link code}.
@@ -269,6 +270,41 @@ export class CrossOriginFrameError extends ControllerError {
 		this.frame = frame;
 		this.frameOrigin = details?.frameOrigin;
 		this.pageOrigin = details?.pageOrigin;
+	}
+}
+
+/**
+ * A `screenshot --out <path>` override pointed OUTSIDE the managed screenshots
+ * dir. webhands MINTS screenshots under one managed directory it owns (under the
+ * controller home root, beside `profiles/`); a caller MAY override the output
+ * path, but only WITHIN that managed dir (prd `broaden-agent-verb-surface`, R3:
+ * "validate it stays under a sane managed dir"). An override that escapes it
+ * (an absolute path elsewhere, or a `..` traversal out) is refused LOUDLY with
+ * this typed condition rather than silently writing a PNG to an arbitrary
+ * filesystem location — the seam returns a path, so an unbounded path would let
+ * the verb clobber any file the process can write.
+ *
+ * Mirrors the other typed conditions: the CLI maps {@link code} to a message,
+ * and {@link isControllerError} narrows it across a bundle boundary.
+ */
+export class ScreenshotPathError extends ControllerError {
+	readonly code = 'screenshot-path-outside-managed-dir';
+	/** The offending caller-supplied `out` path, echoed back so it is visible. */
+	readonly path: string;
+	/** The managed screenshots dir the path had to stay under. */
+	readonly managedDir: string;
+
+	constructor(
+		path: string,
+		managedDir: string,
+		message: string = `The screenshot output path ${JSON.stringify(
+			path,
+		)} is OUTSIDE the managed screenshots dir (${managedDir}). A caller may override --out only within the managed dir; webhands never writes a screenshot to an arbitrary location.`,
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+		this.path = path;
+		this.managedDir = managedDir;
 	}
 }
 

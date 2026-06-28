@@ -165,6 +165,7 @@ describe('loadHands (explicit + declarative; install-separate-from-load)', () =>
 			pwPage: {} as HandContext['pwPage'],
 			context: {} as HandContext['context'],
 			ensureOpen: () => {},
+			screenshotsDir: '/tmp/webhands-test-screenshots',
 		});
 		expect(
 			typeof (contribution.verbs as Record<string, unknown>).echoTitle,

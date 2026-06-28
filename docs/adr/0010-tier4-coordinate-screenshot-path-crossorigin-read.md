@@ -1,0 +1,21 @@
+---
+status: accepted
+---
+
+# The seam admits a narrow Tier-4 surface: viewport coordinates, an image-PATH screenshot, and a cross-origin frame read (amends ADR-0003)
+
+The verb seam now carries three Tier-4 capabilities for the VISION/TILE captcha family and any visual task (prd `broaden-agent-verb-surface`, R3; stories 17-19): a coordinate `mouse` verb (VIEWPORT CSS-pixels), a `screenshot` verb that returns a FILE PATH (three scopes: viewport / full / element-clipped), and a cross-origin frame READ. We admit this surface BUT keep it string/number-typed: `mouse` passes plain numbers + a button enum, `screenshot` returns `{path, width, height}` (a path STRING, never image bytes), and the cross-origin read returns structured-cloned values. So ADR-0003's load-bearing rule (no CDP/Chromium-only types on the seam) is UNCHANGED; what is new is a narrow set of typed coordinate + image-path + read operations, justified by the vision family.
+
+This AMENDS ADR-0003 (and sits beside ADR-0004's locator-semantics refinement): ADR-0003 was framed around an extension content-script transport as a driving constraint, and a CONTENT-SCRIPT extension is structurally blocked by same-origin policy from reaching nested cross-origin frames (the hCaptcha tile grid two cross-origin boundaries deep). We accept that a hypothetical future extension transport could implement viewport coordinates + a viewport screenshot but NOT necessarily OOPIF cross-origin coordinate clicks / reads. That is the honest caveat. It is accepted because extension transport is no longer a driving constraint; the priority is agent-digestible types, and the Playwright transport (which CAN enumerate and operate nested cross-origin frames, the spike-verified mechanism in `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md`) is the one that ships.
+
+## What stays clean (the key design choices)
+
+- **`screenshot` returns a PATH, never bytes.** webhands MINTS a PNG under a managed dir it owns (`<home>/screenshots`, beside `profiles/`, under the same `WEBHANDS_HOME`/`root` override) and returns its path. A caller MAY override the path but it is VALIDATED to stay UNDER the managed dir (an escaping path is the typed `ScreenshotPathError`), so the verb never writes a PNG to an arbitrary location and nothing binary crosses the seam. The managed dir lives beside profiles precisely so the existing test isolation (point the home root at a temp dir) isolates screenshots for free.
+- **Coordinates are VIEWPORT CSS-pixels, as plain numbers.** `mouse` uses Playwright `page.mouse` semantics (viewport-relative CSS pixels), NOT OS-level screen input (we never inject OS input). A pixel `(x, y)` in a VIEWPORT screenshot maps DIRECTLY to a `mouse` click `(x, y)` — the look-then-click contract. A FULL-PAGE screenshot is NOT coordinate-matched (it includes off-viewport content); the verb docs say so plainly so an agent does not click the wrong spot.
+- **The cross-origin read is the EXISTING locator path, not a new verb.** It is the read counterpart to the already-working cross-origin `click`: a `frameLocator(...).frameLocator(...)` chain in a locator string, resolved through the ONE shared resolver the locator-taking verbs (`query`/`count`/`exists`/...) already use, which Playwright's `frameLocator` CAN cross. This is DISTINCT from the Tier-3 frame-scoped `eval`, which is SAME-ORIGIN only (page-world JS cannot cross a security boundary, the typed `CrossOriginFrameError`). So the cross-origin READ added no new addressing scheme and no new verb — only a multi-origin fixture proving the existing path reaches two boundaries deep.
+
+## Consequences
+
+- ADR-0003 STANDS and is AMENDED, not superseded: the no-CDP/Chromium-type rule is intact; the seam now also speaks viewport coordinate numbers, an image-path string, and structured-cloned cross-origin read values.
+- The extension transport remains a designed-for future path with an explicit, recorded LIMIT: it could do viewport coordinates but not necessarily OOPIF cross-origin coordinate clicks. This is accepted, not a regression — extension transport is no longer the driving constraint.
+- A new typed condition `screenshot-path-outside-managed-dir` (`ScreenshotPathError`) joins the closed `ControllerErrorCode` set; the CLI maps it to a fix hint, like the other typed conditions.

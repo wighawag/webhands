@@ -1,10 +1,13 @@
 import type {
 	Cookie,
 	EvalOptions,
+	MouseInput,
 	OpenTarget,
 	WebHandsPage,
 	QueryOptions,
 	QueryRow,
+	Screenshot,
+	ScreenshotOptions,
 	ScrollTarget,
 	SelectChoice,
 	Session,
@@ -144,6 +147,18 @@ export class StubTransport implements Transport {
 			async drag(source, t): Promise<void> {
 				ensureOpen();
 				calls.push({verb: 'drag', args: [source, t]});
+			},
+			async mouse(input: MouseInput): Promise<void> {
+				ensureOpen();
+				calls.push({verb: 'mouse', args: [input]});
+			},
+			async screenshot(options?: ScreenshotOptions): Promise<Screenshot> {
+				ensureOpen();
+				calls.push({verb: 'screenshot', args: [options]});
+				// A deterministic stand-in path/dimensions so a wiring test can assert
+				// the verb round-trip + the attachment-capable `path` field WITHOUT a
+				// real browser (no PNG is written; the stub implements no behaviour).
+				return {path: 'stub://screenshot.png', width: 0, height: 0};
 			},
 		};
 

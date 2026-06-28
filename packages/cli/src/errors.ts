@@ -9,6 +9,7 @@ import {
 	NoLiveServerError,
 	SessionAlreadyActiveError,
 	CrossOriginFrameError,
+	ScreenshotPathError,
 	type ControllerError,
 	type ControllerErrorCode,
 } from '@webhands/core';
@@ -86,6 +87,11 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// target a same-origin frame, or omit --frame for the top document. (The
 			// cross-origin reach is the separate Tier-4 surface.)
 			return `${binary} eval '<expression>' (drop --frame for the top document, or pass a SAME-ORIGIN frame selector)`;
+		case 'screenshot-path-outside-managed-dir':
+			// A --out override escaped the managed screenshots dir. webhands writes
+			// only WITHIN that dir; the fix is to drop --out (let webhands mint a
+			// path) or pass one under the managed dir.
+			return `${binary} screenshot (drop --out to let webhands mint a path under ${(error as ScreenshotPathError).managedDir}, or pass an --out inside it)`;
 		default: {
 			// Exhaustiveness guard: a new ControllerErrorCode must add a fix command
 			// here rather than silently fall through to a generic message.
@@ -132,5 +138,6 @@ export {
 	NoLiveServerError,
 	SessionAlreadyActiveError,
 	CrossOriginFrameError,
+	ScreenshotPathError,
 };
 export type {ControllerError, ControllerErrorCode};

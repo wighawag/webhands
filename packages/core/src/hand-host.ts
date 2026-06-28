@@ -10,8 +10,11 @@ import type {
 	Cookie,
 	EvalOptions,
 	WebHandsPage,
+	MouseInput,
 	QueryOptions,
 	QueryRow,
+	Screenshot,
+	ScreenshotOptions,
 	ScrollTarget,
 	SelectChoice,
 	Snapshot,
@@ -19,7 +22,9 @@ import type {
 	WaitCondition,
 } from './seam.js';
 import {validateSnapshotOptions} from './seam.js';
-import {CrossOriginFrameError} from './errors.js';
+import {CrossOriginFrameError, ScreenshotPathError} from './errors.js';
+import {mkdir} from 'node:fs/promises';
+import {isAbsolute, join, relative, resolve as resolvePath} from 'node:path';
 
 /**
  * The hand-host primitive (Phase 1 of the "hands" prd,
@@ -79,6 +84,17 @@ export interface HandContext {
 	readonly pwPage: Page;
 	readonly context: BrowserContext;
 	readonly ensureOpen: () => void;
+	/**
+	 * The managed SCREENSHOTS directory the `screenshot` verb mints PNGs under
+	 * (Tier-4, prd `broaden-agent-verb-surface`, R3). Resolved by each transport
+	 * from its home root (`<homeRoot>/screenshots`, beside `profiles/`) via
+	 * {@link resolveScreenshotsDir}, so the same `root`/`WEBHANDS_HOME` override
+	 * that isolates profiles in a test isolates screenshots too. The verb creates
+	 * it lazily on first write and validates any caller `out` override stays under
+	 * it ({@link ScreenshotPathError}). Carried HERE (not on the seam) so no path
+	 * policy leaks into the public {@link WebHandsPage} surface (ADR-0003).
+	 */
+	readonly screenshotsDir: string;
 }
 
 /**
@@ -195,6 +211,8 @@ const REQUIRED_VERBS = [
 	'select',
 	'scroll',
 	'drag',
+	'mouse',
+	'screenshot',
 ] as const satisfies ReadonlyArray<keyof WebHandsPage>;
 
 /**
@@ -460,6 +478,38 @@ export const inputHand: Hand = ({pwPage, ensureOpen}) => ({
 });
 
 /**
+ * The Tier-4 COORDINATE + SCREENSHOT hand (prd `broaden-agent-verb-surface`,
+ * R3; stories 17-19): the `mouse` coordinate-input verb and the `screenshot`
+ * path-returning verb, the look-then-click pair that lets a seam-only agent
+ * handle the VISION/TILE captcha family and any visual task.
+ *
+ * The seam stays ADR-0003-clean (as amended by the Tier-4 ADR) by passing ONLY
+ * numbers + a string enum (`mouse`) and returning ONLY a file PATH + dimensions
+ * (`screenshot`): NO image bytes and NO Playwright/CDP type cross the seam.
+ *
+ * - `mouse` drives Playwright `page.mouse` at VIEWPORT CSS-pixels (NOT OS-level
+ *   input). A VIEWPORT screenshot's pixels map directly to these coordinates
+ *   (the look-then-click contract); a FULL-PAGE shot does not.
+ * - `screenshot` MINTS a PNG under the managed {@link HandContext.screenshotsDir}
+ *   and returns its path. The `element` scope clips to a locator (resolved
+ *   through the SAME {@link resolveLocator}, so a cross-origin `frameLocator(...)`
+ *   widget shot Just Works). A caller `out` override is validated to stay under
+ *   the managed dir ({@link ScreenshotPathError}).
+ */
+export const coordinateHand: Hand = ({pwPage, ensureOpen, screenshotsDir}) => ({
+	verbs: {
+		async mouse(input: MouseInput): Promise<void> {
+			ensureOpen();
+			await doMouse(pwPage, input);
+		},
+		async screenshot(options?: ScreenshotOptions): Promise<Screenshot> {
+			ensureOpen();
+			return takeScreenshot(pwPage, screenshotsDir, options);
+		},
+	},
+});
+
+/**
  * webhands' built-in verbs as built-in hands, in composition order. Both
  * Playwright transports compose THIS exact set, so the verb surface is
  * identical across launch and attach (the only legitimate difference is the
@@ -474,6 +524,7 @@ export const BUILT_IN_HANDS: readonly Hand[] = [
 	cookiesHand,
 	queryHand,
 	inputHand,
+	coordinateHand,
 ];
 
 /**
@@ -864,6 +915,165 @@ async function readRow(
 	}
 
 	return row;
+}
+
+/**
+ * Run the `mouse` verb (prd `broaden-agent-verb-surface`, Tier-4, R3) against a
+ * Playwright page: drive `page.mouse` at the given VIEWPORT CSS-pixel
+ * coordinate. Viewport-relative, NOT OS-level input — the same coordinate frame
+ * a VIEWPORT `screenshot` is captured in, so a pixel an agent saw maps directly
+ * to the click. Shared by both transports (via the coordinate hand) so the verb
+ * behaves identically. Plain numbers + a string enum only (ADR-0003 as amended).
+ */
+export async function doMouse(page: Page, input: MouseInput): Promise<void> {
+	const button = input.button ?? 'left';
+	switch (input.action) {
+		case 'move':
+			// A bare move takes no button (it is a pointer move, not a press).
+			await page.mouse.move(input.x, input.y);
+			return;
+		case 'click':
+			await page.mouse.click(input.x, input.y, {button});
+			return;
+		case 'down':
+			// down/up press/release at the CURRENT pointer position, so move there
+			// first to honour the (x, y) the caller named (the two halves of a manual
+			// drag both land at the intended spot).
+			await page.mouse.move(input.x, input.y);
+			await page.mouse.down({button});
+			return;
+		case 'up':
+			await page.mouse.move(input.x, input.y);
+			await page.mouse.up({button});
+			return;
+	}
+}
+
+/**
+ * Run the `screenshot` verb (prd `broaden-agent-verb-surface`, Tier-4, R3;
+ * stories 17-19) against a Playwright page: capture the requested SCOPE to a PNG
+ * FILE under the managed `screenshotsDir` and return `{path, width, height}` —
+ * NEVER image bytes (the load-bearing ADR-0003-as-amended choice). Shared by
+ * both transports (via the coordinate hand).
+ *
+ * Scopes:
+ * - `viewport` (default) — the visible viewport, COORDINATE-MATCHED to `mouse`.
+ * - `full` — the whole scrollable page (`fullPage: true`), NOT coordinate-matched.
+ * - `element` — clipped to the locator's element (REQUIRED; resolved through the
+ *   SAME {@link resolveLocator}, so a `frameLocator(...)` frame widget works even
+ *   cross-origin). A missing locator for `element`, or a stray locator on a
+ *   non-`element` scope, is a LOUD validation error (mirrors `wait`).
+ *
+ * The PNG is written by Playwright to a path webhands MINTS under the managed
+ * dir (or a caller `out` override VALIDATED to stay under it, else
+ * {@link ScreenshotPathError}). We read the PNG's IHDR for the real pixel
+ * dimensions (so the number is the image's, not an assumed viewport size).
+ */
+export async function takeScreenshot(
+	page: Page,
+	screenshotsDir: string,
+	options?: ScreenshotOptions,
+): Promise<Screenshot> {
+	const scope = options?.scope ?? 'viewport';
+	// LOUD scope/locator validation (mirrors `wait`'s exactly-one-of): `element`
+	// MUST carry a locator; the other scopes must NOT (a stray locator is a
+	// caller mistake, not a silent no-op).
+	if (scope === 'element' && options?.locator === undefined) {
+		throw new Error(
+			'screenshot --scope element requires --locator <expr> (the element to clip to).',
+		);
+	}
+	if (scope !== 'element' && options?.locator !== undefined) {
+		throw new Error(
+			`screenshot --locator is only valid with --scope element (got scope ${JSON.stringify(
+				scope,
+			)}).`,
+		);
+	}
+
+	const path = await resolveScreenshotPath(screenshotsDir, options?.out);
+	await mkdir(screenshotsDir, {recursive: true});
+
+	let buffer: Buffer;
+	if (scope === 'element') {
+		// Clip to just the element (the captcha widget). Resolve through the ONE
+		// shared resolver so a `frameLocator(...)` hop reaches a frame widget,
+		// including cross-origin (Playwright `frameLocator` crosses; the spike).
+		buffer = await resolveLocator(page, options!.locator!)
+			.first()
+			.screenshot({path, type: 'png'});
+	} else {
+		buffer = await page.screenshot({
+			path,
+			type: 'png',
+			fullPage: scope === 'full',
+		});
+	}
+
+	const {width, height} = pngDimensions(buffer, path);
+	return {path, width, height};
+}
+
+/**
+ * The PNG magic + IHDR layout: an 8-byte signature, then the IHDR chunk whose
+ * width/height are big-endian uint32s at byte offsets 16 and 20. Reading them is
+ * how we report the image's REAL pixel dimensions without decoding the whole
+ * PNG or assuming a viewport size.
+ */
+function pngDimensions(
+	buffer: Buffer,
+	path: string,
+): {width: number; height: number} {
+	const PNG_SIGNATURE = '89504e470d0a1a0a';
+	if (
+		buffer.length < 24 ||
+		buffer.subarray(0, 8).toString('hex') !== PNG_SIGNATURE
+	) {
+		throw new Error(
+			`screenshot: the file written at ${path} is not a valid PNG (no PNG signature).`,
+		);
+	}
+	return {
+		width: buffer.readUInt32BE(16),
+		height: buffer.readUInt32BE(20),
+	};
+}
+
+/**
+ * Resolve the PNG output path: a caller `out` override (VALIDATED to stay under
+ * the managed dir) or a freshly MINTED unique path under it. A relative `out` is
+ * resolved against the managed dir; an absolute (or `..`-escaping) `out` that
+ * lands outside it is refused with {@link ScreenshotPathError} — webhands never
+ * writes a screenshot to an arbitrary location.
+ */
+async function resolveScreenshotPath(
+	screenshotsDir: string,
+	out?: string,
+): Promise<string> {
+	if (out === undefined || out === '') {
+		return join(screenshotsDir, mintScreenshotName());
+	}
+	const managedRoot = resolvePath(screenshotsDir);
+	const candidate = isAbsolute(out)
+		? resolvePath(out)
+		: resolvePath(managedRoot, out);
+	const rel = relative(managedRoot, candidate);
+	// `rel` starting with `..` (or being absolute on a different root) means the
+	// candidate escapes the managed dir.
+	if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+		throw new ScreenshotPathError(out, managedRoot);
+	}
+	return candidate;
+}
+
+/**
+ * Mint a unique PNG filename: a timestamp plus random suffix, so concurrent /
+ * rapid shots never collide and the name is sortable by capture time.
+ */
+function mintScreenshotName(): string {
+	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const rand = Math.random().toString(36).slice(2, 10);
+	return `webhands-${stamp}-${rand}.png`;
 }
 
 /** Map a Playwright cookie to the transport-neutral seam {@link Cookie}. */
