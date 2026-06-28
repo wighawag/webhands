@@ -18,6 +18,7 @@
 /** The closed set of identifiable `core` error conditions. */
 export type ControllerErrorCode =
 	| 'missing-browser-binary'
+	| 'missing-stealth-dependency'
 	| 'missing-profile'
 	| 'attach-not-chromium'
 	| 'attach-no-context'
@@ -62,6 +63,36 @@ export class MissingBrowserBinaryError extends ControllerError {
 	) {
 		super(message, options);
 		this.browser = browser;
+	}
+}
+
+/**
+ * Stealth launch was REQUESTED (the opt-in is on) but the optional `patchright`
+ * dependency is not installed/importable. Patchright is an OPTIONAL dependency
+ * of `@webhands/core` imported lazily only when stealth is enabled, so a user
+ * who never opts in is not forced to install it (ADR-0002: stealth is one extra
+ * layer, not the default). When it IS opted into and missing, we refuse LOUDLY
+ * with this typed condition rather than silently falling back to vanilla
+ * Playwright, because a silent fallback would re-introduce the exact CDP
+ * automation tell the user asked us to remove WITHOUT telling them.
+ *
+ * Mirrors {@link MissingBrowserBinaryError}: a stable typed error whose brittle
+ * detection (the dynamic-import failure) is confined to one spot in the launch
+ * transport. The CLI can render the exact `pnpm add patchright` fix command by
+ * branching on {@link code}.
+ */
+export class MissingStealthDependencyError extends ControllerError {
+	readonly code = 'missing-stealth-dependency';
+	/** The optional package that must be installed to use stealth. */
+	readonly dependency: string;
+
+	constructor(
+		dependency = 'patchright',
+		message: string = `Stealth launch is enabled but the optional "${dependency}" dependency is not installed. Install it with \`pnpm add ${dependency}\` (and \`${dependency} install chromium\` if you do not use channel: 'chrome'), or construct the transport without {stealth: true}.`,
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+		this.dependency = dependency;
 	}
 }
 

@@ -36,7 +36,11 @@ export {
 	type LoadHandsOptions,
 } from './hand-loading.js';
 
-export {PlaywrightLaunchTransport} from './playwright-launch-transport.js';
+export {
+	PlaywrightLaunchTransport,
+	type PlaywrightLaunchTransportOptions,
+	type StealthChromiumImporter,
+} from './playwright-launch-transport.js';
 
 export {PlaywrightAttachTransport} from './playwright-attach-transport.js';
 
@@ -51,6 +55,7 @@ export {
 export {
 	ControllerError,
 	MissingBrowserBinaryError,
+	MissingStealthDependencyError,
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,

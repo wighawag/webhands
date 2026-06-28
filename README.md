@@ -97,6 +97,58 @@ deliberately local and single-session by design.
 In short: this is for reading and acting on web apps **you already have an account
 on**, from **your own browser**, the way you could by hand.
 
+## Optional: stealth launch (opt-in, default OFF)
+
+Standard Playwright drives Chromium over CDP and calls `Runtime.enable` at
+startup. That emits a side-effect a few lines of page JS can detect, and some
+anti-bot WAFs (Imperva/Cloudflare/DataDome) use it to serve an "Access Denied"
+block page *before the page even renders* — even on a real residential IP, even
+headed. `@webhands/core` can optionally launch via
+[Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright) (an
+API-compatible Playwright fork that patches exactly these CDP leaks) to remove
+that one tell.
+
+This is **off by default** — vanilla Playwright stays the default. To enable it:
+
+1. Install the optional dependency (it is NOT pulled in unless you ask for it):
+
+   ```sh
+   pnpm add patchright
+   # if you do NOT use channel: 'chrome', also fetch its browser:
+   #   pnpm exec patchright install chromium
+   ```
+
+2. Construct the launch transport with stealth on. The realistic recipe also
+   drives the system Chrome binary (`channel: 'chrome'`) against a **warmed,
+   logged-in profile**:
+
+   ```ts
+   import {PlaywrightLaunchTransport} from '@webhands/core';
+
+   const transport = new PlaywrightLaunchTransport(
+     {}, // profile location (omit for ~/.webhands)
+     [], // extra hands
+     {stealth: true, channel: 'chrome'},
+   );
+   // Stealth + headed + a real logged-in profile is the strongest recipe:
+   const session = await transport.open({
+     mode: 'launch',
+     profile: 'default',
+     headed: true,
+   });
+   ```
+
+If `stealth: true` is set but `patchright` is not installed, `open` throws a
+typed `MissingStealthDependencyError` telling you to `pnpm add patchright`. It
+**never silently falls back** to vanilla Playwright, because that would put the
+tell back without telling you.
+
+**Honest caveat.** Stealth addresses ONLY the CDP `Runtime.enable` automation
+tell. It is **necessary-but-not-sufficient**: IP reputation and session/profile
+reputation still matter. The realistic recipe is stealth + `channel: 'chrome'` +
+headed + a warmed, logged-in profile + a residential IP (see
+[`docs/adr/0002`](docs/adr/0002-real-session-over-fingerprint-spoofing.md)).
+
 ## Security note (the `serve` endpoint runs arbitrary code)
 
 The page verbs execute caller-supplied expressions: `eval` runs a JS expression

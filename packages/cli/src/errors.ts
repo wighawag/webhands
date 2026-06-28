@@ -1,6 +1,7 @@
 import {
 	isControllerError,
 	MissingBrowserBinaryError,
+	MissingStealthDependencyError,
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,
@@ -46,6 +47,11 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// <browser>` is the documented way to download the missing one. We name
 			// the specific browser from the typed error rather than a generic hint.
 			return `npx playwright install ${(error as MissingBrowserBinaryError).browser}`;
+		case 'missing-stealth-dependency':
+			// Stealth launch was opted into but the OPTIONAL `patchright` dependency
+			// is absent. Name the package from the typed error so the install command
+			// is ready to run; we never silently fall back to vanilla Playwright.
+			return `pnpm add ${(error as MissingStealthDependencyError).dependency}`;
 		case 'missing-profile':
 			// A profile is created by the headed `setup-profile` flow (the ONE place
 			// a profile dir is created — see core's MissingProfileError). Name the
@@ -105,6 +111,7 @@ export function mapControllerError(
 // construct/assert against them without reaching into core directly.
 export {
 	MissingBrowserBinaryError,
+	MissingStealthDependencyError,
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,

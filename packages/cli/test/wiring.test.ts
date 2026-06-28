@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {
 	StubTransport,
 	MissingBrowserBinaryError,
+	MissingStealthDependencyError,
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,
@@ -408,6 +409,17 @@ describe('incur CLI wiring', () => {
 			expect(env.ok).toBe(false);
 			expect(env.error?.code).toBe('missing-browser-binary');
 			expect(env.error?.message).toContain('npx playwright install chromium');
+		});
+
+		it('maps the typed missing-stealth-dependency condition to `pnpm add patchright`', async () => {
+			const provider = throwingProvider(new MissingStealthDependencyError());
+			const env = await runEnvelope(provider, [
+				'goto',
+				'https://example.test/',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('missing-stealth-dependency');
+			expect(env.error?.message).toContain('pnpm add patchright');
 		});
 
 		it('maps the typed missing-profile condition to `setup-profile --profile <name>`', async () => {
