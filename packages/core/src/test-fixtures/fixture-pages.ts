@@ -700,6 +700,105 @@ const SCREENSHOT = `<!doctype html>
 `;
 
 /**
+ * The SAME-ORIGIN TOKEN-HARVEST captcha child frame (prd
+ * `broaden-agent-verb-surface`, stories 6-7; the
+ * `frame-aware-query-token-harvest-captcha-proof` task). It is the child
+ * embedded by {@link TOKEN_CAPTCHA_PARENT} as `#main-iframe`, and it carries the
+ * whole token-harvest widget the way a real hCaptcha/Imperva `#main-iframe`
+ * does (per `work/notes/findings/click-and-type-already-frame-scoped-via-
+ * framelocator.md` and `…playwright-cross-origin-frame-captcha-mechanics.md`):
+ *
+ * - `div.h-captcha[data-sitekey]` is the PAGE-READABLE sitekey an agent reads
+ *   through a `frameLocator('#main-iframe').locator('.h-captcha')` +
+ *   `attrs:['data-sitekey']` (the one frame-aware READ the spike found missing).
+ *   `data-callback="onCaptchaFinished"` names the page callback, exactly as the
+ *   real widget wires it.
+ * - `textarea#h-captcha-response` is the same-origin RESPONSE SINK an agent
+ *   `type`s the provider token into (the delivery half the spike proved already
+ *   works through the `frameLocator` hop).
+ * - `window.onCaptchaFinished(token)` is the page callback: it ACCEPTS the token
+ *   ONLY when it matches what was written into the sink (so a real token must
+ *   travel sink -> callback, not be conjured), flips `#captcha-state` to
+ *   `verified`, sets `window.__captchaSolved`, and reveals `#protected-content`
+ *   (the page ADVANCES). A mismatched/empty token flips it to `rejected` and the
+ *   page does NOT advance, so the proof asserts a real transition the verbs
+ *   drove, not a no-op.
+ *
+ * webhands ships NO solver and NO key: the token is whatever the agent brings
+ * (in the proof, a TEST FAKE provider mints one: no real network, no real key).
+ */
+const TOKEN_CAPTCHA_CHILD = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>token-harvest captcha frame</title>
+	</head>
+	<body>
+		<h1 id="captcha-heading">Verify you are human</h1>
+		<!-- The page-readable sitekey + the callback name, the real widget shape. -->
+		<div
+			class="h-captcha"
+			data-sitekey="sk-token-harvest-abc123"
+			data-callback="onCaptchaFinished"
+		></div>
+		<!-- The same-origin response sink the token is typed into. -->
+		<textarea id="h-captcha-response" name="h-captcha-response"></textarea>
+		<p id="captcha-state">pending</p>
+		<div id="protected-content" style="display: none">protected resource</div>
+		<script>
+			window.__captchaSolved = false;
+			// The page callback the agent fires AFTER writing the token into the sink.
+			// It accepts the token only if it matches the sink value (the token must
+			// genuinely travel sink -> callback), modelling the real widget's
+			// inject-token-then-fire-callback flow. The page ADVANCES on success.
+			window.onCaptchaFinished = function (token) {
+				var sink = document.getElementById('h-captcha-response');
+				var state = document.getElementById('captcha-state');
+				if (token && token === sink.value) {
+					window.__captchaSolved = true;
+					state.textContent = 'verified';
+					document.getElementById('protected-content').style.display = '';
+					return 'verified';
+				}
+				state.textContent = 'rejected';
+				return 'rejected';
+			};
+		</script>
+	</body>
+</html>
+`;
+
+/**
+ * The PARENT page for the SAME-ORIGIN TOKEN-HARVEST captcha proof (prd
+ * `broaden-agent-verb-surface`, stories 6-7). It embeds {@link
+ * TOKEN_CAPTCHA_CHILD} as a SAME-ORIGIN child frame (`#main-iframe`, relative
+ * `src`), mirroring the Imperva `#main-iframe` structure the findings give for
+ * the reachable token-harvest path: the sitekey, the response sink, and the
+ * callback ALL live one same-origin frame down, addressed via a
+ * `frameLocator('#main-iframe')` hop in the locator string (no `--frame` flag,
+ * R1). The top document carries only a heading, so the captcha widget is
+ * genuinely IN the child frame (a top-document `.h-captcha` query is empty).
+ */
+const TOKEN_CAPTCHA_PARENT = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>token-harvest captcha host</title>
+	</head>
+	<body>
+		<h1 id="host-heading">Protected page</h1>
+		<iframe
+			id="main-iframe"
+			name="main-iframe"
+			src="/token-captcha-child.html"
+			width="320"
+			height="240"
+		></iframe>
+	</body>
+</html>
+`;
+
+/**
  * The Tier-4 CROSS-ORIGIN nested-frame fixture (prd
  * `broaden-agent-verb-surface`, R3, stories 17-19), mirroring the synthetic
  * doubly-nested cross-origin tree the finding
@@ -965,6 +1064,8 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'frame-child.html': FRAME_CHILD,
 	'coordinate.html': COORDINATE,
 	'screenshot.html': SCREENSHOT,
+	'token-captcha-parent.html': TOKEN_CAPTCHA_PARENT,
+	'token-captcha-child.html': TOKEN_CAPTCHA_CHILD,
 	'nested-frame.html': NESTED_FRAME,
 	'tile-captcha.html': TILE_CAPTCHA,
 };
