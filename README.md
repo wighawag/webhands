@@ -88,8 +88,10 @@ deliberately local and single-session by design.
   does NOT bypass authentication or solve CAPTCHAs programmatically, and it is not
   intended to.
 - **No fingerprint-spoofing / anti-detect tricks.** It leans on being a *real*
-  browser/profile/IP rather than spoofing. There is no proxy rotation or
-  anti-detect build here.
+  browser/profile/IP rather than spoofing. There is no proxy *rotation* or
+  anti-detect build here. (A single, user-chosen SOCKS proxy for traffic/DNS
+  control is available opt-in via `--proxy`; see *Optional: route traffic and
+  DNS through a SOCKS proxy* below.)
 - **Your own session only.** A replayed/stolen cookie does not work anyway
   (clearance is bound to the browser fingerprint and IP, not just the cookie);
   the design assumes the session is genuinely yours.
@@ -173,6 +175,51 @@ reputation still matter. The realistic recipe is stealth +
 `systemBrowser: 'chrome'` + headed + a warmed, logged-in profile + a residential
 IP (see
 [`docs/adr/0002`](docs/adr/0002-real-session-over-fingerprint-spoofing.md)).
+
+## Optional: route traffic and DNS through a SOCKS proxy (opt-in, default OFF)
+
+By default webhands connects directly on your own machine and IP. If you want
+the browser to egress through a chosen SOCKS proxy (a VPN exit, an SSH/Tor SOCKS
+endpoint, a residential proxy), pass `--proxy <socks-url>` to `serve` (or
+`launch`). It routes **all** browser traffic AND DNS through that one proxy:
+
+```sh
+# socks5h:// tunnels DNS through the proxy too (no DNS leak):
+npx webhands serve --headed --proxy socks5h://127.0.0.1:1080
+
+# with credentials:
+npx webhands serve --proxy socks5h://user:pass@host:1080
+```
+
+- **`socks5h://` means no DNS leak.** webhands adds Chromium's
+  `--host-resolver-rules` catch-all so even side channels (the DNS prefetcher)
+  cannot leak a raw local DNS query; only the proxy's own host is resolved
+  locally. This is the recommended form.
+- **`socks5://` (or `socks://`) allows local DNS.** Use it when you deliberately
+  want split DNS. URL loads still resolve at the proxy, but Chromium may issue
+  some local DNS. Override either way with the programmatic `proxyNoLeak`
+  option.
+- **A malformed `--proxy` value fails loudly** with a typed `InvalidProxyError`
+  (it never silently launches unproxied, which would leak the traffic you asked
+  to tunnel).
+
+Programmatic equivalent:
+
+```ts
+import {PlaywrightLaunchTransport} from '@webhands/core';
+
+const transport = new PlaywrightLaunchTransport(
+  {}, // profile location
+  [], // extra hands
+  {proxy: 'socks5h://127.0.0.1:1080'}, // all traffic + DNS via the proxy, no leak
+);
+```
+
+**Honest caveat.** A proxy changes your IP and DNS path; it does **not** by
+itself defeat bot detection, and a proxy/VPN/datacenter IP often reads WORSE
+than a clean residential one. This is a deliberate, scoped opt-in deviation from
+the "own IP" default (see
+[`docs/adr/0009`](docs/adr/0009-opt-in-socks-proxy-all-traffic-and-dns.md)).
 
 ## Security note (the `serve` endpoint runs arbitrary code)
 

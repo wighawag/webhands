@@ -42,6 +42,12 @@ export {
 	type StealthChromiumImporter,
 } from './playwright-launch-transport.js';
 
+export {
+	parseSocksProxy,
+	hostResolverRulesArg,
+	type ParsedSocksProxy,
+} from './socks-proxy.js';
+
 export {PlaywrightAttachTransport} from './playwright-attach-transport.js';
 
 export {
@@ -56,6 +62,7 @@ export {
 	ControllerError,
 	MissingBrowserBinaryError,
 	MissingStealthDependencyError,
+	InvalidProxyError,
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,

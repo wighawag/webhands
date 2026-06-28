@@ -2,6 +2,7 @@ import {
 	isControllerError,
 	MissingBrowserBinaryError,
 	MissingStealthDependencyError,
+	InvalidProxyError,
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,
@@ -52,6 +53,10 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// is absent. Name the package from the typed error so the install command
 			// is ready to run; we never silently fall back to vanilla Playwright.
 			return `pnpm add ${(error as MissingStealthDependencyError).dependency}`;
+		case 'invalid-proxy':
+			// The --proxy value could not be parsed into a SOCKS proxy. Show the
+			// expected URL shape; socks5h tunnels DNS too (no leak).
+			return `${binary} serve --proxy socks5h://host:1080 (or socks5://user:pass@host:1080)`;
 		case 'missing-profile':
 			// A profile is created by the headed `setup-profile` flow (the ONE place
 			// a profile dir is created — see core's MissingProfileError). Name the
@@ -112,6 +117,7 @@ export function mapControllerError(
 export {
 	MissingBrowserBinaryError,
 	MissingStealthDependencyError,
+	InvalidProxyError,
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,

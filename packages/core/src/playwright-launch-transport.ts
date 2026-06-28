@@ -10,6 +10,7 @@ import {
 	resolveProfileLocation,
 	type ProfileLocationOptions,
 } from './profile-location.js';
+import {hostResolverRulesArg, parseSocksProxy} from './socks-proxy.js';
 import type {OpenTarget, Session, Transport} from './seam.js';
 
 /**
@@ -117,6 +118,29 @@ export interface PlaywrightLaunchTransportOptions {
 	 */
 	readonly ignoreDefaultArgs?: boolean | readonly string[];
 	/**
+	 * Route ALL browser traffic AND DNS through a single SOCKS proxy, given as a
+	 * SOCKS URL: `socks5h://host:1080` (or `socks5://host:1080`, optionally with a
+	 * `user:pass@` userinfo). When set, the transport forwards the proxy to
+	 * Playwright's `proxy` launch option AND adds Chromium's `--host-resolver-rules`
+	 * catch-all so no DNS query escapes locally (see {@link proxyNoLeak}).
+	 *
+	 * Scheme convention: `socks5h://` means "resolve DNS at the proxy" (no leak),
+	 * `socks5://` means "SOCKS5, local DNS allowed" (Chromium still resolves URL
+	 * hostnames at the proxy, but its DNS prefetcher etc. may issue local DNS). Use
+	 * {@link proxyNoLeak} to override the scheme's implied DNS behaviour. A
+	 * malformed value throws the typed {@link InvalidProxyError} rather than
+	 * launching unproxied. Default: no proxy.
+	 */
+	readonly proxy?: string;
+	/**
+	 * Override whether the {@link proxy} enforces NO local DNS. `true` forces the
+	 * leak-free catch-all even for a plain `socks5://` URL; `false` allows local
+	 * DNS even for a `socks5h://` URL. When omitted, the SCHEME decides
+	 * (`socks5h` => no leak, `socks5`/`socks` => local DNS allowed). Ignored when
+	 * {@link proxy} is unset.
+	 */
+	readonly proxyNoLeak?: boolean;
+	/**
 	 * INTERNAL test seam: override how the stealth chromium is imported. Omit in
 	 * production (defaults to `import('patchright')`). See
 	 * {@link StealthChromiumImporter}.
@@ -173,6 +197,8 @@ export class PlaywrightLaunchTransport implements Transport {
 	readonly #noViewport: boolean | undefined;
 	readonly #extraLaunchArgs: readonly string[] | undefined;
 	readonly #ignoreDefaultArgs: boolean | readonly string[] | undefined;
+	readonly #proxy: string | undefined;
+	readonly #proxyNoLeak: boolean | undefined;
 	readonly #importStealthChromium: StealthChromiumImporter;
 
 	/**
@@ -202,6 +228,8 @@ export class PlaywrightLaunchTransport implements Transport {
 		this.#noViewport = options.noViewport;
 		this.#extraLaunchArgs = options.extraLaunchArgs;
 		this.#ignoreDefaultArgs = options.ignoreDefaultArgs;
+		this.#proxy = options.proxy;
+		this.#proxyNoLeak = options.proxyNoLeak;
 		this.#importStealthChromium =
 			options.importStealthChromium ?? defaultStealthImporter;
 	}
@@ -266,15 +294,35 @@ export class PlaywrightLaunchTransport implements Transport {
 		} else if (this.#stealth) {
 			launchOptions.ignoreDefaultArgs = ['--enable-automation'];
 		}
+		// Proxy: route ALL traffic + DNS through one SOCKS proxy. We parse the URL
+		// HERE (a malformed value is the typed InvalidProxyError, never a silent
+		// unproxied launch), forward it to Playwright's `proxy` option, and when
+		// no-leak is in effect add Chromium's --host-resolver-rules catch-all so even
+		// the DNS prefetcher cannot leak a raw local DNS query.
+		const hardeningArgs: string[] = [];
+		if (this.#proxy !== undefined && this.#proxy.trim() !== '') {
+			const parsed = parseSocksProxy(this.#proxy, this.#proxyNoLeak);
+			launchOptions.proxy = {
+				server: parsed.server,
+				...(parsed.username !== undefined ? {username: parsed.username} : {}),
+				...(parsed.password !== undefined ? {password: parsed.password} : {}),
+			};
+			if (parsed.noLeak) {
+				hardeningArgs.push(hostResolverRulesArg(parsed.host));
+			}
+		}
 		// Extra launch args (the hardening escape hatch) are appended verbatim. We do
 		// NOT set user-agent/locale/timezone/headers here: a wrong UA is a bigger
 		// tell than none (Patchright warns against overriding them), so those stay
-		// untouched by default.
+		// untouched by default. The proxy's no-leak DNS arg (if any) rides alongside.
 		if (
 			this.#extraLaunchArgs !== undefined &&
 			this.#extraLaunchArgs.length > 0
 		) {
-			launchOptions.args = [...this.#extraLaunchArgs];
+			hardeningArgs.push(...this.#extraLaunchArgs);
+		}
+		if (hardeningArgs.length > 0) {
+			launchOptions.args = hardeningArgs;
 		}
 
 		let context: BrowserContext;

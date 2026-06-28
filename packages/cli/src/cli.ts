@@ -112,6 +112,12 @@ export interface LaunchPolicy {
 	 * to keep the fixed viewport even under stealth.
 	 */
 	readonly noViewport?: boolean;
+	/**
+	 * Route ALL traffic and DNS through one SOCKS proxy, as a SOCKS URL
+	 * (`socks5h://host:1080` or `socks5://user:pass@host:1080`). `socks5h` tunnels
+	 * DNS too (no leak); `socks5` allows local DNS. Omit for a direct connection.
+	 */
+	readonly proxy?: string;
 }
 
 // --- shared schema fragments ----------------------------------------------
@@ -169,6 +175,14 @@ const stealthOptions = z.object({
 			"Drive a browser already installed on the system (e.g. 'chrome', " +
 				"'msedge') instead of the bundled Chromium.",
 		),
+	proxy: z
+		.string()
+		.optional()
+		.describe(
+			'Route ALL traffic and DNS through a SOCKS proxy. Give a SOCKS URL: ' +
+				'socks5h://host:1080 tunnels DNS through the proxy too (no leak), ' +
+				'socks5://host:1080 allows local DNS. A user:pass@ prefix is allowed.',
+		),
 	// Modelled as a `viewport` boolean so incur's `--no-<flag>` negation gives the
 	// task-mandated `--no-viewport`: passing `--no-viewport` sets `viewport=false`
 	// (i.e. noViewport=true). Absent => undefined => core decides the default
@@ -190,6 +204,7 @@ function launchPolicyFrom(options: {
 	stealth?: boolean;
 	'use-system-browser'?: string;
 	viewport?: boolean;
+	proxy?: string;
 }): LaunchPolicy {
 	return {
 		stealth: options.stealth === true,
@@ -202,6 +217,11 @@ function launchPolicyFrom(options: {
 		// `--no-viewport` (viewport=false) => noViewport:true; `--viewport` => false.
 		// Only forward when the flag was given.
 		...(options.viewport !== undefined ? {noViewport: !options.viewport} : {}),
+		// Only forward --proxy when given, so the policy object stays minimal (the
+		// `serve` wiring tests assert it by exact shape).
+		...(options.proxy !== undefined && options.proxy !== ''
+			? {proxy: options.proxy}
+			: {}),
 	};
 }
 
@@ -371,6 +391,7 @@ export function createCli(deps: CliDeps = {}) {
 			stealth: z.boolean(),
 			systemBrowser: z.string().optional(),
 			noViewport: z.boolean().optional(),
+			proxy: z.string().optional(),
 		}),
 		async run(c) {
 			try {
@@ -395,6 +416,7 @@ export function createCli(deps: CliDeps = {}) {
 								...(policy.noViewport !== undefined
 									? {noViewport: policy.noViewport}
 									: {}),
+								...(policy.proxy !== undefined ? {proxy: policy.proxy} : {}),
 							},
 							{
 								cta: {
@@ -856,6 +878,7 @@ async function defaultServeSession(
 		...(launchPolicy.noViewport !== undefined
 			? {noViewport: launchPolicy.noViewport}
 			: {}),
+		...(launchPolicy.proxy !== undefined ? {proxy: launchPolicy.proxy} : {}),
 	});
 	const attach = new PlaywrightAttachTransport();
 	const transport: Transport = {

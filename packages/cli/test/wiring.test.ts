@@ -3,6 +3,7 @@ import {
 	StubTransport,
 	MissingBrowserBinaryError,
 	MissingStealthDependencyError,
+	InvalidProxyError,
 	MissingProfileError,
 	AttachNotChromiumError,
 	AttachNoContextError,
@@ -286,6 +287,25 @@ describe('incur CLI wiring', () => {
 			expect(env.data).toMatchObject({mode: 'launch', noViewport: true});
 		});
 
+		it('`launch --proxy socks5h://host:1080` echoes the proxy in output', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'launch',
+				'--proxy',
+				'socks5h://host:1080',
+			]);
+			expect(env.data).toMatchObject({
+				mode: 'launch',
+				proxy: 'socks5h://host:1080',
+			});
+		});
+
+		it('`launch` without --proxy omits proxy from output', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, ['launch']);
+			expect(env.data?.proxy).toBeUndefined();
+		});
+
 		it('`launch` without --no-viewport omits noViewport (core decides the default)', async () => {
 			const {provider} = stubProvider();
 			const env = await runEnvelope(provider, ['launch']);
@@ -441,6 +461,23 @@ describe('incur CLI wiring', () => {
 			expect(policies).toEqual([{stealth: true, systemBrowser: 'chrome'}]);
 		});
 
+		it('`serve --proxy socks5h://host:1080` forwards the proxy in the launch policy', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			await runEnvelope(
+				provider,
+				['serve', '--profile', 'work', '--proxy', 'socks5h://host:1080'],
+				{serveSession: serve},
+			);
+			expect(policies).toEqual([
+				{
+					stealth: false,
+					systemBrowser: undefined,
+					proxy: 'socks5h://host:1080',
+				},
+			]);
+		});
+
 		it('`serve --no-viewport` forwards noViewport:true in the launch policy', async () => {
 			const {provider} = stubProvider();
 			const {serve, policies} = fakeServe();
@@ -512,6 +549,16 @@ describe('incur CLI wiring', () => {
 			expect(env.ok).toBe(false);
 			expect(env.error?.code).toBe('missing-stealth-dependency');
 			expect(env.error?.message).toContain('pnpm add patchright');
+		});
+
+		it('maps the typed invalid-proxy condition to a SOCKS URL fix hint', async () => {
+			const provider = throwingProvider(
+				new InvalidProxyError('http://not-socks:1080'),
+			);
+			const env = await runEnvelope(provider, ['launch']);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-proxy');
+			expect(env.error?.message).toContain('socks5h://host:1080');
 		});
 
 		it('maps the typed missing-profile condition to `setup-profile --profile <name>`', async () => {

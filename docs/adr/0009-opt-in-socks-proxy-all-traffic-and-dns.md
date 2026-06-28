@@ -1,0 +1,19 @@
+# Opt-in SOCKS proxy routes all traffic and DNS through one proxy, no leak by default
+
+`@webhands/core`'s launch transport can OPTIONALLY route all browser traffic AND DNS through a single SOCKS proxy, exposed as `--proxy <socks-url>` on the CLI (`launch`/`serve`) and `proxy?: string` on `PlaywrightLaunchTransportOptions`. It accepts `socks5h://`, `socks5://`, or `socks://` URLs (optionally with a `user:pass@` userinfo), forwards the proxy to Playwright's `proxy` launch option, and, when no-leak is in effect, ALSO adds Chromium's `--host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE <proxyHost>"` so no DNS query escapes locally. We added this because driving a real logged-in session from behind a chosen network egress (a VPN exit, an SSH/Tor SOCKS endpoint, a residential proxy) is a legitimate personal-use need, and doing it half-way (proxying TCP but leaking DNS) would silently betray the user's intent. It is OFF by default and the seam stays Playwright/CDP-free: the proxy is a transport-construction policy, never on `OpenTarget` (ADR-0003).
+
+This is a DELIBERATE, scoped deviation from ADR-0002 ("real machine and own IP, no proxy rotation / anti-detect"). ADR-0002 rejects proxies as an ANTI-DETECT crutch (rotating IPs to evade bot walls); this ADR adds a SINGLE, user-chosen, static egress for traffic/DNS control. The two coexist: the default is still a direct connection on the user's own IP, and the honest caveat from ADR-0002 stands.
+
+## Why the no-leak design is what it is
+
+- Chromium's `--proxy-server="socks5://..."` already resolves URL hostnames AT THE PROXY (so `socks5://` behaves like the `socks5h` convention for page loads). The leak is from OTHER components (notably the DNS prefetcher) issuing raw local DNS. The Chromium SOCKS design doc's catch-all `--host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE <proxy>"` closes those side channels; the `EXCLUDE` lets Chromium still resolve the proxy's own address (otherwise every request fails with `PROXY_CONNECTION_FAILED`).
+- We normalize the scheme: Playwright/Chromium's `proxy.server` understands `socks5://` but NOT `socks5h://`, so we carry the "no local DNS" INTENT in a boolean (`noLeak`) and emit the resolver-rules flag, rather than passing a scheme Chromium would reject. `socks5h` => no leak, `socks5`/`socks` => local DNS allowed; `proxyNoLeak` overrides either way.
+
+## Consequences
+
+- **Default OFF, opt-in only.** No proxy is used unless `--proxy` (or `proxy:`) is set; the direct-IP default and ADR-0002's stance are unchanged for everyone who does not ask for a proxy.
+- **Fail LOUD, never silently unproxied.** A malformed `--proxy` value is the typed `InvalidProxyError` (`code: 'invalid-proxy'`), not a fall-through to a direct connection, because a silent unproxied launch would leak the exact traffic the user asked to tunnel. The CLI maps the code to a fix hint showing the expected SOCKS URL shape.
+- **No-leak is the DEFAULT for `socks5h://`.** Choosing the leak-free scheme gets the `--host-resolver-rules` catch-all automatically; `socks5://` is the explicit "I want local DNS" opt-out. This makes the safe choice the easy one.
+- **Single static egress, not rotation.** This is one user-chosen proxy, not a rotating pool or an anti-detect build (still out of scope per ADR-0002).
+- **Honest caveat.** A proxy changes your IP/DNS path; it does NOT defeat bot detection by itself, and a proxy/VPN/datacenter IP often reads WORSE than a clean residential one. Auth, fingerprint, and IP reputation still matter.
+- **Test seam:** the SOCKS URL parsing and the resolver-rules flag are a pure function (`parseSocksProxy` / `hostResolverRulesArg`) tested directly; the transport wiring is asserted hermetically through a launch SPY (no real browser, no network), exactly like the stealth/hardening tests.

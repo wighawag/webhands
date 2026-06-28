@@ -19,6 +19,7 @@
 export type ControllerErrorCode =
 	| 'missing-browser-binary'
 	| 'missing-stealth-dependency'
+	| 'invalid-proxy'
 	| 'missing-profile'
 	| 'attach-not-chromium'
 	| 'attach-no-context'
@@ -93,6 +94,35 @@ export class MissingStealthDependencyError extends ControllerError {
 	) {
 		super(message, options);
 		this.dependency = dependency;
+	}
+}
+
+/**
+ * The `--proxy` value (a SOCKS URL) could not be parsed into a usable proxy
+ * config. webhands routes ALL traffic and DNS through one SOCKS proxy, so the
+ * value must be a `socks5://` or `socks5h://` URL with a host and port (an
+ * optional `user:pass@` is allowed). We refuse a malformed value LOUDLY with
+ * this typed condition rather than silently launching with no proxy (which
+ * would leak the very traffic the user asked to tunnel). The CLI maps the
+ * {@link code} to a fix message showing the expected URL shape.
+ *
+ * Mirrors {@link MissingStealthDependencyError}: a stable typed error whose
+ * brittle detection is confined to one spot (the proxy parser).
+ */
+export class InvalidProxyError extends ControllerError {
+	readonly code = 'invalid-proxy';
+	/** The offending raw `--proxy` value, echoed back so the user can see it. */
+	readonly value: string;
+
+	constructor(
+		value: string,
+		message: string = `Invalid --proxy value ${JSON.stringify(
+			value,
+		)}. Expected a SOCKS URL like socks5h://host:1080 or socks5://user:pass@host:1080 (socks5h tunnels DNS too; both route all traffic through the proxy).`,
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+		this.value = value;
 	}
 }
 
