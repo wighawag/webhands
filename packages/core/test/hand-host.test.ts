@@ -180,6 +180,11 @@ describe('hand-host composition primitive (no browser)', () => {
 			'exists',
 			'isVisible',
 			'getAttribute',
+			'press',
+			'hover',
+			'select',
+			'scroll',
+			'drag',
 		];
 		for (const name of verbNames) {
 			expect(typeof page[name]).toBe('function');
@@ -226,6 +231,11 @@ function restOfVerbsHand(): Hand {
 			async getAttribute() {
 				return null;
 			},
+			async press() {},
+			async hover() {},
+			async select() {},
+			async scroll() {},
+			async drag() {},
 		},
 	});
 }

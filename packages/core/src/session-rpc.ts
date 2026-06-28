@@ -4,6 +4,8 @@ import {
 	type Cookie,
 	type QueryOptions,
 	type QueryRow,
+	type ScrollTarget,
+	type SelectChoice,
 	type Snapshot,
 	type SnapshotOptions,
 	type WaitCondition,
@@ -86,6 +88,23 @@ export type SessionRpcBuiltInRequest =
 			readonly verb: 'getAttribute';
 			readonly locator: string;
 			readonly name: string;
+	  }
+	| {
+			readonly verb: 'press';
+			readonly key: string;
+			readonly locator?: string;
+	  }
+	| {readonly verb: 'hover'; readonly locator: string}
+	| {
+			readonly verb: 'select';
+			readonly locator: string;
+			readonly choice: SelectChoice;
+	  }
+	| {readonly verb: 'scroll'; readonly target: ScrollTarget}
+	| {
+			readonly verb: 'drag';
+			readonly source: string;
+			readonly target: string;
 	  };
 
 /**
@@ -169,6 +188,24 @@ export async function applySessionRpc(
 			return page.isVisible(locator(request.locator));
 		case 'getAttribute':
 			return page.getAttribute(locator(request.locator), request.name);
+		case 'press':
+			await page.press(
+				request.key,
+				request.locator !== undefined ? locator(request.locator) : undefined,
+			);
+			return undefined;
+		case 'hover':
+			await page.hover(locator(request.locator));
+			return undefined;
+		case 'select':
+			await page.select(locator(request.locator), request.choice);
+			return undefined;
+		case 'scroll':
+			await page.scroll(rebrandScroll(request.target));
+			return undefined;
+		case 'drag':
+			await page.drag(locator(request.source), locator(request.target));
+			return undefined;
 		case 'hand':
 			return applyHandVerb(page, request);
 	}
@@ -300,6 +337,27 @@ export function makeRpcPage(
 				name,
 			})) as string | null;
 		},
+		async press(key, target) {
+			// Forward the optional locator only when given, so the wire request stays
+			// minimal (the focused-element form carries no locator key).
+			await send({
+				verb: 'press',
+				key,
+				...(target !== undefined ? {locator: target} : {}),
+			});
+		},
+		async hover(target) {
+			await send({verb: 'hover', locator: target});
+		},
+		async select(target, choice) {
+			await send({verb: 'select', locator: target, choice});
+		},
+		async scroll(target) {
+			await send({verb: 'scroll', target});
+		},
+		async drag(source, target) {
+			await send({verb: 'drag', source, target});
+		},
 	};
 }
 
@@ -336,4 +394,17 @@ function rebrandWait(condition: WaitCondition): WaitCondition {
 		return {kind: 'locator', target: locator(condition.target)};
 	}
 	return condition;
+}
+
+/**
+ * Re-brand a {@link ScrollTarget} that arrived as plain JSON: only the `to` form
+ * carries a branded {@link LocatorString}, flattened to a plain `string` over
+ * the wire, so we re-tag it before it reaches the page (mirrors
+ * {@link rebrandWait}). The `by` form carries only plain numbers.
+ */
+function rebrandScroll(target: ScrollTarget): ScrollTarget {
+	if ('to' in target) {
+		return {to: locator(target.to)};
+	}
+	return target;
 }

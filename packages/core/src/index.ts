@@ -7,6 +7,8 @@ export type {
 	PwExtra,
 	QueryOptions,
 	QueryRow,
+	ScrollTarget,
+	SelectChoice,
 	WebHandsPage,
 	Session,
 	Snapshot,

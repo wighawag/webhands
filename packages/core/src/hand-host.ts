@@ -10,6 +10,8 @@ import type {
 	WebHandsPage,
 	QueryOptions,
 	QueryRow,
+	ScrollTarget,
+	SelectChoice,
 	Snapshot,
 	SnapshotOptions,
 	WaitCondition,
@@ -185,6 +187,11 @@ const REQUIRED_VERBS = [
 	'exists',
 	'isVisible',
 	'getAttribute',
+	'press',
+	'hover',
+	'select',
+	'scroll',
+	'drag',
 ] as const satisfies ReadonlyArray<keyof WebHandsPage>;
 
 /**
@@ -393,6 +400,65 @@ export const queryHand: Hand = ({pwPage, ensureOpen}) => ({
 });
 
 /**
+ * The Tier-2 rich INPUT verbs (prd `broaden-agent-verb-surface`, stories 8-12):
+ * `press` / `hover` / `select` / `scroll` / `drag`. These lift page-level
+ * Playwright actions a hand already has on `pwPage` (`keyboard.press`,
+ * `hover`, `selectOption`, `mouse.wheel`/`scrollIntoViewIfNeeded`, `dragTo`) up
+ * to the agent verb seam so a seam-only agent can drive a browser game or a
+ * richer form, not just `click`/`type`.
+ *
+ * Every locator-addressing form resolves through the SAME single
+ * {@link resolveLocator} the other verbs use (so a same-origin `frameLocator(...)`
+ * hop in the string Just Works — no parallel addressing scheme, R1). Keys are
+ * strings, offsets are numbers, locators are strings: nothing Playwright-shaped
+ * crosses the seam (ADR-0003).
+ */
+export const inputHand: Hand = ({pwPage, ensureOpen}) => ({
+	verbs: {
+		async press(key, target): Promise<void> {
+			ensureOpen();
+			if (target !== undefined) {
+				// At a locator: Playwright focuses the element first, then presses
+				// (the `locator.press` semantics).
+				await resolveLocator(pwPage, target).press(key);
+				return;
+			}
+			// No locator: the page's currently focused element receives the key.
+			await pwPage.keyboard.press(key);
+		},
+		async hover(target): Promise<void> {
+			ensureOpen();
+			await resolveLocator(pwPage, target).hover();
+		},
+		async select(target, choice: SelectChoice): Promise<void> {
+			ensureOpen();
+			// EXACTLY ONE of value/label (the seam type enforces it); map to
+			// Playwright's `selectOption({value})` / `selectOption({label})`.
+			const option =
+				'value' in choice ? {value: choice.value} : {label: choice.label};
+			await resolveLocator(pwPage, target).selectOption(option);
+		},
+		async scroll(target: ScrollTarget): Promise<void> {
+			ensureOpen();
+			if ('to' in target) {
+				// Reach an off-viewport element by scrolling it into view.
+				await resolveLocator(pwPage, target.to).scrollIntoViewIfNeeded();
+				return;
+			}
+			// Scroll the page by a pixel delta (the wheel convention: positive dy
+			// scrolls DOWN).
+			await pwPage.mouse.wheel(target.by.dx, target.by.dy);
+		},
+		async drag(source, target): Promise<void> {
+			ensureOpen();
+			await resolveLocator(pwPage, source).dragTo(
+				resolveLocator(pwPage, target),
+			);
+		},
+	},
+});
+
+/**
  * webhands' built-in verbs as built-in hands, in composition order. Both
  * Playwright transports compose THIS exact set, so the verb surface is
  * identical across launch and attach (the only legitimate difference is the
@@ -406,6 +472,7 @@ export const BUILT_IN_HANDS: readonly Hand[] = [
 	waitHand,
 	cookiesHand,
 	queryHand,
+	inputHand,
 ];
 
 /**

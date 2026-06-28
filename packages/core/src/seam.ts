@@ -81,6 +81,36 @@ export type WaitCondition =
 	| {readonly kind: 'navigation'};
 
 /**
+ * Which native `<select>` option the {@link WebHandsPage.select} verb chooses
+ * (prd `broaden-agent-verb-surface`, Tier-2). EXACTLY ONE of `value` / `label`,
+ * a discriminated union so the mutual exclusion is impossible to violate at the
+ * seam (the CLI mirrors it with `wait`-style loud validation, R5):
+ *
+ * - `value` — match the option's `value` attribute (`<option value="v">`).
+ * - `label` — match the option's VISIBLE label (its text), what a human reads.
+ *
+ * Plain strings only, so nothing Playwright-shaped crosses the seam (ADR-0003).
+ */
+export type SelectChoice = {readonly value: string} | {readonly label: string};
+
+/**
+ * Where the {@link WebHandsPage.scroll} verb scrolls (prd
+ * `broaden-agent-verb-surface`, Tier-2). EXACTLY ONE of `to` / `by`, a
+ * discriminated union mirroring `wait`'s mutually-exclusive forms:
+ *
+ * - `to` — bring the element a locator EXPRESSION addresses into view
+ *   (`scrollIntoViewIfNeeded`); reach an off-viewport control.
+ * - `by` — scroll the page by a pixel delta (`mouse.wheel`), `dx`/`dy` in
+ *   CSS pixels (positive `dy` scrolls DOWN, the wheel convention).
+ *
+ * `to` carries a {@link LocatorString}; `by` carries plain numbers — no
+ * Playwright type crosses the seam (ADR-0003).
+ */
+export type ScrollTarget =
+	| {readonly to: LocatorString}
+	| {readonly by: {readonly dx: number; readonly dy: number}};
+
+/**
  * Which page view a {@link Snapshot} carries.
  *
  * - `'accessibility'` — the DEFAULT, token-cheap structured view: the
@@ -374,6 +404,49 @@ export interface WebHandsPage {
 	 * no element — both "there is no such attribute value to read".
 	 */
 	getAttribute(target: LocatorString, name: string): Promise<string | null>;
+	/**
+	 * Press a keyboard key or chord (prd `broaden-agent-verb-surface`, Tier-2,
+	 * story 8) — arrows, `Enter`, `Space`, a letter (`w`), or a chord like
+	 * `Control+A`. The chord grammar is Playwright's `keyboard.press` grammar:
+	 * `Modifier+Modifier+Key`, modifiers `Control`/`Alt`/`Shift`/`Meta`, key names
+	 * like `ArrowLeft`/`Enter`/`a` (see the task's ## Decisions note). The key is a
+	 * plain STRING, so nothing Playwright-shaped crosses the seam (ADR-0003).
+	 *
+	 * With `target`, the key is sent to the element that locator addresses (it is
+	 * focused first, the `locator.press` semantics); WITHOUT it, the key is sent to
+	 * the page's currently focused element (`keyboard.press`). `target` is an
+	 * optional trailing arg so a future `frame?` stays additive (R1).
+	 */
+	press(key: string, target?: LocatorString): Promise<void>;
+	/**
+	 * Hover the pointer over the element a locator addresses (prd
+	 * `broaden-agent-verb-surface`, Tier-2, story 9), to reveal a hover menu /
+	 * on-hover control `click` cannot surface (`locator.hover`).
+	 */
+	hover(target: LocatorString): Promise<void>;
+	/**
+	 * Choose an option in the native `<select>` a locator addresses (prd
+	 * `broaden-agent-verb-surface`, Tier-2, story 10), by `value` OR by `label`
+	 * (EXACTLY ONE; see {@link SelectChoice}). Maps to Playwright
+	 * `locator.selectOption`; the chosen option is reflected in the element's live
+	 * state (its `value` / `selectedIndex`).
+	 */
+	select(target: LocatorString, choice: SelectChoice): Promise<void>;
+	/**
+	 * Scroll the page, either TO an element a locator addresses or BY a pixel
+	 * delta (prd `broaden-agent-verb-surface`, Tier-2, story 11; EXACTLY ONE form,
+	 * see {@link ScrollTarget}). `to` reaches lazy-loaded / off-viewport content
+	 * (`scrollIntoViewIfNeeded`); `by` nudges the page a fixed amount
+	 * (`mouse.wheel`).
+	 */
+	scroll(target: ScrollTarget): Promise<void>;
+	/**
+	 * Drag the element `source` addresses onto the element `target` addresses (prd
+	 * `broaden-agent-verb-surface`, Tier-2, story 12), for drag-reorder UIs and
+	 * drag-slider challenges (`locator.dragTo`). Both are raw locator EXPRESSIONS
+	 * resolved through the SAME resolver as `click`/`type` (ADR-0004).
+	 */
+	drag(source: LocatorString, target: LocatorString): Promise<void>;
 }
 
 /**
