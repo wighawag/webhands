@@ -3,7 +3,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {AgentUnderTest, LaunchResult} from './agent-under-test.js';
 import type {EvalEntry} from './eval-contract.js';
-import {evaluateOutcome, type Outcome} from './outcome.js';
+import {evaluateOutcome, type Outcome, type OutcomeKind} from './outcome.js';
 import {startServe, type ServeLaunchOptions} from './serve-lifecycle.js';
 import {VerbClient, type WebhandsCommand} from './verb-client.js';
 
@@ -35,7 +35,17 @@ export interface EvalRunResult {
 	readonly launch: LaunchResult;
 	/** The harness's INDEPENDENT three-state outcome. */
 	readonly outcome: Outcome;
+	/**
+	 * Whether the best-effort post-PASS cleanup actually RAN to completion (prd
+	 * D2.3/D2.4). `'skipped'` ⇒ no cleanup was attempted (a non-PASS verdict, or
+	 * the entry declares no cleanup); `'ran'` ⇒ it completed; `'failed'` ⇒ it threw
+	 * and was swallowed. NEVER part of the verdict: it is a teardown report only.
+	 */
+	readonly cleanedUp: CleanupStatus;
 }
+
+/** Outcome of the best-effort post-PASS cleanup (never affects the verdict). */
+export type CleanupStatus = 'skipped' | 'ran' | 'failed';
 
 /** Config for one eval run. */
 export interface RunEvalOptions {
@@ -115,15 +125,52 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 				: {}),
 		});
 
-		return {entry: opts.entry, adapter: opts.agent.adapter, launch, outcome};
-		// Assert FIRST, clean SECOND (prd D2 ordering): only a clean PASS removes the
-		// isolated home; a FAIL/INCONCLUSIVE KEEPS it for inspection. Destroying
-		// evidence on failure is the wrong default.
+		// Assert FIRST, clean SECOND (prd D2.2 -> D2.3/D2.4 strict order). The verdict
+		// is already decided above; ONLY a clean PASS triggers the best-effort
+		// post-PASS cleanup (e.g. an account delete), and a FAIL/INCONCLUSIVE run does
+		// NOT clean (state kept for inspection). A failed or absent cleanup can NEVER
+		// flip the verdict: it is teardown, swallowed here.
+		const cleanedUp = await runPostPassCleanup(opts.entry, verbs, outcome.kind);
+
+		// Only a clean PASS removes the isolated home; a FAIL/INCONCLUSIVE KEEPS it
+		// for inspection. Destroying evidence on failure is the wrong default.
 		if (ownsHome && !opts.keepHome && outcome.kind === 'PASS') {
 			await rm(home, {recursive: true, force: true});
 		}
-		return {entry: opts.entry, adapter: opts.agent.adapter, launch, outcome};
+		return {
+			entry: opts.entry,
+			adapter: opts.agent.adapter,
+			launch,
+			outcome,
+			cleanedUp,
+		};
 	} finally {
 		await serveSession.stop();
+	}
+}
+
+/**
+ * Run the entry's best-effort post-PASS cleanup, enforcing the D2.3/D2.4 order:
+ * cleanup runs ONLY on a clean PASS, ONLY if the entry declares one, and a throw
+ * is swallowed (cleanup is teardown and can NEVER flip the already-decided
+ * verdict). Returns a {@link CleanupStatus} for the report; the caller has
+ * already fixed the outcome before this is called, so nothing here can change it.
+ */
+export async function runPostPassCleanup(
+	entry: EvalEntry,
+	verbs: VerbClient,
+	outcomeKind: OutcomeKind,
+): Promise<CleanupStatus> {
+	if (outcomeKind !== 'PASS' || entry.cleanup === undefined) {
+		return 'skipped';
+	}
+	try {
+		await entry.cleanup.run(verbs);
+		return 'ran';
+	} catch {
+		// Best-effort: a failed delete (or a site that changed its delete flow) must
+		// never red a genuine PASS. The nonce-tagged artifact already made the run
+		// correct; cleanup only keeps the sandbox tidy.
+		return 'failed';
 	}
 }

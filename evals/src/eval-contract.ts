@@ -59,6 +59,30 @@ export interface Milestone {
 }
 
 /**
+ * A best-effort post-PASS CLEANUP step (prd ## Resolved decisions D2.3/D2.4;
+ * task `eval-stateful-tier2`). TEARDOWN, never part of the verdict.
+ *
+ * D2's strict order: the harness asserts the end state + milestones FIRST, and
+ * ONLY on a clean PASS does it then run this cleanup (e.g. AutomationExercise's
+ * in-flow delete-account). The fresh per-run nonce already guaranteed
+ * correctness, so a failed or ABSENT cleanup NEVER flips the verdict, and a
+ * FAIL/INCONCLUSIVE run does NOT run it at all (state is kept for inspection).
+ * A target with no clean delete (ParaBank) simply omits cleanup and leans on the
+ * nonce-tagged artifact.
+ */
+export interface EvalCleanup {
+	/** A human-legible description of what this teardown does (for the report). */
+	readonly describe: string;
+	/**
+	 * Best-effort teardown run by the harness AFTER a clean PASS only. May act on
+	 * the page through `verbs` (it is teardown, so acting is allowed here, unlike a
+	 * read-only check). A throw is swallowed by the caller: cleanup is best-effort
+	 * and can NEVER change the already-decided verdict.
+	 */
+	run(verbs: VerbClient): Promise<void>;
+}
+
+/**
  * A site-health PRECHECK probe (prd user story 10): a cheap reachability /
  * landmark read that decides FAIL vs INCONCLUSIVE. If the entry URL does not
  * load or an expected landmark is absent, the site is down / rate-limiting /
@@ -108,4 +132,11 @@ export interface EvalEntry {
 	 * explicit and a milestone set can be richer than the single pass bar.
 	 */
 	readonly endState: readonly EndStateCheck[];
+	/**
+	 * OPTIONAL best-effort post-PASS cleanup (prd D2.3/D2.4). Run by the harness
+	 * ONLY after a clean PASS, AFTER the assertion, and never affecting the
+	 * verdict. Omitted by targets with no clean delete (e.g. ParaBank), which lean
+	 * on the nonce-tagged artifact instead.
+	 */
+	readonly cleanup?: EvalCleanup;
 }

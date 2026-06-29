@@ -18,6 +18,7 @@ export type {
 	EndStateCheck,
 	Milestone,
 	HealthProbe,
+	EvalCleanup,
 } from './eval-contract.js';
 export {
 	VerbClient,
@@ -60,5 +61,13 @@ export {
 	type OutcomeKind,
 	type EvaluateOptions,
 } from './outcome.js';
-export {runEval, type EvalRunResult, type RunEvalOptions} from './run-eval.js';
+export {
+	runEval,
+	runPostPassCleanup,
+	type EvalRunResult,
+	type RunEvalOptions,
+	type CleanupStatus,
+} from './run-eval.js';
 export {buildSelfTestEval} from './catalogue/self-test-fixture.eval.js';
+export {buildParabankTransferEval} from './catalogue/parabank-transfer.eval.js';
+export {mintNonce, nonceTransferAmount, nonceUsername} from './nonce.js';
