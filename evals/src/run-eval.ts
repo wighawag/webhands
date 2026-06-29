@@ -88,21 +88,34 @@ function compact(n: number): string {
 }
 
 /**
- * A SIDE-BY-SIDE comparison of the SAME eval run under two agent configs (task
- * `eval-playwright-only-baseline-comparison`): the concrete "does webhands
- * deliver?" scoreboard. Both runs used the SAME goal + the SAME harness
- * end-state assertion; only the agent's toolkit + preamble differed, so the rows
- * below are apples-to-apples.
+ * A SIDE-BY-SIDE comparison of the SAME eval run under TWO OR THREE agent
+ * configs (tasks `eval-playwright-only-baseline-comparison` +
+ * `eval-webhands-skill-in-context-variant`): the concrete "does webhands
+ * deliver?" scoreboard. Every leg ran the SAME goal + the SAME harness end-state
+ * assertion; only the agent's toolkit + preamble differed, so the rows below are
+ * apples-to-apples.
+ *
+ * The OPTIONAL `skilled` leg makes the scoreboard a THREE-WAY read: webhands-cold
+ * (`webhands`) vs webhands-skilled (`skilled`) vs Playwright-only (`playwright`).
+ * cold->skilled is the SKILL's value (it removes the runtime discovery tax);
+ * skilled-vs-Playwright is the FAIR-SHAKE number a real deployment (skill in
+ * context) would see. When `skilled` is absent the comparison is the original
+ * two-way cold-vs-Playwright read, unchanged.
  *
  * Render with {@link formatComparison}. The fields are EXACTLY the ones a single
  * run prints (outcome, milestones, tokens), so a comparison adds no new
- * measurement, it just aligns two runs.
+ * measurement, it just aligns the legs on identical fields.
  */
 export interface ComparisonResult {
-	/** The eval id both configs ran (identical goal + assertion). */
+	/** The eval id every config ran (identical goal + assertion). */
 	readonly evalId: string;
-	/** The webhands-agent run. */
+	/** The webhands-COLD-agent run (discovers the surface at runtime). */
 	readonly webhands: EvalRunResult;
+	/**
+	 * The webhands-SKILLED-agent run (skill inlined in the preamble), when this is
+	 * a three-way comparison; absent for the original two-way cold-vs-Playwright.
+	 */
+	readonly skilled?: EvalRunResult;
 	/** The Playwright-only baseline run. */
 	readonly playwright: EvalRunResult;
 }
@@ -115,18 +128,26 @@ export interface ComparisonResult {
  * deliver?" answer directly: same goal, two toolkits, compare outcome + tokens.
  */
 export function formatComparison(comparison: ComparisonResult): string {
-	const line = (label: string, result: EvalRunResult): string => {
+	const line = (result: EvalRunResult): string => {
 		const {outcome} = result;
 		const milestones = `${outcome.score.milestonesReached.length}/${outcome.score.milestoneTotal}`;
 		return (
-			`  ${label.padEnd(11)} ${outcome.kind.padEnd(12)} ` +
+			`  ${result.adapter.padEnd(16)} ${outcome.kind.padEnd(12)} ` +
 			`milestones ${milestones.padEnd(5)} ${formatUsage(result.launch.usage)}`
 		);
 	};
+	// The legs in a stable order: cold, then skilled (when present), then the
+	// Playwright baseline. A three-way render reads cold->skilled (skill value)
+	// then skilled->Playwright (fair shake); a two-way render is the original
+	// cold-vs-Playwright. The `n toolkits` count reflects how many legs ran.
+	const legs: readonly EvalRunResult[] = [
+		comparison.webhands,
+		...(comparison.skilled !== undefined ? [comparison.skilled] : []),
+		comparison.playwright,
+	];
 	return (
-		`comparison: ${comparison.evalId} (same goal + assertion, two toolkits)\n` +
-		`${line(comparison.webhands.adapter, comparison.webhands)}\n` +
-		`${line(comparison.playwright.adapter, comparison.playwright)}`
+		`comparison: ${comparison.evalId} (same goal + assertion, ${legs.length} toolkits)\n` +
+		`${legs.map((leg) => line(leg)).join('\n')}`
 	);
 }
 
