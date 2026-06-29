@@ -1,5 +1,91 @@
 # @webhands/core
 
+## 0.6.0
+
+### Minor Changes
+
+- 87114e3: Add an opt-in durable element `ref` to the `query` verb so an agent can read a list, pick a row, and act on THAT element later even after the page mutates between read and act (fixing the index-drift footgun where a positional `.nth(i)` silently clicks the wrong row). Second deliverable of the "broaden the agent verb surface" prd.
+
+  `query(locator, {refs: true})` adds a `ref` to each returned row, computed by a PREFERENCE LADDER: it REUSES the element's own stable, VERIFIED-UNIQUE attribute when present (priority `id`, then `data-testid`/`data-test`/`data-id`, `name`, a link's `href`, a unique `aria-label`) so the ref IS the element's real locator (durable across framework reconciliation, zero DOM mutation); it MINTS a namespaced `data-webhands-ref` attribute ONLY as the fallback for an anonymous element. A spike against REAL React 18 keyed-list and Svelte 4 `{#each}` re-renders settled the mint mechanism as an ATTRIBUTE (not a page-world `WeakMap`): against real reconciliation the two survive/die on the same cases, and the attribute alone is a locator string the one existing resolver resolves with no parallel addressing path.
+
+  `click`/`type` accept the ref with `{byRef: true}` (CLI `--by-ref`): the ref is resolved through the SAME single resolver but asserted to match EXACTLY ONE element first. A ref that now resolves to ZERO (the element was removed/replaced by a re-render or a navigation) or to MORE THAN ONE (a cloned subtree carrying the minted attribute) fails LOUD with a typed `StaleRefError` — never a silent wrong-element action, which is strictly safer than `.nth()`.
+
+  Refs are OPT-IN: the default `query` (no `refs`) performs NO DOM write and returns no `ref` (a pure read), and minted attributes are namespaced and single-`query`-scoped (a fresh `refs: true` query sweeps the prior query's mints first). The `ref` is an additive optional row field and resolves through the one existing resolver, preserving the prd's reversibility shape. `StaleRefError` is exported from `@webhands/core` and the CLI maps it to a re-query fix hint.
+
+- 55aece4: Add the Tier-1 read verbs to the agent surface: `query` plus the state shorthands `exists` / `count` / `isVisible` / `getAttribute` (first deliverable of the "broaden the agent verb surface" prd). These kill the `eval`-returns-a-JSON-string pattern for reading structured data and probing element state.
+
+  `query(locator, {attrs?, props?, pw?, limit?})` addresses element(s) by a raw Playwright locator expression (already same-origin frame-capable via a `frameLocator(...)` string) and returns ONE ROW PER MATCH carrying EXACTLY the requested fields:
+
+  - `attrs` reads DOM ATTRIBUTES by name (`getAttribute`);
+  - `props` reads live JS PROPERTIES by name (`el[name]`, e.g. `innerText`, `value`, `checked`); `text` is just `props: ['innerText']`;
+  - `pw` is the only fixed set: `visible` (`locator.isVisible()`, actionability-grade) and `bbox` (`locator.boundingBox()`, viewport CSS-pixels);
+  - `limit` bounds the rows returned.
+
+  The `attrs`/`props` split is LOUD and never auto-detected (so `attrs:['checked']` and `props:['checked']` can differ). The state verbs are thin shorthands over the same machinery: `count` = match-set size, `exists` = `count > 0`, `isVisible` = the first match's `pw:['visible']`, `getAttribute` = the first match's `attrs:[name]`.
+
+  The options are an OPTIONS OBJECT so a future `frame?` / `ref` field is non-breaking, and all locator/frame resolution routes through the single existing resolver (no parallel addressing scheme). Values cross the RPC seam by structured clone with no Playwright/CDP type leak, the same contract `eval` holds. Each verb is both a CLI command and an MCP tool from one incur definition; the list flags `--attr` / `--prop` / `--pw` are REPEATABLE, not comma-joined; there is no `--frame` flag (frame scope rides in the locator string).
+
+- fe831f9: Add the Tier-2 rich input verbs to the agent surface: `press` / `hover` / `select` / `scroll` / `drag` (the "broaden the agent verb surface" prd, stories 8-12). These lift page-level Playwright actions a hand already has on the live page up to the agent verb seam, so a seam-only (MCP / Model-B) agent can drive a browser game or a richer form, not just `click`/`type`.
+
+  - `press(key, target?)` sends a keyboard key or chord — a key name (`Enter`, `ArrowLeft`, `a`) or `Modifier+Key` (`Control+A`, `Shift+Tab`), Playwright's `keyboard.press` grammar — at a locator (focuses it first) or, with no locator, the page's focused element.
+  - `hover(target)` hovers the pointer over an element to reveal hover menus / on-hover controls `click` cannot surface.
+  - `select(target, {value} | {label})` chooses a native `<select>` option by value OR by label (exactly one), reflected in the element's live state.
+  - `scroll({to} | {by})` scrolls the page TO an off-viewport element (`scrollIntoViewIfNeeded`) or BY a `{dx, dy}` pixel delta (`mouse.wheel`) — exactly one form.
+  - `drag(source, target)` drags one element onto another for drag-reorder UIs and drag-slider challenges (`dragTo`).
+
+  All locator addressing resolves through the single existing resolver `click`/`type` use (so a same-origin `frameLocator(...)` hop in the string Just Works — no parallel addressing scheme), and the seam stays type-clean (ADR-0003): keys are strings, offsets are numbers, locators are strings, so nothing Playwright-shaped crosses. Signatures are options-object / positional in the established style so a future `frame?` qualifier stays additive.
+
+  Each verb is both a CLI command and an MCP tool from one incur definition: `press <key> [--locator]`, `hover <locator>`, `select <locator> --value/--label`, `scroll --to/--by`, `drag <source> <target>`. `select` and `scroll` use the same loud "exactly one of" validation as `wait` for their mutually-exclusive flags (and `scroll --by` rejects a malformed `dx,dy` rather than scrolling by `NaN`). There is no `--frame` flag (frame scope rides in the locator string).
+
+- 4ca6379: Add an optional same-origin `frame` qualifier to the `eval` verb (Tier-3 of the "broaden the agent verb surface" prd, story 13), so an agent can RUN page-world JS inside a NAMED same-origin child frame (e.g. fire a captcha `data-callback`, read a runtime-only JS value) rather than being forced into brittle `contentDocument` walks. This is the ONLY `frame?` qualifier on the surface: `eval` runs page-world JS and cannot carry a `frameLocator(...)` expression the way the locator-taking verbs do, so it gets an explicit frame selector instead.
+
+  `eval(expression, {frame?})` / CLI `eval <expr> [--frame <selector>]`:
+
+  - `frame` omitted == today's top-document `eval`, byte-for-byte (backward compatible).
+  - `frame` is a transport-neutral STRING (a CSS selector for the `<iframe>` element, e.g. `#main-iframe`), never a Playwright `Frame` handle (ADR-0003). It resolves through the SAME single resolver `click`/`type` use (a `frameLocator(...)` over the selector), so there is no parallel frame-addressing path.
+  - A SAME-ORIGIN frame evaluates the expression in that frame and returns its value by the same structured-clone contract `eval` already has (no Playwright/CDP type leak).
+  - A CROSS-ORIGIN frame selector fails LOUD with a typed `CrossOriginFrameError` (code `cross-origin-frame`): page-world JS cannot cross a browser security boundary, so it is unreachable BY DESIGN, never a silent empty result. (Cross-origin reach is the separate Tier-4 frameLocator/coordinate surface.) Playwright will happily evaluate inside a cross-origin OOPIF, so the resolver detects cross-origin by comparing the frame's origin to the page's main-frame origin and refuses.
+
+  Available over both the CLI (`--frame <selector>`) and MCP from one incur definition (R5). The options are a trailing OPTIONS OBJECT so the addition is non-breaking (R1).
+
+- 159ccec: Add the Tier-4 agent surface for the VISION/TILE captcha family and any visual task (the "broaden the agent verb surface" prd, R3, stories 17-19): a coordinate `mouse` verb, a path-returning `screenshot` verb, and a cross-origin frame READ. A new ADR (`docs/adr/0010`) amends ADR-0003 to admit this narrow surface; the seam stays string/number-typed (no image bytes, no Playwright/CDP types cross).
+
+  - `mouse({action: 'click'|'move'|'down'|'up', x, y, button?})` drives Playwright `page.mouse` at VIEWPORT CSS-pixels (NOT OS-level screen input). A pixel an agent saw in a VIEWPORT screenshot maps directly to a `mouse` click at the same coordinate — the look-then-click contract.
+  - `screenshot({scope?, locator?, out?}) -> {path, width, height}` MINTS a PNG under a managed dir webhands owns (`<home>/screenshots`, beside `profiles/`, under the same `WEBHANDS_HOME`/`root` override) and returns its PATH — NEVER image bytes. Three scopes: `viewport` (default, coordinate-matched to `mouse`), `full` (whole scrollable page, for reading scrolled-out content, NOT coordinate-matched), and `element` (clipped to a locator; the locator is REQUIRED and validated loud like `wait`). A caller `out` override is validated to stay UNDER the managed dir, else the typed `ScreenshotPathError` (a new `screenshot-path-outside-managed-dir` controller code).
+  - The cross-origin frame READ is the read counterpart to the already-working cross-origin `click`: it is NOT a new verb, but the EXISTING locator-resolver path (`query` and the locator-taking verbs) reaching a `frameLocator(...).frameLocator(...)` chain two cross-origin boundaries deep, which Playwright's `frameLocator` CAN cross. This is distinct from the Tier-3 frame-scoped `eval`, which is same-origin only. Read values cross by structured clone, the same contract `eval`/`query` hold.
+
+  Each new verb is both a CLI command and an MCP tool from one incur definition: `mouse --action --x --y --button`, `screenshot --scope viewport|full|element --locator <expr> --out <path>`. The MCP `screenshot` result surfaces the file PATH as the attachment-capable `path` field (a plain string an agent reads/attaches; no bytes). Real-browser fixture tests cover all three capabilities (a multi-origin nested-frame fixture for the cross-origin read + an element-clipped screenshot of a frame widget), the viewport-screenshot<->mouse coordinate contract, and the managed-dir path validation; screenshot output + profile paths are isolated to per-test temp dirs so the real `~/.webhands` (and its screenshots dir) stay untouched.
+
+### Patch Changes
+
+- 8463db8: Fix the `click` verb timing out on a real submit button whose click triggers a slow navigation.
+
+  Playwright's `Locator.click()` clicks AND THEN auto-waits for any navigation the click scheduled to finish, and that post-click wait was charged against the verb's short actionability budget (`NORMAL_CLICK_TIMEOUT_MS`, 1s). So a perfectly normal, visible, actionable submit button whose navigation took longer than 1s had its already-performed click reported as a `TimeoutError` and was wrongly routed to the dispatch escape path, which then re-clicked a page that was already navigating away, surfacing a second timeout. (Observed on the DVSA login "Continue" button in `examples/basic`.)
+
+  The happy-path click now passes `noWaitAfter: true`, so the short budget measures ACTIONABILITY only (can we click it?), not how long the resulting navigation takes. A genuinely non-actionable hidden custom input still cannot be clicked within the budget and still falls through to `dispatchEvent` exactly as before, so the hidden-input escape path is unchanged.
+
+  Covered by a regression test that clicks a submit button whose navigation is held back beyond the budget (a new `?delayMs=` fixture-server delay + `slow-submit.html` fixture); it fails without the fix and passes with it.
+
+- 8d7e3fe: Reject unknown/misshapen `SnapshotOptions` in the `snapshot` verb instead of silently ignoring them.
+
+  Previously the option was read narrowly as `options?.full === true`, so any other shape was silently dropped. Calling `snapshot({ view: 'full' })` (a natural mistake, since the result carries a `view` field) returned the accessibility view with no error, and the caller silently got the wrong content.
+
+  `snapshot` now validates its options at both entry points (the in-process host and, load-bearingly, the RPC server dispatch) through a single source of truth. An unknown key or a non-boolean `full` throws a clear, named error (e.g. `snapshot: unknown option "view" (did you mean { full: true }?)`), and that error propagates faithfully across the RPC seam like other verb errors. This is strictly a safety improvement: behaviour is unchanged for all valid inputs (`undefined`, `{}`, `{ full: true }`, `{ full: false }`).
+
+- 039fc6e: Add a SAME-ORIGIN TOKEN-HARVEST captcha capability proof and its same-origin nested-frame fixture (the "broaden the agent verb surface" prd, stories 6-7). This proves the EXISTING verb surface is rich enough for an agent with its OWN (here test-faked) 2captcha key to get past a same-origin captcha just by poking the page, with NO pre-built solver and NO iamhuman, and the frame-aware `query` read closes the one gap the spike found.
+
+  - A new exported fixture page pair (`token-captcha-parent.html` + `token-captcha-child.html`) presents a token-harvest captcha widget one SAME-ORIGIN frame down (`#main-iframe`), mirroring the reachable Imperva `#main-iframe` structure: a page-readable `div.h-captcha[data-sitekey][data-callback]`, a `textarea#h-captcha-response` response sink, and a `window.onCaptchaFinished(token)` page callback. The callback accepts the token ONLY when it matches what was written into the sink, then flips `#captcha-state` from `pending` to `verified` and reveals the protected content (the page ADVANCES); a token that never reached the sink is `rejected`.
+  - A real-browser seam test drives the verbs-only loop end to end: `query` READS the sitekey through a `frameLocator('#main-iframe').locator('.h-captcha')` hop + `attrs:['data-sitekey']` (the one frame-aware read the spike found missing, through the SAME single resolver `click`/`type` use, no `--frame` flag, R1) -> a TEST FAKE provider mints a token (no real network, no real key) -> `type` WRITES it into the same-origin sink through the same hop -> a frame-scoped `eval` FIRES the callback -> the page advances, read back through the hop. A negative test proves the chain is load-bearing (firing the callback with an empty sink is rejected and the page stays pending), and a shape test proves the widget genuinely lives one same-origin frame down (a top-document query is empty).
+
+  No webhands product surface changed beyond the test fixture: the loop uses only verbs that already shipped (`query`/`count`/`exists`/`isVisible`, `type`, frame-scoped `eval`). The vision/tile cross-origin family is explicitly NOT in scope (that is the Tier-4 `vision-tile-captcha-proof`). Profile paths are isolated to per-test temp dirs; the real `~/.webhands` stays untouched.
+
+- 58c981b: Add a VISION/TILE captcha capability proof and its multi-origin tile fixture (the "broaden the agent verb surface" prd, R3, story 17). This proves the Tier-4 surface COMPOSES into the vision/tile captcha family the way the frame-aware `query` proved token-harvest: an agent SEES the cross-origin tile grid (an element-clipped `screenshot` of the widget) and CLICKS it at VIEWPORT coordinates (`mouse`), reading challenge state through the cross-origin frame READ, two cross-origin frames deep, with NO iamhuman and NO solver.
+
+  - A new exported fixture page (`tile-captcha.html`) presents an INTERACTIVE 3x3 tile grid two cross-origin frames deep (a WAF-like frame embedding an hCaptcha-like challenge frame, composed across three distinct fixture-server origins via the same `?child=<url>` mechanism the read-only `nested-frame.html` uses). The deepest level is a real challenge: clicking the marked tiles (deterministic `data-target` markers stand in for a vision model's decision) and submitting flips its `#challenge-state` from `pending` to `solved`; a wrong selection reads `wrong`.
+  - A real-browser seam test drives the verbs-only loop end to end: cross-origin READ of the grid/state -> element-clipped + viewport `screenshot` -> VIEWPORT-coordinate `mouse` clicks (each tile's coordinate is its `bbox`, read THROUGH the cross-origin chain, so the coordinate<->screenshot contract holds across both cross-origin boundaries) -> the challenge advances. A negative test proves the coordinate mapping is tight (a click on a non-target tile selects exactly that tile and leaves the challenge unsolved), so a mis-mapped coordinate could not pass by accident.
+
+  No webhands product surface changed beyond the test fixture: the loop uses only verbs that already shipped (`query`/`getAttribute`/`count`/`exists`, `screenshot`, `mouse`). Screenshot output + profile paths are isolated to per-test temp dirs; the real `~/.webhands` (and its screenshots dir) stay untouched.
+
 ## 0.5.0
 
 ### Minor Changes
