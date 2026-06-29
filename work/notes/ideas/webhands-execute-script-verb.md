@@ -14,27 +14,56 @@ serializable value. It cannot run a multi-statement automation snippet that
 locates, acts, waits, and reads several things in the served page/Playwright
 context.
 
-## The idea
+## The idea (RESOLVED design, conversation 2026-06-29)
 
-A first-class verb (`execute-script` / `run` / `batch`, name TBD) that takes a
-SCRIPT and runs it once against the live served session, returning a structured
-result. Two flavours worth weighing:
+A first-class verb that takes a SCRIPT and runs it once against the live served
+session, returning a structured result. The discrete verbs stay the floor + the
+safe snapshot-cheap path; the script verb is the power ramp for when the agent
+already knows the flow.
 
-- **Page-context script** (extends `eval`): a multi-statement async JS body run in
-  the PAGE (`() => { ... return result }`), so the agent can do several DOM reads/
-  writes and return a structured blob in one call. Cheap to build on top of `eval`;
-  limited to what page-context JS can do (no Playwright auto-waiting / actionability).
-- **Driver-context script** (the more powerful one): a snippet that gets the
-  Playwright `page` (or the webhands verb set) and can use real locators + actions +
-  auto-waiting, e.g. `async (page) => { await page.fill(...); await page.click(...);
-  return await page.locator(...).textContent() }`. This is exactly what the baseline
-  agent writes by hand; giving it as a verb closes the ergonomic gap directly. It
-  reuses the same served browser, so it stays single-session and the harness can
-  still read the end state.
+**Resolved decisions:**
 
-Either way: structured stdout (like the other verbs), runs against the ONE live
-page, no new browser. The discrete verbs stay the floor + the safe snapshot-cheap
-path; the script verb is the power ramp for when the agent already knows the flow.
+1. **DRIVER-CONTEXT, full Playwright `page`** (not page-context). The script gets
+   the live Playwright `Page` and uses real locators + actions + auto-waiting,
+   e.g. `async (page) => { await page.fill(...); await page.click(...); return
+   await page.locator(...).textContent() }`. This is EXACTLY what the baseline
+   agent writes by hand; giving it as a verb closes the ergonomic gap directly.
+   - **ADR-0003 does NOT apply here** (user call): ADR-3 governs what crosses the
+     SEAM (the verb WIRE contract / agent-facing JSON, no Playwright/CDP types in
+     the returned message). A driver-context script runs IN-PROCESS Node JS where
+     `page` is just a JS object the script closes over; the API the script uses is
+     JS, not the seam. This is the SAME shape a **hand** already has
+     (`packages/core/src/hand-host.ts`: a hand is in-process code that closes over
+     the live `pwPage`, "one live page, one process", page access only). So
+     `execute-script` is essentially an **ad-hoc, agent-supplied hand**: reuse the
+     hand host's live-page access, just driven by a caller-supplied script instead
+     of a registered hand module. The script's RETURN value is still serialized
+     across the seam as structured output (that part stays ADR-3-clean); the
+     `page` object itself never crosses the wire.
+2. **Does NOT supersede `eval`.** `eval` stays (a single page-world JS
+   expression). `execute-script` is a sibling: the NAME should signal that you get
+   a FULL Playwright `page` (driver context), distinct from `eval`'s page-world
+   expression. (Name candidates that hint "full playwright page":
+   `playwright-script` / `with-page` / `script --page` / `drive`; pick one that
+   makes the "you get the real `page`" affordance obvious. NOT a bare
+   `execute-script` that reads like a bigger `eval`.)
+3. **Same security model as `eval`/hands** (user call): the serve endpoint already
+   runs caller-supplied code (README "Security note"); a driver-context script
+   widens it from one expression to an arbitrary body + the `page` object, but it
+   is the SAME loopback-only, your-own-machine trust model, documented as the SAME
+   code-execution surface (and the SAME surface a hand already has), not a new
+   privilege.
+
+**Philosophy fit** (user call): this is the exception that confirms the rule.
+Verbs are used when they make sense; an agent could already drop to raw Playwright
+anyway (the baseline proves it). webhands offering a script verb is just a NICER
+way to get that, against a page it ALREADY opened (the warmed, logged-in, single
+served session), instead of launching its own browser. It does not dilute the
+composable-verbs identity; it acknowledges the power-user path webhands users take
+regardless.
+
+Structured stdout (like the other verbs), runs against the ONE live page, no new
+browser.
 
 ## Why it fits webhands
 
