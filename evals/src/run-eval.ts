@@ -1,7 +1,11 @@
 import {mkdtemp, mkdir, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import type {AgentUnderTest, LaunchResult} from './agent-under-test.js';
+import type {
+	AgentUnderTest,
+	AgentUsage,
+	LaunchResult,
+} from './agent-under-test.js';
 import type {EvalEntry} from './eval-contract.js';
 import {evaluateOutcome, type Outcome, type OutcomeKind} from './outcome.js';
 import {startServe, type ServeLaunchOptions} from './serve-lifecycle.js';
@@ -46,6 +50,42 @@ export interface EvalRunResult {
 
 /** Outcome of the best-effort post-PASS cleanup (never affects the verdict). */
 export type CleanupStatus = 'skipped' | 'ran' | 'failed';
+
+/**
+ * Format a {@link AgentUsage} (or its absence) as a COMPACT, COMPARABLE summary
+ * for the runner's result line, e.g. `tokens: in 12.3k / out 4.1k / total 16.4k`
+ * or `tokens: unknown` when the adapter could not observe usage. It is
+ * TOOLKIT-AGNOSTIC: a webhands run and a Playwright-only run print the SAME field
+ * in the SAME shape, so they are directly comparable.
+ *
+ * `undefined` (the adapter could not observe usage) prints `tokens: unknown`,
+ * never a fake `0` (an honest unknown). Only the components actually observed
+ * are shown; cost is appended when present. The label is always `tokens: ...`,
+ * one machine-grep-able token, so runs across agents line up.
+ */
+export function formatUsage(usage: AgentUsage | undefined): string {
+	if (usage === undefined) return 'tokens: unknown';
+	const parts: string[] = [];
+	if (usage.input !== undefined) parts.push(`in ${compact(usage.input)}`);
+	if (usage.output !== undefined) parts.push(`out ${compact(usage.output)}`);
+	if (usage.cacheRead !== undefined) {
+		parts.push(`cacheRead ${compact(usage.cacheRead)}`);
+	}
+	if (usage.cacheWrite !== undefined) {
+		parts.push(`cacheWrite ${compact(usage.cacheWrite)}`);
+	}
+	if (usage.total !== undefined) parts.push(`total ${compact(usage.total)}`);
+	if (usage.cost !== undefined) parts.push(`cost ${usage.cost}`);
+	// A record with no observed components is still an honest "unknown".
+	if (parts.length === 0) return 'tokens: unknown';
+	return `tokens: ${parts.join(' / ')}`;
+}
+
+/** Compact a token count: >=1000 as `12.3k`, else the integer verbatim. */
+function compact(n: number): string {
+	if (Math.abs(n) < 1000) return String(n);
+	return `${(n / 1000).toFixed(1)}k`;
+}
 
 /** Config for one eval run. */
 export interface RunEvalOptions {

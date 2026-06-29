@@ -40,6 +40,39 @@ export interface LaunchInput {
 	readonly env?: NodeJS.ProcessEnv;
 }
 
+/**
+ * BEST-EFFORT, ADAPTER-SPECIFIC token-usage record for one agent run (the
+ * "does webhands deliver?" measure: tokens + pass-rate compared between a
+ * webhands agent and a Playwright-only agent against the SAME goal).
+ *
+ * It is TOOLKIT-AGNOSTIC by construction: nothing here assumes webhands, so a
+ * webhands run and a Playwright-only run are comparable on the SAME field. Each
+ * count is OPTIONAL because capture is best-effort: an adapter records only the
+ * components it can actually observe. A `LaunchResult.usage` of `undefined`
+ * means the adapter COULD NOT observe usage at all (an honest "unknown"), and is
+ * NEVER a fake zero. A present record with `undefined` components likewise means
+ * "that component was not observable", not zero.
+ *
+ * The shape mirrors the components pi's `--mode json` `usage` events already
+ * carry (input / output / cacheRead / cacheWrite / totalTokens / cost) but is a
+ * GENERIC accounting record, not pi's wire shape: any adapter that can observe
+ * its agent's spend fills the fields it knows.
+ */
+export interface AgentUsage {
+	/** Input (prompt) tokens, if observable. */
+	readonly input?: number;
+	/** Output (completion) tokens, if observable. */
+	readonly output?: number;
+	/** Cached tokens read from cache, if the agent reports it (pi `cacheRead`). */
+	readonly cacheRead?: number;
+	/** Tokens written to cache, if the agent reports it (pi `cacheWrite`). */
+	readonly cacheWrite?: number;
+	/** Total tokens, if observable (pi `totalTokens`). */
+	readonly total?: number;
+	/** Monetary cost (currency-agnostic number), if the agent reports it. */
+	readonly cost?: number;
+}
+
 /** The result of launching an agent: how it ended + its captured output. */
 export interface LaunchResult {
 	/**
@@ -53,6 +86,14 @@ export interface LaunchResult {
 	readonly output: string;
 	/** Failure detail when the run did not end cleanly. */
 	readonly detail?: string;
+	/**
+	 * BEST-EFFORT, ADAPTER-SPECIFIC token usage for this run, or `undefined` when
+	 * the adapter could not observe it (an honest unknown, never a fake zero).
+	 * Token capture is inherently adapter-specific (an adapter knows its agent's
+	 * output shape), so the seam carries the field and each adapter fills it as
+	 * far as it honestly can. See {@link AgentUsage}.
+	 */
+	readonly usage?: AgentUsage;
 }
 
 /** The launch seam: an adapter launches a real unaided agent for one eval. */
@@ -80,9 +121,22 @@ export class ShellAdapter implements AgentUnderTest {
 	/** The model to substitute for `{model}` in {@link agentCmd}, if any. */
 	private readonly model?: string;
 
-	constructor(opts: {agentCmd: string; model?: string}) {
+	/**
+	 * OPT-IN, BEST-EFFORT pi-json usage parsing. When `true`, the adapter sums
+	 * the `usage` objects pi's `--mode json` NDJSON events carry into a
+	 * {@link AgentUsage} record. It is OFF by default: the generic shell adapter
+	 * cannot know an arbitrary command's token usage, so it honestly reports
+	 * `usage: undefined` unless told the driven agent emits a parseable stream.
+	 * This is a best-effort convenience, NOT a hard dependency on any agent's
+	 * output shape: a non-pi command simply yields no parseable events and the
+	 * usage stays `undefined`.
+	 */
+	private readonly parseUsage: boolean;
+
+	constructor(opts: {agentCmd: string; model?: string; parseUsage?: boolean}) {
 		this.agentCmd = opts.agentCmd;
 		this.model = opts.model;
+		this.parseUsage = opts.parseUsage ?? false;
 	}
 
 	async launch(input: LaunchInput): Promise<LaunchResult> {
@@ -115,18 +169,38 @@ export class ShellAdapter implements AgentUnderTest {
 			// JSON event per line (NDJSON); we render each event compactly. (This is
 			// demo-grade tee; a proper pi-native adapter would parse this stream as a
 			// first-class capability behind the same seam.)
+			// Accumulate a best-effort usage record ONLY when opted in (parseUsage).
+			// Off by default => the shell adapter honestly reports usage: undefined.
+			const usageAccumulator = this.parseUsage
+				? new UsageAccumulator()
+				: undefined;
 			const rl = createInterface({input: child.stdout});
 			rl.on('line', (line) => {
 				out += line + '\n';
+				if (usageAccumulator !== undefined) {
+					usageAccumulator.consumeLine(line);
+				}
 				process.stdout.write(renderAgentLine(line));
 			});
 			child.stderr.on('data', (d: Buffer) => {
 				err += d.toString();
 				process.stderr.write(d);
 			});
+			// The observed usage (if opted-in AND any usage events were seen);
+			// otherwise undefined (honest unknown). Spread so it is only present when
+			// actually captured, never a fake zero.
+			const usageOf = (): {usage?: AgentUsage} => {
+				const u = usageAccumulator?.result();
+				return u !== undefined ? {usage: u} : {};
+			};
 			child.on('error', (e) => {
 				clearTimeout(timer);
-				resolve({status: 'crashed', output: out.trim(), detail: e.message});
+				resolve({
+					status: 'crashed',
+					output: out.trim(),
+					detail: e.message,
+					...usageOf(),
+				});
 			});
 			child.on('close', (code) => {
 				clearTimeout(timer);
@@ -136,6 +210,7 @@ export class ShellAdapter implements AgentUnderTest {
 						status: 'timed-out',
 						output,
 						detail: `agent exceeded ${input.timeoutMs}ms`,
+						...usageOf(),
 					});
 					return;
 				}
@@ -144,10 +219,11 @@ export class ShellAdapter implements AgentUnderTest {
 						status: 'crashed',
 						output,
 						detail: err.trim() || `exit ${code}`,
+						...usageOf(),
 					});
 					return;
 				}
-				resolve({status: 'reported-done', output});
+				resolve({status: 'reported-done', output, ...usageOf()});
 			});
 			child.stdin.write(stdin);
 			child.stdin.end();
@@ -197,7 +273,8 @@ export function renderAgentLine(line: string): string {
 	}
 	// Lifecycle markers worth one line each; everything else (deltas, partials,
 	// tool_execution_update) is suppressed to keep the live view readable.
-	if (type === 'agent_start') return '\u001b[90m[agent starting\u2026]\u001b[0m\n';
+	if (type === 'agent_start')
+		return '\u001b[90m[agent starting\u2026]\u001b[0m\n';
 	if (type === 'agent_end') return '\u001b[90m[agent done]\u001b[0m\n';
 	return '';
 }
@@ -232,6 +309,152 @@ function stringifyContent(content: unknown): string {
 
 function truncate(s: string, n: number): string {
 	return s.length <= n ? s : `${s.slice(0, n)}\u2026`;
+}
+
+/**
+ * BEST-EFFORT accumulator for pi's `--mode json` `usage` events. pi emits one
+ * JSON event per line (NDJSON); message events carry a `usage` object with
+ * `input` / `output` / `cacheRead` / `cacheWrite` / `totalTokens` / `cost`
+ * (confirmed live 2026-06-29). We SUM each numeric component we recognise across
+ * all events that carry one. The parsing is DELIBERATELY tolerant: non-JSON
+ * lines, JSON without a `usage` object, and unknown components are simply
+ * ignored, so this never hard-depends on pi's exact event taxonomy. If NO usage
+ * event was ever seen, {@link result} returns `undefined` (honest unknown,
+ * never a fabricated zero).
+ */
+export class UsageAccumulator {
+	private sawAny = false;
+	private input = 0;
+	private output = 0;
+	private cacheRead = 0;
+	private cacheWrite = 0;
+	private total = 0;
+	private cost = 0;
+	private sawInput = false;
+	private sawOutput = false;
+	private sawCacheRead = false;
+	private sawCacheWrite = false;
+	private sawTotal = false;
+	private sawCost = false;
+
+	/** Fold one NDJSON line into the running totals (tolerant of anything else). */
+	consumeLine(line: string): void {
+		const usage = extractUsage(line);
+		if (usage === undefined) return;
+		this.sawAny = true;
+		if (typeof usage.input === 'number') {
+			this.input += usage.input;
+			this.sawInput = true;
+		}
+		if (typeof usage.output === 'number') {
+			this.output += usage.output;
+			this.sawOutput = true;
+		}
+		if (typeof usage.cacheRead === 'number') {
+			this.cacheRead += usage.cacheRead;
+			this.sawCacheRead = true;
+		}
+		if (typeof usage.cacheWrite === 'number') {
+			this.cacheWrite += usage.cacheWrite;
+			this.sawCacheWrite = true;
+		}
+		if (typeof usage.totalTokens === 'number') {
+			this.total += usage.totalTokens;
+			this.sawTotal = true;
+		}
+		if (typeof usage.cost === 'number') {
+			this.cost += usage.cost;
+			this.sawCost = true;
+		}
+	}
+
+	/**
+	 * The accumulated usage, or `undefined` if no usage event was ever seen.
+	 * Only components actually observed are present; an unseen `total` is
+	 * back-filled from input+output when both were observed (a derived, honest
+	 * total), never invented from nothing.
+	 */
+	result(): AgentUsage | undefined {
+		if (!this.sawAny) return undefined;
+		const usage: {
+			input?: number;
+			output?: number;
+			cacheRead?: number;
+			cacheWrite?: number;
+			total?: number;
+			cost?: number;
+		} = {};
+		if (this.sawInput) usage.input = this.input;
+		if (this.sawOutput) usage.output = this.output;
+		if (this.sawCacheRead) usage.cacheRead = this.cacheRead;
+		if (this.sawCacheWrite) usage.cacheWrite = this.cacheWrite;
+		if (this.sawTotal) usage.total = this.total;
+		else if (this.sawInput && this.sawOutput)
+			usage.total = this.input + this.output;
+		if (this.sawCost) usage.cost = this.cost;
+		return usage;
+	}
+}
+
+/** The raw `usage` shape pi's `--mode json` events carry (all fields optional). */
+interface RawUsage {
+	input?: number;
+	output?: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+	totalTokens?: number;
+	cost?: number;
+}
+
+/**
+ * Pull a `usage` object out of one NDJSON line, anywhere it appears (top-level
+ * `usage`, or nested under a `message`). Returns `undefined` for a non-JSON
+ * line, JSON without a usage object, or a usage value that is not an object, so
+ * the accumulator can stay tolerant.
+ */
+export function extractUsage(line: string): RawUsage | undefined {
+	const trimmed = line.trim();
+	if (trimmed === '') return undefined;
+	let ev: unknown;
+	try {
+		ev = JSON.parse(trimmed);
+	} catch {
+		return undefined;
+	}
+	if (ev === null || typeof ev !== 'object') return undefined;
+	const record = ev as Record<string, unknown>;
+	const direct = asUsage(record.usage);
+	if (direct !== undefined) return direct;
+	const message = record.message;
+	if (message !== null && typeof message === 'object') {
+		return asUsage((message as Record<string, unknown>).usage);
+	}
+	return undefined;
+}
+
+/** Narrow an unknown value to a {@link RawUsage}, keeping only numeric fields. */
+function asUsage(value: unknown): RawUsage | undefined {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		return undefined;
+	}
+	const v = value as Record<string, unknown>;
+	const usage: RawUsage = {};
+	let any = false;
+	for (const key of [
+		'input',
+		'output',
+		'cacheRead',
+		'cacheWrite',
+		'totalTokens',
+		'cost',
+	] as const) {
+		const n = v[key];
+		if (typeof n === 'number' && Number.isFinite(n)) {
+			usage[key] = n;
+			any = true;
+		}
+	}
+	return any ? usage : undefined;
 }
 
 /** The `{model}` placeholder the shell adapter substitutes (dorfl's pattern). */

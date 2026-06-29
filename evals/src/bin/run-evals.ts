@@ -1,5 +1,5 @@
 import {ShellAdapter} from '../agent-under-test.js';
-import {runEval} from '../run-eval.js';
+import {formatUsage, runEval} from '../run-eval.js';
 import type {WebhandsCommand} from '../verb-client.js';
 import type {EvalEntry} from '../eval-contract.js';
 import {saucedemoCoreFlowEval} from '../catalogue/saucedemo-core-flow.eval.js';
@@ -58,6 +58,12 @@ Options:
                        goal-prompt is fed on its stdin. Use {model} for the
                        model-pinning substitution (dorfl's pattern).
   --model <model>      The model to substitute for {model} in --agent-cmd.
+  --parse-usage        OPT-IN, BEST-EFFORT: sum token usage from the agent's
+                       stdout when it is a pi \`--mode json\` stream (whose
+                       events carry a \`usage\` object). Off by default: the
+                       generic shell adapter cannot know an arbitrary command's
+                       usage, so it honestly reports \`tokens: unknown\`. A
+                       non-pi command simply yields no parseable events.
   --webhands "<cmd>"   How to invoke webhands (default: \`npx webhands\`).
   --max-attempts <n>   Bounded retries on INCONCLUSIVE (default 3).
   --headed             Show the browser window (default headless) so a human
@@ -92,6 +98,7 @@ interface Args {
 	readonly webhands?: string;
 	readonly maxAttempts?: number;
 	readonly headed: boolean;
+	readonly parseUsage: boolean;
 	readonly help: boolean;
 }
 
@@ -102,6 +109,7 @@ function parseArgs(argv: readonly string[]): Args {
 	let webhands: string | undefined;
 	let maxAttempts: number | undefined;
 	let headed = false;
+	let parseUsage = false;
 	let help = false;
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
@@ -124,6 +132,9 @@ function parseArgs(argv: readonly string[]): Args {
 			case '--headed':
 				headed = true;
 				break;
+			case '--parse-usage':
+				parseUsage = true;
+				break;
 			case '--help':
 			case '-h':
 				help = true;
@@ -139,6 +150,7 @@ function parseArgs(argv: readonly string[]): Args {
 		...(webhands !== undefined ? {webhands} : {}),
 		...(maxAttempts !== undefined ? {maxAttempts} : {}),
 		headed,
+		parseUsage,
 		help,
 	};
 }
@@ -190,6 +202,7 @@ async function main(): Promise<void> {
 	const agent = new ShellAdapter({
 		agentCmd: args.agentCmd,
 		...(args.model !== undefined ? {model: args.model} : {}),
+		...(args.parseUsage ? {parseUsage: true} : {}),
 	});
 	const result = await runEval({
 		entry,
@@ -204,7 +217,8 @@ async function main(): Promise<void> {
 		`${entry.id} [${entry.tier}] -> ${outcome.kind} ` +
 			`(milestones ${outcome.score.milestonesReached.length}/${outcome.score.milestoneTotal}` +
 			`${outcome.score.milestonesReached.length > 0 ? ': ' + outcome.score.milestonesReached.join(', ') : ''})` +
-			`${outcome.inconclusiveReason !== undefined ? ` [${outcome.inconclusiveReason}]` : ''}\n`,
+			`${outcome.inconclusiveReason !== undefined ? ` [${outcome.inconclusiveReason}]` : ''}` +
+			` [${formatUsage(result.launch.usage)}]\n`,
 	);
 	// A capability FAIL is a real signal but not a CRASH: exit 0 on PASS, 1 on
 	// FAIL, 2 on INCONCLUSIVE, so a scheduler can route on the three states.
