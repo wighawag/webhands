@@ -83,7 +83,7 @@ The harness drives webhands through its existing surface (the `npx webhands <ver
 ### Autonomy notes (the two gate axes)
 
 - **`humanOnly` (DECIDED):** OMITTED. Nothing here makes the TASKING of this prd a human-only act by nature (no secrets/release/security decision gates the tasking). The individual tasks that touch real third-party sites may warrant POSITION (born in `tasks/backlog/` for human review) rather than the `humanOnly` flag; the tasker decides per task from each task's own nature. (The reference-agent wiring task, if it ends up handling an API key/credential for the agent-under-test, is a candidate for task-level `humanOnly` by nature; flagged for the tasker.)
-- **`needsAnswers` (DISCOVERED):** OMITTED. The two questions briefly open at launch (the agent-under-test wiring/pinning, and the per-run account hygiene on the stateful targets) are now resolved in ## Resolved decisions (D1, D2). The prd tasks cleanly.
+- **`needsAnswers` (DISCOVERED):** OMITTED. The questions briefly open at launch (the agent-under-test wiring/pinning, the deterministic self-test fixture, and the per-run account hygiene on the stateful targets) are now resolved in ## Resolved decisions (D1, D2, D3). The prd tasks cleanly.
 
 ## Implementation Decisions
 
