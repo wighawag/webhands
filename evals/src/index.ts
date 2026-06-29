@@ -70,4 +70,5 @@ export {
 } from './run-eval.js';
 export {buildSelfTestEval} from './catalogue/self-test-fixture.eval.js';
 export {buildParabankTransferEval} from './catalogue/parabank-transfer.eval.js';
+export {magentoCheckoutEval} from './catalogue/magento-checkout.eval.js';
 export {mintNonce, nonceTransferAmount, nonceUsername} from './nonce.js';
