@@ -133,7 +133,14 @@ function fakeServe(): {
 		policies.push(launchPolicy);
 		const index = stopped.push(false) - 1;
 		const server: RunningSessionServer = {
-			endpoint: {url: 'http://127.0.0.1:51999', pid: 4242},
+			// A launch serve advertises a shared-driving-surface CDP endpoint; the
+			// wiring surfaces it in the serve output (the harness reads it to hand a
+			// Playwright-only agent the SAME live page).
+			endpoint: {
+				url: 'http://127.0.0.1:51999',
+				pid: 4242,
+				cdpEndpoint: 'http://127.0.0.1:9555',
+			},
 			async stop() {
 				stopped[index] = true;
 			},
@@ -906,6 +913,8 @@ describe('incur CLI wiring', () => {
 				verb: 'serve',
 				url: 'http://127.0.0.1:51999',
 				pid: 4242,
+				// The shared-driving-surface CDP endpoint is surfaced for the harness.
+				cdpEndpoint: 'http://127.0.0.1:9555',
 			});
 			// `serve` consumed the connection options to choose the launch target.
 			expect(targets).toEqual([
@@ -1010,7 +1019,7 @@ describe('incur CLI wiring', () => {
 				output?: {properties?: Record<string, unknown>};
 			};
 			expect(Object.keys(serveSchema.output?.properties ?? {})).toEqual(
-				expect.arrayContaining(['ok', 'verb', 'url', 'pid']),
+				expect.arrayContaining(['ok', 'verb', 'url', 'pid', 'cdpEndpoint']),
 			);
 			const stopSchema = (await schemaOf(['stop'])) as {
 				output?: {properties?: Record<string, unknown>};

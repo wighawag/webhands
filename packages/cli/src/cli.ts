@@ -468,6 +468,14 @@ export function createCli(deps: CliDeps = {}) {
 			pid: z
 				.number()
 				.describe('The served process PID (for `stop` / signals).'),
+			cdpEndpoint: z
+				.string()
+				.optional()
+				.describe(
+					'The Chromium CDP / remote-debugging endpoint of the served browser ' +
+						'(launch sessions only), for a separate Playwright client to ' +
+						'connectOverCDP and drive the SAME live page. Loopback-only.',
+				),
 		}),
 		async run(c) {
 			try {
@@ -503,6 +511,9 @@ export function createCli(deps: CliDeps = {}) {
 						verb: 'serve' as const,
 						url: server.endpoint.url,
 						pid: server.endpoint.pid,
+						...(server.endpoint.cdpEndpoint !== undefined
+							? {cdpEndpoint: server.endpoint.cdpEndpoint}
+							: {}),
 					},
 					{
 						cta: {
@@ -1498,6 +1509,13 @@ async function defaultServeSession(
 			? {noViewport: launchPolicy.noViewport}
 			: {}),
 		...(launchPolicy.proxy !== undefined ? {proxy: launchPolicy.proxy} : {}),
+		// `serve` always exposes a Chromium CDP endpoint for a LAUNCH session, so a
+		// separate Playwright client can connectOverCDP and drive the SAME live page
+		// the server holds (the SHARED driving surface the eval baseline needs). It
+		// is loopback-only (CONTEXT.md), like the serve RPC endpoint itself. An
+		// attach session has no harness-owned debugging port, so the resolver below
+		// just yields undefined there.
+		exposeCdp: true,
 	});
 	// attach reuses the user's browser, but the managed screenshots dir still
 	// honours the home-root override so a test isolates screenshot output.
@@ -1507,7 +1525,13 @@ async function defaultServeSession(
 			return t.mode === 'attach' ? attach.open(t) : launch.open(t);
 		},
 	};
-	const options: SessionServerOptions = {...home, transport};
+	const options: SessionServerOptions = {
+		...home,
+		transport,
+		// After open, read the CDP endpoint the launch transport resolved (undefined
+		// for an attach target, which never went through the launch transport).
+		cdpEndpoint: () => launch.cdpEndpoint(),
+	};
 	return startSessionServer(target, options);
 }
 

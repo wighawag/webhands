@@ -3,6 +3,7 @@ import {createInterface} from 'node:readline';
 import type {EvalEntry} from './eval-contract.js';
 import {
 	buildAgentInput,
+	CDP_ENDPOINT_ENV,
 	PLAYWRIGHT_PREAMBLE,
 	WEBHANDS_PREAMBLE,
 	type ProtocolPreamble,
@@ -39,6 +40,17 @@ export interface LaunchInput {
 	readonly webhands: WebhandsCommand;
 	/** The isolated `WEBHANDS_HOME` the agent's verb calls must target. */
 	readonly home: string;
+	/**
+	 * The SHARED driving surface's CDP endpoint, when the harness's serve session
+	 * exposed one (a LAUNCH session). Passed to the agent as PROTOCOL via the
+	 * {@link CDP_ENDPOINT_ENV} env var (the same env channel `WEBHANDS_HOME`
+	 * rides), so the Playwright-only agent `connectOverCDP`-s to the harness's
+	 * EXISTING page instead of launching its own (finding
+	 * `baseline-comparison-needs-a-shared-driving-surface-not-two-browsers`).
+	 * `undefined` when no shared surface was advertised; the webhands config
+	 * ignores it (it drives via verbs).
+	 */
+	readonly cdpEndpoint?: string;
 	/** Hard wall-clock cap for the agent run (ms). */
 	readonly timeoutMs: number;
 	/** Extra env merged into the agent process. */
@@ -183,6 +195,13 @@ export class ShellAdapter implements AgentUnderTest {
 			// The agent drives webhands against the harness's isolated home, the
 			// SAME session the harness reads for its verdict.
 			WEBHANDS_HOME: input.home,
+			// PROTOCOL (not priming): the SHARED driving surface's CDP endpoint, so a
+			// Playwright-only agent connectOverCDP-s to the harness's EXISTING page
+			// instead of launching its own. Present only when serve advertised one;
+			// the webhands config ignores it.
+			...(input.cdpEndpoint !== undefined
+				? {[CDP_ENDPOINT_ENV]: input.cdpEndpoint}
+				: {}),
 		};
 		return await new Promise<LaunchResult>((resolve) => {
 			const child = spawn('bash', ['-c', command], {

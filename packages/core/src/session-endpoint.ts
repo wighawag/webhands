@@ -36,6 +36,23 @@ export interface SessionEndpoint {
 	readonly url: string;
 	/** The PID of the served process, for confirmation / signalling. */
 	readonly pid: number;
+	/**
+	 * OPTIONAL: the Chromium CDP / remote-debugging endpoint of the served
+	 * browser (e.g. `http://127.0.0.1:9222`), present ONLY when `serve` was asked
+	 * to expose a SHARED driving surface. A SEPARATE Playwright client can
+	 * `chromium.connectOverCDP(<cdpEndpoint>)` and drive the SAME live page this
+	 * server holds, so a tool reading the page (the eval harness) sees what that
+	 * client drove (finding
+	 * `baseline-comparison-needs-a-shared-driving-surface-not-two-browsers`).
+	 *
+	 * It is DISTINCT from {@link SessionEndpoint.url}: `url` is the session-RPC
+	 * verb channel (`/session/call`); `cdpEndpoint` is the raw CDP surface. Absent
+	 * when CDP exposure was not requested or the launch could not advertise a
+	 * debugging port (e.g. an `attach` session, which has no harness-owned port).
+	 * Like the serve `url`, it is loopback-only — never expose it to untrusted
+	 * callers (CONTEXT.md).
+	 */
+	readonly cdpEndpoint?: string;
 }
 
 /**
@@ -87,7 +104,13 @@ export async function readSessionEndpoint(
 			parsed.url !== '' &&
 			typeof parsed.pid === 'number'
 		) {
-			return {url: parsed.url, pid: parsed.pid};
+			return {
+				url: parsed.url,
+				pid: parsed.pid,
+				...(typeof parsed.cdpEndpoint === 'string' && parsed.cdpEndpoint !== ''
+					? {cdpEndpoint: parsed.cdpEndpoint}
+					: {}),
+			};
 		}
 	} catch {
 		// fall through

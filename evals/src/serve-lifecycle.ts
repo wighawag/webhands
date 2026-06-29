@@ -55,6 +55,16 @@ export interface ServeSession {
 	readonly url: string;
 	/** The served process PID. */
 	readonly pid: number;
+	/**
+	 * The Chromium CDP / remote-debugging endpoint of the served browser, present
+	 * when `serve` exposed a SHARED driving surface (a LAUNCH session). A separate
+	 * Playwright client `chromium.connectOverCDP(<cdpEndpoint>)`-s to it and drives
+	 * the SAME live page this session holds, so the harness's end-state assertion
+	 * reads the page the agent drove regardless of toolkit (finding
+	 * `baseline-comparison-needs-a-shared-driving-surface-not-two-browsers`).
+	 * `undefined` when no shared surface was advertised.
+	 */
+	readonly cdpEndpoint?: string;
 	/** Tear the session down (runs `webhands stop`, then kills the process). */
 	stop(): Promise<void>;
 }
@@ -63,6 +73,8 @@ export interface ServeSession {
 interface Endpoint {
 	readonly url: string;
 	readonly pid: number;
+	/** The CDP endpoint `serve` advertised for the shared driving surface, if any. */
+	readonly cdpEndpoint?: string;
 }
 
 /**
@@ -122,10 +134,12 @@ export async function startServe(
 
 	const url = endpoint.url;
 	const pid = endpoint.pid;
+	const cdpEndpoint = endpoint.cdpEndpoint;
 	let stopped = false;
 	return {
 		url,
 		pid,
+		...(cdpEndpoint !== undefined ? {cdpEndpoint} : {}),
 		async stop(): Promise<void> {
 			if (stopped) return;
 			stopped = true;
@@ -181,7 +195,13 @@ async function readEndpoint(path: string): Promise<Endpoint | undefined> {
 			parsed.url !== '' &&
 			typeof parsed.pid === 'number'
 		) {
-			return {url: parsed.url, pid: parsed.pid};
+			return {
+				url: parsed.url,
+				pid: parsed.pid,
+				...(typeof parsed.cdpEndpoint === 'string' && parsed.cdpEndpoint !== ''
+					? {cdpEndpoint: parsed.cdpEndpoint}
+					: {}),
+			};
 		}
 	} catch {
 		// partial write; treat as not-yet-ready
