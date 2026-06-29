@@ -75,6 +75,18 @@ typical end-to-end flow:
 A verb run with no live server prints a clear error telling you to run `serve`
 first; the tool never silently spawns a browser.
 
+## Does it deliver? (the capability scoreboard)
+
+There is a measured answer, not just a claim. The eval harness runs the SAME
+real-site goal with two toolkits, a webhands agent and a raw-Playwright-only
+baseline, and compares them on outcome + token cost. The current reference
+numbers (and an honest reading of what they do and do not show) live in
+[`evals/SCOREBOARD.md`](evals/SCOREBOARD.md). Short version: on simple, scriptable
+sandbox flows both toolkits reach the goal and raw Playwright is currently cheaper
+(webhands' verb-at-a-time loop costs more tokens); the verb surface is expected to
+earn its keep on the messy / unfamiliar / anti-bot / captcha cases the harder eval
+tiers exist to measure. The harness is non-gating and never part of `pnpm test`.
+
 ## Scope and honesty (please read)
 
 This is a **personal-use** tool. Its whole premise is that you drive a browser
