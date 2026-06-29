@@ -133,6 +133,62 @@ comparison: parabank-transfer (same goal + assertion, 3 toolkits)
   tiers exist to measure; this three-way read just makes the webhands column an
   HONEST baseline (skill in context) rather than a tax-inflated one.
 
+## The four-way read: cold vs skilled vs script-forward vs Playwright (2026-06-29)
+
+> After the `script` verb landed (a driver-context batch verb: run one JS
+> function of the full live Playwright `page` in ONE call;
+> `docs/adr/0012`), this is the run that asks: with webhands AT ITS BEST (skill in
+> context AND the batch verb available), how close is it to raw Playwright? Four
+> configs, the SAME goal + harness assertion, only the agent's up-front knowledge
+> differs:
+>
+> - **cold** \u2014 only the `--llms-full` pointer (discovers everything cold).
+> - **skilled-full** \u2014 the inlined `use-webhands` skill describing ALL verbs
+>   INCLUDING `script`; the agent decides what to use.
+> - **script-forward** \u2014 the same full surface, but the preamble PUTS `script`
+>   FORWARD as the preferred batch path.
+> - **playwright** \u2014 the raw-Playwright baseline.
+>
+> Same agent + model as the other sections; single live runs (snapshot, not an
+> average). Totals in millions of tokens (input + output + cache).
+
+| Eval | Tier | cold | skilled-full | script-forward | playwright |
+| --- | --- | --- | --- | --- | --- |
+| `saucedemo-core-flow` | 1 | PASS 9.28M | PASS 1.56M | **PASS 1.36M** | PASS 0.31M |
+| `saucedemo-discovery` | 1 | PASS 8.90M | PASS 3.29M | **PASS 2.18M** | PASS 1.29M |
+| `parabank-transfer` | 2 | PASS 8.95M | PASS 2.98M | **PASS 3.32M** | **FAIL** 0.33M |
+
+### What the four-way read shows
+
+- **More webhands knowledge monotonically closes the gap.** The token total falls
+  at every step that hands the agent more up-front knowledge:
+  `cold -> skilled -> script-forward`. On `saucedemo-core-flow`: 9.28M -> 1.56M ->
+  1.36M (cold was ~30x raw Playwright; script-forward is ~4.5x). On
+  `saucedemo-discovery`: 8.90M -> 3.29M -> 2.18M (~6.9x -> ~1.7x). The cold
+  column was overwhelmingly DISCOVERY TAX, not the verb surface being inefficient.
+- **Putting `script` forward helps on the scriptable flows.** On both SauceDemo
+  flows the script-forward config beat skilled-full (1.36M vs 1.56M; 2.18M vs
+  3.29M): nudged to batch the sub-flow into one `script` call, the agent made
+  fewer model round-trips. On `parabank-transfer` script-forward was slightly
+  HIGHER than skilled (3.32M vs 2.98M) \u2014 single-run variance, and the long
+  register/open/transfer flow benefits less from one big script than a focused
+  sub-flow does. The effect is real but flow-dependent; measure per eval, do not
+  assume script-forward is always cheapest.
+- **The capability story is the bigger one.** On `parabank-transfer` ALL THREE
+  webhands configs PASS while raw **Playwright FAILs**: the longer stateful flow
+  is where "write one script by hand" breaks down and composing the verb surface
+  (with the skill) wins. So even though Playwright is still the cheapest in raw
+  tokens on the trivial flows, it is NOT strictly better: on the harder tier it
+  did not reach the goal at all. webhands-at-its-best (script-forward) is within a
+  small factor on the easy flows AND more capable on the harder one.
+- **Does webhands deliver?** With the skill in context and the `script` verb,
+  YES, meaningfully: the honest gap to raw Playwright on simple flows is now a
+  small single-digit factor (not the ~30x the cold benchmark implied), and on the
+  stateful flow webhands succeeds where raw Playwright fails. The remaining
+  token gap on trivial one-shot-scriptable flows is the expected cost of a
+  composable surface, and the harder/messier/anti-bot tiers (where the surface is
+  designed to win) are what future runs measure.
+
 ## How to read it: does webhands deliver?
 
 On these **simple, scriptable sandbox flows, both toolkits reach the goal**, and

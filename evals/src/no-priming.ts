@@ -128,12 +128,60 @@ export const WEBHANDS_SKILL_REFERENCE =
 	'4. Pacing: results often arrive after navigation via background XHR. If a ' +
 	'snapshot is empty or sparse the page is still loading; `wait --ms 6000-9000` ' +
 	'(or `wait --navigation`) before snapshotting. This is normal, not a failure.\n' +
+	'5. Batch a known sub-flow with one `script`: composing one verb per ' +
+	'invocation is the safe default, but each invocation is a fresh model turn. ' +
+	'When you ALREADY know a multi-step sub-flow (fill a form, submit, read the ' +
+	'result), `script` runs it in ONE call against the same served page, the way ' +
+	'a Playwright user writes a script by hand. It takes JS evaluating to an ' +
+	'async function of the FULL live Playwright page \u2014 ' +
+	'`async (page) => { ...use the standard Playwright page API (fill, click, ' +
+	'select, the locator/getByRole helpers, auto-waiting) to do the whole ' +
+	'flow...; return a serializable value }` \u2014 passed inline as ' +
+	'`npx webhands script "<that function>"` or via `script --file flow.js`, and ' +
+	"returns the function's serializable result. It gets real locators + " +
+	'actions + auto-waiting; a thrown script returns a clean error.\n' +
 	'Verb quick reference: `serve` start & hold the one browser (headless ' +
 	'default, `--headed` to show); `goto <url>` navigate; `wait` pace/settle; ' +
-	'`snapshot` token-cheap a11y+text view; `eval <expr>` run JS and return a ' +
-	'serializable result; `click`/`type` act via a Playwright locator; `cookies` ' +
-	'export/import the active session; `stop` tear the session down. For exact ' +
-	'flags reach for `npx webhands <verb> --help` or `npx webhands --llms-full`. ' +
+	'`snapshot` token-cheap a11y+text view; `eval <expr>` run a page-world JS ' +
+	'expression; `script` run a DRIVER-CONTEXT function of the full Playwright ' +
+	'page to batch a whole sub-flow in ONE call; `click`/`type` act via a ' +
+	'Playwright locator; `cookies` export/import the active session; `stop` tear ' +
+	'the session down. For exact flags reach for `npx webhands <verb> --help` or ' +
+	'`npx webhands --llms-full`. ' +
+	'Use only those verbs to drive the browser; do not assume any site-specific ' +
+	'selectors, steps, or URLs beyond the one named in the goal.';
+
+/**
+ * The SCRIPT-FORWARD skilled reference: the same full-surface skill knowledge,
+ * but it LEADS with the `script` batch path so the agent is nudged to compose a
+ * whole sub-flow in one driver-context call rather than verb-at-a-time. Used by
+ * the `webhands-script-forward` agent kind to measure whether PUTTING SCRIPT
+ * FORWARD (vs merely listing it) changes the agent's behaviour + token cost.
+ */
+export const WEBHANDS_SCRIPT_FORWARD_REFERENCE =
+	'Your only tool is the `webhands` CLI: it owns ONE long-lived headless ' +
+	'browser (a `serve` process bound to a profile) and every other verb is a ' +
+	'thin client that drives that SAME live page and exits.\n' +
+	'PREFERRED PATH \u2014 batch the flow with one `script`: webhands hands you the ' +
+	'FULL live Playwright `page`, so once you know the steps, do the whole ' +
+	'sub-flow in ONE call instead of one verb per turn. `script` takes JS ' +
+	'evaluating to an async function of the page and returns its serializable ' +
+	'result \u2014 `async (page) => { ...navigate, then use the standard ' +
+	'Playwright page API (fill, click, select, the locator/getByRole helpers, ' +
+	'auto-waiting) to run the whole flow...; return a serializable value }` \u2014 ' +
+	'passed inline as `npx webhands script "<that function>"` or via ' +
+	'`script --file flow.js`. It gets real locators + actions + auto-waiting; a ' +
+	'thrown script returns a clean error. Prefer this for any multi-step flow ' +
+	'you can plan.\n' +
+	'Start and HOLD the session first (`serve` blocks, so background it: ' +
+	'`nohup npx webhands serve > /tmp/webhands-serve.log 2>&1 &` then ' +
+	'`sleep 12 && cat /tmp/webhands-serve.log`, expect ok:true + an endpoint). ' +
+	'When you need to LOOK before acting, read cheaply with `snapshot` ' +
+	'(token-cheap a11y+text) or `eval`/`script` a small read; pace background ' +
+	'XHR with `wait --ms 6000-9000`. The discrete verbs (`goto`, `click`, ' +
+	'`type`, `eval`, `snapshot`, `wait`, `cookies`, `stop`) are all still ' +
+	'available for single steps and exploration; reach for `npx webhands ' +
+	'<verb> --help` or `--llms-full` for exact flags. ' +
 	'Use only those verbs to drive the browser; do not assume any site-specific ' +
 	'selectors, steps, or URLs beyond the one named in the goal.';
 
@@ -150,6 +198,17 @@ export const WEBHANDS_SKILL_REFERENCE =
 export const WEBHANDS_SKILLED_PREAMBLE: ProtocolPreamble = {
 	toolkit: 'webhands-skilled',
 	toolkitReference: WEBHANDS_SKILL_REFERENCE,
+	leaveOpenRule: WEBHANDS_LEAVE_OPEN_RULE,
+};
+
+/**
+ * The SCRIPT-FORWARD skilled preamble: full skill knowledge that LEADS with the
+ * `script` batch path, to measure whether putting `script` forward (vs merely
+ * listing it among the verbs) shifts the agent toward one-call sub-flows.
+ */
+export const WEBHANDS_SCRIPT_FORWARD_PREAMBLE: ProtocolPreamble = {
+	toolkit: 'webhands-script-forward',
+	toolkitReference: WEBHANDS_SCRIPT_FORWARD_REFERENCE,
 	leaveOpenRule: WEBHANDS_LEAVE_OPEN_RULE,
 };
 
@@ -309,7 +368,10 @@ export function buildAgentInput(
 	// priming could sneak in through; hold its reference to the no-priming spirit
 	// too, so a primed inlined skill never reaches a real agent (load-bearing like
 	// assertNoPriming on the goal).
-	if (preamble.toolkit === WEBHANDS_SKILLED_PREAMBLE.toolkit) {
+	if (
+		preamble.toolkit === WEBHANDS_SKILLED_PREAMBLE.toolkit ||
+		preamble.toolkit === WEBHANDS_SCRIPT_FORWARD_PREAMBLE.toolkit
+	) {
 		assertSkilledReferenceUnprimed(preamble.toolkitReference);
 	}
 	return (

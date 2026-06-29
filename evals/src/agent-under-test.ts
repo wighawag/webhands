@@ -7,6 +7,7 @@ import {
 	PLAYWRIGHT_PREAMBLE,
 	WEBHANDS_PREAMBLE,
 	WEBHANDS_SKILLED_PREAMBLE,
+	WEBHANDS_SCRIPT_FORWARD_PREAMBLE,
 	type ProtocolPreamble,
 } from './no-priming.js';
 import type {WebhandsCommand} from './verb-client.js';
@@ -334,6 +335,21 @@ export class WebhandsSkilledAdapter extends ShellAdapter {
 			...opts,
 			adapter: 'webhands-skilled',
 			preamble: WEBHANDS_SKILLED_PREAMBLE,
+		});
+	}
+}
+
+/**
+ * The WEBHANDS-SCRIPT-FORWARD adapter: same skilled launch shape, but its
+ * preamble LEADS with the `script` batch path (vs merely listing it), to measure
+ * whether putting `script` forward shifts the agent toward one-call sub-flows.
+ */
+export class WebhandsScriptForwardAdapter extends ShellAdapter {
+	constructor(opts: {agentCmd: string; model?: string; parseUsage?: boolean}) {
+		super({
+			...opts,
+			adapter: 'webhands-script-forward',
+			preamble: WEBHANDS_SCRIPT_FORWARD_PREAMBLE,
 		});
 	}
 }

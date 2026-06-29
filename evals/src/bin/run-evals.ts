@@ -2,6 +2,7 @@ import {
 	PlaywrightAdapter,
 	ShellAdapter,
 	WebhandsSkilledAdapter,
+	WebhandsScriptForwardAdapter,
 	type AgentUnderTest,
 } from '../agent-under-test.js';
 import {
@@ -143,11 +144,16 @@ Registered real-site evals:
 
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
-type AgentKind = 'webhands' | 'webhands-skilled' | 'playwright';
+type AgentKind =
+	| 'webhands'
+	| 'webhands-skilled'
+	| 'webhands-script-forward'
+	| 'playwright';
 
 const AGENT_KINDS: readonly AgentKind[] = [
 	'webhands',
 	'webhands-skilled',
+	'webhands-script-forward',
 	'playwright',
 ];
 
@@ -279,6 +285,8 @@ function buildAgent(
 			return new PlaywrightAdapter(opts);
 		case 'webhands-skilled':
 			return new WebhandsSkilledAdapter(opts);
+		case 'webhands-script-forward':
+			return new WebhandsScriptForwardAdapter(opts);
 		case 'webhands':
 			return new ShellAdapter(opts);
 	}

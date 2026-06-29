@@ -34,6 +34,7 @@ export {
 	ShellAdapter,
 	PlaywrightAdapter,
 	WebhandsSkilledAdapter,
+	WebhandsScriptForwardAdapter,
 	UsageAccumulator,
 	extractUsage,
 	substituteModel,
@@ -56,6 +57,7 @@ export {
 	type ProtocolPreamble,
 	WEBHANDS_PREAMBLE,
 	WEBHANDS_SKILLED_PREAMBLE,
+	WEBHANDS_SCRIPT_FORWARD_PREAMBLE,
 	PLAYWRIGHT_PREAMBLE,
 } from './no-priming.js';
 export {
