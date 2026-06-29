@@ -41,12 +41,15 @@ already knows the flow.
      across the seam as structured output (that part stays ADR-3-clean); the
      `page` object itself never crosses the wire.
 2. **Does NOT supersede `eval`.** `eval` stays (a single page-world JS
-   expression). `execute-script` is a sibling: the NAME should signal that you get
-   a FULL Playwright `page` (driver context), distinct from `eval`'s page-world
-   expression. (Name candidates that hint "full playwright page":
-   `playwright-script` / `with-page` / `script --page` / `drive`; pick one that
-   makes the "you get the real `page`" affordance obvious. NOT a bare
-   `execute-script` that reads like a bigger `eval`.)
+   expression). The sibling verb is named **`script`** (decided): its name + help
+   signal you get a FULL Playwright `page` (driver context), distinct from `eval`'s
+   page-world expression. It reads its JS from `--file <path>` OR an inline string
+   arg (stdin optional), so the agent can write a flow file and point the verb at
+   it (the common case) or pass a short snippet inline. It is implemented as a new
+   BUILT-IN `scriptHand` contributing the `script` verb (the `evalHand` shape,
+   closing over `HandContext.pwPage`), NOT a third-party `hands.json`-loaded hand.
+   NOTE: "no module load" means no hand / npm-dependency loading; reading a JS
+   SOURCE file or string is fine and is the same page-script surface as `eval`.
 3. **Same security model as `eval`/hands** (user call): the serve endpoint already
    runs caller-supplied code (README "Security note"); a driver-context script
    widens it from one expression to an arbitrary body + the `page` object, but it
