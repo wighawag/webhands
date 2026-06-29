@@ -1,0 +1,193 @@
+import {describe, expect, it} from 'vitest';
+import {
+	PlaywrightAdapter,
+	ShellAdapter,
+	type AgentUsage,
+	type LaunchResult,
+} from '../src/agent-under-test.js';
+import {
+	buildAgentInput,
+	PLAYWRIGHT_PREAMBLE,
+	WEBHANDS_PREAMBLE,
+} from '../src/no-priming.js';
+import {
+	formatComparison,
+	type ComparisonResult,
+	type EvalRunResult,
+} from '../src/run-eval.js';
+import type {EvalEntry} from '../src/eval-contract.js';
+import type {Outcome} from '../src/outcome.js';
+
+/**
+ * The Playwright-only BASELINE comparison plumbing self-test (task
+ * `eval-playwright-only-baseline-comparison`).
+ *
+ * DETERMINISTIC, no live site, no real agent, no browser: it exercises the
+ * comparison MACHINERY in isolation:
+ *  - the per-adapter PROTOCOL preamble (webhands vs Playwright-only) wraps the
+ *    SAME goal differently while the no-priming rule still binds the goal;
+ *  - the Playwright-only preamble teaches RAW Playwright and never mentions
+ *    webhands (routing it through webhands would defeat the baseline);
+ *  - the leave-open rule is delivered as a per-adapter PROTOCOL instruction, not
+ *    goal-prompt priming;
+ *  - {@link PlaywrightAdapter} is the SAME launch shape as {@link ShellAdapter},
+ *    only its adapter NAME + preamble differ;
+ *  - {@link formatComparison} renders two runs side by side on the SAME fields
+ *    (outcome, milestones, tokens) so a comparison is apples-to-apples.
+ *
+ * It runs under `evals/`'s OWN vitest (the `self-test` script), NEVER the repo
+ * gate (`pnpm test` = `pnpm --filter './packages/*' test` cannot reach here).
+ */
+
+/** A minimal toolkit-agnostic eval entry (no selectors, only the entry URL). */
+function fakeEntry(): EvalEntry {
+	return {
+		id: 'baseline-fake',
+		tier: 'self-test',
+		target: 'fake',
+		entryUrl: 'http://127.0.0.1:0/',
+		goalPrompt:
+			'Create an account and confirm it, starting at http://127.0.0.1:0/.',
+		health: [],
+		milestones: [],
+		endState: [],
+	};
+}
+
+/** A minimal fake EvalRunResult carrying a known outcome + usage, for the summary. */
+function fakeRun(
+	adapter: string,
+	kind: Outcome['kind'],
+	milestonesReached: readonly string[],
+	milestoneTotal: number,
+	usage: AgentUsage | undefined,
+): EvalRunResult {
+	const launch: LaunchResult = {
+		status: 'reported-done',
+		output: 'done',
+		...(usage !== undefined ? {usage} : {}),
+	};
+	const outcome: Outcome = {
+		kind,
+		score: {
+			passed: kind === 'PASS',
+			milestonesReached,
+			milestoneTotal,
+			checks: [],
+		},
+		attempts: 1,
+	};
+	return {entry: fakeEntry(), adapter, launch, outcome, cleanedUp: 'skipped'};
+}
+
+describe('Playwright-only baseline comparison plumbing (deterministic, no live site)', () => {
+	describe('per-adapter protocol preamble (webhands vs Playwright-only)', () => {
+		it('wraps the SAME goal differently: only the toolkit + leave-open rule differ', () => {
+			const entry = fakeEntry();
+			const webhandsInput = buildAgentInput(entry, WEBHANDS_PREAMBLE);
+			const playwrightInput = buildAgentInput(entry, PLAYWRIGHT_PREAMBLE);
+
+			// The toolkit-agnostic GOAL is present, identical, in both.
+			expect(webhandsInput).toContain(entry.goalPrompt);
+			expect(playwrightInput).toContain(entry.goalPrompt);
+			// The inputs differ ONLY past the goal (the preamble layer).
+			expect(webhandsInput).not.toBe(playwrightInput);
+		});
+
+		it('the Playwright-only preamble teaches RAW Playwright and never POINTS the agent at the webhands verb surface', () => {
+			const playwrightInput = buildAgentInput(fakeEntry(), PLAYWRIGHT_PREAMBLE);
+			expect(playwrightInput).toMatch(/Playwright/i);
+			// Routing the baseline through webhands would defeat it. The preamble may
+			// only mention webhands to FORBID it (a negative prohibition); it must
+			// never point the agent AT the webhands verb surface as a tool.
+			expect(playwrightInput).not.toMatch(/npx webhands/i);
+			// The only webhands mention is the explicit prohibition.
+			expect(PLAYWRIGHT_PREAMBLE.toolkitReference).toMatch(
+				/do not use\s+webhands/i,
+			);
+		});
+
+		it('the webhands preamble teaches the webhands verb surface', () => {
+			const webhandsInput = buildAgentInput(fakeEntry(), WEBHANDS_PREAMBLE);
+			expect(webhandsInput).toMatch(/webhands/i);
+		});
+
+		it('delivers "leave the browser open" as a PROTOCOL preamble, not goal priming', () => {
+			const entry = fakeEntry();
+			// The leave-open rule is in the per-adapter preamble (toolkit-worded)...
+			expect(WEBHANDS_PREAMBLE.leaveOpenRule).toMatch(
+				/leave the browser open/i,
+			);
+			expect(WEBHANDS_PREAMBLE.leaveOpenRule).toMatch(/webhands stop/i);
+			expect(PLAYWRIGHT_PREAMBLE.leaveOpenRule).toMatch(
+				/leave the browser open/i,
+			);
+			expect(PLAYWRIGHT_PREAMBLE.leaveOpenRule).toMatch(/browser\.close/i);
+			// ...NOT in the GOAL itself (the no-priming rule still binds the goal).
+			expect(entry.goalPrompt).not.toMatch(/leave the browser open/i);
+		});
+
+		it('the goal stays identical across configs; buildAgentInput still runs the no-priming guard', () => {
+			const primed: EvalEntry = {
+				...fakeEntry(),
+				goalPrompt: `Click page.locator('#submit') to finish.`,
+			};
+			// The no-priming guard binds the GOAL regardless of which preamble wraps it.
+			expect(() => buildAgentInput(primed, WEBHANDS_PREAMBLE)).toThrow();
+			expect(() => buildAgentInput(primed, PLAYWRIGHT_PREAMBLE)).toThrow();
+		});
+	});
+
+	describe('PlaywrightAdapter (same launch shape, Playwright-only preamble)', () => {
+		it('is named `playwright` (distinct from the default `shell`)', () => {
+			const playwright = new PlaywrightAdapter({agentCmd: 'true'});
+			const webhands = new ShellAdapter({agentCmd: 'true'});
+			expect(playwright.adapter).toBe('playwright');
+			expect(webhands.adapter).toBe('shell');
+		});
+	});
+
+	describe('formatComparison (side-by-side, identical fields)', () => {
+		it('renders both configs on the SAME fields (outcome, milestones, tokens)', () => {
+			const comparison: ComparisonResult = {
+				evalId: 'baseline-fake',
+				webhands: fakeRun('shell', 'PASS', ['a', 'b'], 3, {
+					input: 12_300,
+					output: 4100,
+					total: 16_400,
+				}),
+				playwright: fakeRun('playwright', 'PASS', ['a', 'b'], 3, {
+					input: 30_000,
+					output: 9000,
+					total: 39_000,
+				}),
+			};
+			const out = formatComparison(comparison);
+			// The header names the eval + frames it as same-goal/two-toolkits.
+			expect(out).toContain('baseline-fake');
+			expect(out).toMatch(/same goal/i);
+			// One labelled row per config, each carrying outcome + milestones + tokens.
+			expect(out).toContain('shell');
+			expect(out).toContain('playwright');
+			expect(out).toContain('PASS');
+			expect(out).toContain('milestones 2/3');
+			// Tokens print in the SAME shape for both legs (apples-to-apples).
+			expect(out).toContain('tokens: in 12.3k / out 4.1k / total 16.4k');
+			expect(out).toContain('tokens: in 30.0k / out 9.0k / total 39.0k');
+		});
+
+		it('prints an honest `tokens: unknown` when a config could not observe usage', () => {
+			const comparison: ComparisonResult = {
+				evalId: 'baseline-fake',
+				webhands: fakeRun('shell', 'PASS', [], 0, {total: 1000}),
+				// The Playwright-only agent's command was not a parseable usage stream.
+				playwright: fakeRun('playwright', 'FAIL', [], 0, undefined),
+			};
+			const out = formatComparison(comparison);
+			expect(out).toContain('tokens: total 1.0k');
+			expect(out).toContain('tokens: unknown');
+			// A FAIL leg still lines up on the same field shape as the PASS leg.
+			expect(out).toContain('FAIL');
+		});
+	});
+});

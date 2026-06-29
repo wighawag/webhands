@@ -1,7 +1,12 @@
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import type {EvalEntry} from './eval-contract.js';
-import {buildAgentInput} from './no-priming.js';
+import {
+	buildAgentInput,
+	PLAYWRIGHT_PREAMBLE,
+	WEBHANDS_PREAMBLE,
+	type ProtocolPreamble,
+} from './no-priming.js';
 import type {WebhandsCommand} from './verb-client.js';
 
 /**
@@ -107,19 +112,36 @@ export interface AgentUnderTest {
 /**
  * The GENERIC SHELL/COMMAND adapter (prd D1 v1; dorfl `null`-adapter analogue).
  * It shells out to a configured agent command with dorfl's `{model}`
- * substitution, feeds the agent the goal-prompt + verb-surface reference on
- * STDIN ({@link buildAgentInput}, the no-priming enforcement point), and
- * captures stdout. It launches whatever REAL agent the command points at
+ * substitution, feeds the agent the goal-prompt + the per-adapter PROTOCOL
+ * preamble on STDIN ({@link buildAgentInput}, the no-priming enforcement point),
+ * and captures stdout. It launches whatever REAL agent the command points at
  * (`claude -p`, `pi --print`, …), so it is a genuine capability subject bound by
  * the no-priming rule, not a stub.
+ *
+ * The LAUNCH SHAPE is the SAME for the webhands config and the Playwright-only
+ * baseline: shell out, feed the wrapped goal on stdin, capture stdout. ONLY the
+ * {@link ProtocolPreamble} differs (which toolkit the agent is taught + the
+ * toolkit-worded leave-open rule). That is why the seam reuse survives the
+ * Playwright-only baseline: the heavier "drive your own Playwright" contract is
+ * carried by the PREAMBLE the agent reads, not by a different launch mechanism
+ * (recorded decision: the Playwright-only agent drives its OWN Playwright; the
+ * harness hands it no page and never routes it through webhands). The webhands
+ * config is the default; {@link PlaywrightAdapter} is the same adapter pinned to
+ * the Playwright-only preamble + a `playwright` name.
  */
 export class ShellAdapter implements AgentUnderTest {
-	readonly adapter = 'shell';
+	readonly adapter: string;
 
 	/** The configured agent command, e.g. `claude -p` or `pi --print --model {model}`. */
 	private readonly agentCmd: string;
 	/** The model to substitute for `{model}` in {@link agentCmd}, if any. */
 	private readonly model?: string;
+	/**
+	 * The per-adapter PROTOCOL preamble composed around the goal on stdin
+	 * (toolkit reference + leave-open rule). Defaults to {@link WEBHANDS_PREAMBLE};
+	 * the Playwright-only baseline passes {@link PLAYWRIGHT_PREAMBLE}.
+	 */
+	private readonly preamble: ProtocolPreamble;
 
 	/**
 	 * OPT-IN, BEST-EFFORT pi-json usage parsing. When `true`, the adapter sums
@@ -133,16 +155,27 @@ export class ShellAdapter implements AgentUnderTest {
 	 */
 	private readonly parseUsage: boolean;
 
-	constructor(opts: {agentCmd: string; model?: string; parseUsage?: boolean}) {
+	constructor(opts: {
+		agentCmd: string;
+		model?: string;
+		parseUsage?: boolean;
+		/** Override the adapter NAME stamped into the report (default `shell`). */
+		adapter?: string;
+		/** The protocol preamble (default {@link WEBHANDS_PREAMBLE}). */
+		preamble?: ProtocolPreamble;
+	}) {
 		this.agentCmd = opts.agentCmd;
 		this.model = opts.model;
 		this.parseUsage = opts.parseUsage ?? false;
+		this.preamble = opts.preamble ?? WEBHANDS_PREAMBLE;
+		this.adapter = opts.adapter ?? 'shell';
 	}
 
 	async launch(input: LaunchInput): Promise<LaunchResult> {
 		// buildAgentInput RUNS the no-priming guard: a primed eval throws here and
-		// never launches a real agent.
-		const stdin = buildAgentInput(input.entry);
+		// never launches a real agent. The per-adapter preamble (webhands or
+		// Playwright-only) is composed around the toolkit-agnostic goal here.
+		const stdin = buildAgentInput(input.entry, this.preamble);
 		const command = substituteModel(this.agentCmd, this.model);
 		const env: NodeJS.ProcessEnv = {
 			...process.env,
@@ -227,6 +260,36 @@ export class ShellAdapter implements AgentUnderTest {
 			});
 			child.stdin.write(stdin);
 			child.stdin.end();
+		});
+	}
+}
+
+/**
+ * The PLAYWRIGHT-ONLY baseline adapter (task
+ * `eval-playwright-only-baseline-comparison`). It is the SAME {@link ShellAdapter}
+ * launch mechanism pinned to the {@link PLAYWRIGHT_PREAMBLE} and the `playwright`
+ * adapter name, so a Playwright-only run is comparable to a webhands run on the
+ * SAME goal + the SAME harness end-state assertion: ONLY the agent's toolkit +
+ * preamble differ.
+ *
+ * RECORDED design fork (the load-bearing decision for this task): the
+ * Playwright-only agent drives its OWN Playwright. Its process must have
+ * Playwright + a browser available and it writes its own automation; the harness
+ * does NOT hand it a page. This is a HEAVIER agent contract than the webhands
+ * case (where the agent just runs `npx webhands <verb>`), and it is carried
+ * entirely by the preamble the agent reads, NOT by a different launch shape, so
+ * the generic shell seam still fits. The agent is NEVER routed through the
+ * webhands verb surface (that would defeat the baseline). The harness's OWN
+ * verdict is unaffected: a webhands serve session stays alive for the harness to
+ * read the end state via its read verbs, even though the AGENT never touches
+ * webhands ('Playwright-only' constrains the AGENT, not the harness).
+ */
+export class PlaywrightAdapter extends ShellAdapter {
+	constructor(opts: {agentCmd: string; model?: string; parseUsage?: boolean}) {
+		super({
+			...opts,
+			adapter: 'playwright',
+			preamble: PLAYWRIGHT_PREAMBLE,
 		});
 	}
 }

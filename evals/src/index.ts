@@ -32,6 +32,7 @@ export {
 	type LaunchInput,
 	type LaunchResult,
 	ShellAdapter,
+	PlaywrightAdapter,
 	UsageAccumulator,
 	extractUsage,
 	substituteModel,
@@ -49,6 +50,9 @@ export {
 	buildAgentInput,
 	PrimingViolationError,
 	VERB_SURFACE_REFERENCE,
+	type ProtocolPreamble,
+	WEBHANDS_PREAMBLE,
+	PLAYWRIGHT_PREAMBLE,
 } from './no-priming.js';
 export {
 	startServe,
@@ -68,9 +72,11 @@ export {
 	runEval,
 	runPostPassCleanup,
 	formatUsage,
+	formatComparison,
 	type EvalRunResult,
 	type RunEvalOptions,
 	type CleanupStatus,
+	type ComparisonResult,
 } from './run-eval.js';
 export {buildSelfTestEval} from './catalogue/self-test-fixture.eval.js';
 export {buildParabankTransferEval} from './catalogue/parabank-transfer.eval.js';
