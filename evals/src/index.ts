@@ -28,9 +28,12 @@ export {
 } from './verb-client.js';
 export {
 	type AgentUnderTest,
+	type AgentUsage,
 	type LaunchInput,
 	type LaunchResult,
 	ShellAdapter,
+	UsageAccumulator,
+	extractUsage,
 	substituteModel,
 	MODEL_PLACEHOLDER,
 } from './agent-under-test.js';
@@ -64,6 +67,7 @@ export {
 export {
 	runEval,
 	runPostPassCleanup,
+	formatUsage,
 	type EvalRunResult,
 	type RunEvalOptions,
 	type CleanupStatus,
