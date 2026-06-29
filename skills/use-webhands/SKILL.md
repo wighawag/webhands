@@ -12,9 +12,9 @@ description: >-
 # use-webhands
 
 `webhands` owns ONE long-lived browser (a `serve` process) bound to a dedicated
-profile; every other verb (`goto`, `snapshot`, `click`, `type`, `eval`, `wait`,
-`cookies`) is a thin client that drives that SAME live page and exits. You compose
-verbs across separate invocations.
+profile; every other verb (`goto`, `snapshot`, `click`, `type`, `eval`, `script`,
+`wait`, `cookies`) is a thin client that drives that SAME live page and exits. You
+compose verbs across separate invocations.
 
 This skill exists because the generated per-verb skills tell you each command's
 flags but not how to RUN the pipe end to end, where it breaks, and what you must
@@ -81,6 +81,30 @@ stopped): start `serve` and retry. The tool NEVER silently spawns a browser.
   change constantly; match on text patterns (regex on `textContent`) rather than
   brittle CSS classes. Expect to iterate the selector once or twice.
 
+## Batch a sub-flow with one `script` (when you already know the flow)
+
+Composing one verb per invocation is the safe default, but each invocation is a
+fresh model turn. When you ALREADY know a multi-step sub-flow (e.g. fill a form,
+submit, read the result), `script` runs it in ONE call against the SAME served
+page, the way a Playwright user writes a script by hand:
+
+```sh
+# Inline: the source is JS that evaluates to a function of the live page.
+npx webhands script "async (page) => { await page.fill('#user', 'me'); await page.click('#login'); return await page.locator('.inventory_list').count(); }" --format json
+
+# The common case: write a flow file and point the verb at it.
+npx webhands script --file ./flow.js --format json   # (or pipe JS on stdin)
+```
+
+The script gets the FULL Playwright `page` (real locators + actions +
+auto-waiting), NOT a page-world `eval` expression. RETURN a SERIALIZABLE value (a
+count, a string, a small object) — never a live locator/handle (it cannot cross
+back). A thrown script comes back as a clean structured error. This is the SAME
+code-execution surface as `eval` (caller JS on your own session, loopback-only),
+not a new privilege and not hand loading. Use it to collapse a known sub-flow into
+one turn; keep using the discrete verbs (and the cheap `snapshot`) when you are
+still exploring the page.
+
 ## Pacing XHR-rendered results
 
 Results often arrive after navigation via background requests. If a snapshot is
@@ -131,10 +155,11 @@ instead of several verb turns.
   OWN session on their OWN machine/IP, for personal use, and respect the site's
   ToS. These sites are smoke TARGETS that prove the pipe, not endorsed scrape
   sources.
-- **`serve` is a code-execution surface.** `eval`, and the raw Playwright locator
-  in `click`/`type`, run caller-supplied code in the logged-in page. Keep the
-  endpoint on localhost (the default); never expose it or hand its URL to
-  untrusted code; always `stop` when done.
+- **`serve` is a code-execution surface.** `eval`, `script` (a driver-context
+  function handed the live page), and the raw Playwright locator in `click`/`type`
+  run caller-supplied code in the logged-in page. Keep the endpoint on localhost
+  (the default); never expose it or hand its URL to untrusted code; always `stop`
+  when done.
 - **`cookies` moves a live session.** Export/import only to back up or relocate
   the user's own session; never exfiltrate it.
 
@@ -148,6 +173,7 @@ instead of several verb turns.
 | `wait --ms N` / `--navigation` / `--locator` | pace XHR / settle |
 | `snapshot` | token-cheap a11y+text view (`--token-limit`, `--full`) |
 | `eval '<expr>'` | run JS, return serializable result (`--format json`) |
+| `script '<js>'` / `--file <path>` | batch a sub-flow: run a driver-context Playwright function on the live page, return a serializable result |
 | `click <locator>` / `type <locator>` | act via a raw Playwright locator |
 | `cookies` | export/import the active session |
 | `stop` | tear the session down (always do this) |

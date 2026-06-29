@@ -9,6 +9,7 @@ import {
 	type QueryRow,
 	type Screenshot,
 	type ScreenshotOptions,
+	type ScriptOptions,
 	type ScrollTarget,
 	type SelectChoice,
 	type Snapshot,
@@ -102,6 +103,19 @@ export type SessionRpcBuiltInRequest =
 			 * {@link EvalOptions.frame}. Omitted == top-document `eval`.
 			 */
 			readonly frame?: string;
+	  }
+	| {
+			readonly verb: 'script';
+			/**
+			 * The DRIVER-CONTEXT script SOURCE: JS that evaluates to a function of the
+			 * live Playwright `page` (see {@link WebHandsPage.script}). A plain string
+			 * on the wire — the script runs IN the served process against ITS live page,
+			 * so the `page` object never crosses; only the script's serializable RETURN
+			 * comes back (ADR-0003), exactly like `eval`'s result.
+			 */
+			readonly source: string;
+			/** Optional {@link ScriptOptions} (additive, R1); omitted today. */
+			readonly options?: ScriptOptions;
 	  }
 	| {readonly verb: 'wait'; readonly condition: WaitCondition}
 	| {readonly verb: 'cookies'}
@@ -224,6 +238,14 @@ export async function applySessionRpc(
 			return page.eval(
 				request.expression,
 				request.frame !== undefined ? {frame: request.frame} : undefined,
+			);
+		case 'script':
+			// Run the DRIVER-CONTEXT script against the served live page; only its
+			// serializable RETURN crosses back (the `page` it drove never does). A
+			// thrown script rejects faithfully, exactly as the `eval` path does.
+			return page.script(
+				request.source,
+				request.options !== undefined ? request.options : undefined,
 			);
 		case 'wait':
 			await page.wait(rebrandWait(request.condition));
@@ -384,6 +406,16 @@ export function makeRpcPage(
 				verb: 'eval',
 				expression,
 				...(options?.frame !== undefined ? {frame: options.frame} : {}),
+			});
+		},
+		async script(source, options) {
+			// Carry the optional options object only when given, so a bare script
+			// sends no `options` key (mirrors `eval`'s optional frame). The serialized
+			// return crosses back; the page the script drove never does.
+			return send({
+				verb: 'script',
+				source,
+				...(options !== undefined ? {options} : {}),
 			});
 		},
 		async wait(condition) {

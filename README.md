@@ -8,8 +8,11 @@ their own machine and IP.
 It launches (or attaches to) a Chromium browser using a dedicated profile,
 supports a one-time headed login that is later reused headless, keeps the session
 alive across separate CLI invocations behind a long-lived `serve` process, and
-exposes page verbs (`goto`, `snapshot`, `click`, `type`, `eval`, `wait`,
-`cookies`) with structured output.
+exposes page verbs (`goto`, `snapshot`, `click`, `type`, `eval`, `script`,
+`wait`, `cookies`) with structured output. The composable verbs are the floor;
+`script` is the power-user ramp that runs a driver-context Playwright function
+against the live page so an agent can batch a whole sub-flow into ONE call (see
+the Security note and [`docs/adr/0012`](docs/adr/0012-script-verb-driver-context-page.md)).
 
 ## Use it via your AI agent (start here)
 
@@ -252,13 +255,24 @@ the "own IP" default (see
 ## Security note (the `serve` endpoint runs arbitrary code)
 
 The page verbs execute caller-supplied expressions: `eval` runs a JS expression
-in the page, and a `click`/`type` locator is a raw Playwright locator EXPRESSION
-the controller evaluates (see
-[`docs/adr/0004`](docs/adr/0004-verb-surface-exposes-playwright-locator-semantics.md)).
+in the page, `script` runs a driver-context JS function handed the full live
+Playwright `page` (so one call can batch a locate/act/wait/read sub-flow), and a
+`click`/`type` locator is a raw Playwright locator EXPRESSION the controller
+evaluates (see
+[`docs/adr/0004`](docs/adr/0004-verb-surface-exposes-playwright-locator-semantics.md)
+and
+[`docs/adr/0012`](docs/adr/0012-script-verb-driver-context-page.md)).
 That is by design for a LOCAL tool driven by its own agent against your own
 session, but it means the running `serve` endpoint is a code-execution surface.
+
+`script` is the SAME page-script surface as `eval` (caller JS against your own
+session), widened from one page-world expression to a driver-context body + the
+`page` object — NOT a new privilege, and NOT the larger `hands.json` hand-loading
+(npm-dependency) surface: it reads and runs a JS source file/string, it loads no
+module (see [`docs/adr/0012`](docs/adr/0012-script-verb-driver-context-page.md)).
+The same loopback-only rule below covers it.
 
 - **Do NOT expose the `serve` endpoint to untrusted callers.** Keep it bound to
   localhost (the default); never bind it to a public interface or hand its URL to
   code you do not trust. Anyone who can call it can run arbitrary JavaScript in
-  your logged-in session.
+  your logged-in session (`eval`, `script`, and the raw Playwright locators).

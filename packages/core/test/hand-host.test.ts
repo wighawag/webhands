@@ -173,6 +173,7 @@ describe('hand-host composition primitive (no browser)', () => {
 			'click',
 			'type',
 			'eval',
+			'script',
 			'wait',
 			'cookies',
 			'setCookies',
@@ -210,6 +211,9 @@ function restOfVerbsHand(): Hand {
 			async click() {},
 			async type() {},
 			async eval() {
+				return undefined;
+			},
+			async script() {
 				return undefined;
 			},
 			async wait() {},

@@ -75,6 +75,16 @@ export interface CliDeps {
 	 */
 	readonly serveSession?: ServeSession;
 	/**
+	 * How the `script` verb reads JS piped on STDIN (its third source, after an
+	 * inline arg and `--file`). Defaults to {@link readProcessStdin}, which reads
+	 * stdin ONLY when it is genuinely piped (not a TTY) and otherwise resolves
+	 * `undefined`. Injectable so the `script` wiring tests assert the
+	 * inline/`--file`/exactly-one paths without the test runner's own stdin
+	 * blocking the read; a test passes a stub returning `undefined` (no pipe) or a
+	 * fixed string (a pipe).
+	 */
+	readonly readScriptStdin?: () => Promise<string | undefined>;
+	/**
 	 * The version string reported by `--version`, the help header, and the MCP
 	 * server. Defaults to {@link VERSION} (this package's `package.json` version);
 	 * injectable so a test can assert the wiring deterministically.
@@ -320,6 +330,7 @@ export function createCli(deps: CliDeps = {}) {
 		deps.sessionProvider ?? createDefaultSessionProvider(deps.home ?? {});
 	const runSetupProfile = deps.setupProfile ?? setupProfile;
 	const serveSession = deps.serveSession ?? defaultServeSession;
+	const readScriptStdin = deps.readScriptStdin ?? readProcessStdin;
 	const home = deps.home ?? {};
 
 	const cli = Cli.create(binary, {
@@ -800,6 +811,69 @@ export function createCli(deps: CliDeps = {}) {
 					);
 					return c.ok(
 						{ok: true as const, verb: 'eval' as const, result},
+						{cta: {commands: [nextSnapshot()]}},
+					);
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	cli.command('script', {
+		description:
+			'Run a DRIVER-CONTEXT script with the FULL live Playwright page against the ' +
+			'served session, in ONE call: locate + act + auto-wait + read a whole ' +
+			'sub-flow and return its serializable result. The source is JS evaluating ' +
+			'to a function of the page, e.g. "async (page) => { await page.click(...); ' +
+			'return await page.locator(...).count(); }". Read it from --file <path> OR ' +
+			'an inline argument OR stdin (exactly one). NOT a bigger eval: eval runs a ' +
+			'page-world expression; script drives the real page. Same code-execution ' +
+			'surface as eval (caller JS, loopback-only), not hand loading.',
+		args: z.object({
+			source: z
+				.string()
+				.optional()
+				.describe(
+					'Inline script source: JS that evaluates to a function of the page ' +
+						'(e.g. async (page) => { ... }). Omit when using --file or stdin.',
+				),
+		}),
+		options: connectionOptions.extend({
+			file: z
+				.string()
+				.optional()
+				.describe(
+					'Read the script source from this file instead of an inline argument ' +
+						'(the common case: write a flow file and point the verb at it).',
+				),
+		}),
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('script'),
+			result: z
+				.unknown()
+				.describe('The script result, structurally cloned by value.'),
+		}),
+		async run(c) {
+			let source: string;
+			try {
+				source = await resolveScriptSource(
+					c.args.source,
+					c.options.file,
+					readScriptStdin,
+				);
+			} catch (cause) {
+				return c.error({
+					code: 'invalid-script',
+					message: cause instanceof Error ? cause.message : String(cause),
+				});
+			}
+			try {
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const result = await s.page.script(source);
+					return c.ok(
+						{ok: true as const, verb: 'script' as const, result},
 						{cta: {commands: [nextSnapshot()]}},
 					);
 				});
@@ -1632,6 +1706,67 @@ function parseDelta(raw: string): {dx: number; dy: number} | undefined {
 	const dy = Number(parts[1]!.trim());
 	if (!Number.isFinite(dx) || !Number.isFinite(dy)) return undefined;
 	return {dx, dy};
+}
+
+/**
+ * Resolve the `script` verb's JS SOURCE from EXACTLY ONE of: an inline argument,
+ * `--file <path>`, or piped stdin (the `--file`/inline/stdin trio the verb
+ * accepts). Loud "exactly one of" validation mirrors `wait`/`select`: zero or
+ * more than one source is a clear caller error, not a silent guess.
+ *
+ * `--file` reads the JS source FILE (a `.js` flow file the agent wrote); this is
+ * the SAME page-script trust surface as `eval` (reading + running caller JS), it
+ * is NOT loading a hand / npm module (ADR-0012). An empty inline string / empty
+ * `--file` path counts as absent (mirrors the other verbs' empty-string handling).
+ */
+async function resolveScriptSource(
+	inline: string | undefined,
+	file: string | undefined,
+	readStdin: () => Promise<string | undefined>,
+): Promise<string> {
+	const hasInline = inline !== undefined && inline !== '';
+	const hasFile = file !== undefined && file !== '';
+	if (hasInline && hasFile) {
+		throw new Error(
+			'script needs exactly one source: an inline argument OR --file <path> ' +
+				'(not both).',
+		);
+	}
+	if (hasFile) {
+		return readFile(file!, 'utf8');
+	}
+	if (hasInline) {
+		return inline!;
+	}
+	// Neither inline nor --file: accept a script piped on stdin (the optional
+	// third source). The reader yields `undefined` when stdin is not piped, so a
+	// bare `webhands script` with no source fails loud below instead of hanging.
+	const piped = await readStdin();
+	if (piped !== undefined && piped.trim() !== '') {
+		return piped;
+	}
+	throw new Error(
+		'script needs a source: an inline argument, --file <path>, or JS piped on ' +
+			'stdin.',
+	);
+}
+
+/**
+ * The default `script` stdin reader: read all of stdin as UTF-8 ONLY when it is
+ * genuinely PIPED (not an interactive TTY), else resolve `undefined` so a bare
+ * `webhands script` with no source fails loud rather than blocking on the
+ * terminal. Injectable via {@link CliDeps.readScriptStdin} so tests never depend
+ * on the runner's own stdin.
+ */
+async function readProcessStdin(): Promise<string | undefined> {
+	if (process.stdin.isTTY) {
+		return undefined;
+	}
+	const chunks: Buffer[] = [];
+	for await (const chunk of process.stdin) {
+		chunks.push(chunk as Buffer);
+	}
+	return Buffer.concat(chunks).toString('utf8');
 }
 
 /**

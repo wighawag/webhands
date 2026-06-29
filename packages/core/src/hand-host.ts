@@ -16,6 +16,7 @@ import type {
 	QueryRow,
 	Screenshot,
 	ScreenshotOptions,
+	ScriptOptions,
 	ScrollTarget,
 	SelectChoice,
 	Snapshot,
@@ -203,6 +204,7 @@ const REQUIRED_VERBS = [
 	'click',
 	'type',
 	'eval',
+	'script',
 	'wait',
 	'cookies',
 	'setCookies',
@@ -355,6 +357,31 @@ export const evalHand: Hand = ({pwPage, ensureOpen}) => ({
 		async eval(expression: string, options?: EvalOptions): Promise<unknown> {
 			ensureOpen();
 			return evalExpression(pwPage, expression, options);
+		},
+	},
+});
+
+/**
+ * The `script` verb: run a caller-supplied DRIVER-CONTEXT script with the live
+ * Playwright {@link HandContext.pwPage}, return its serializable result.
+ *
+ * Same SHAPE as {@link evalHand} (closes over `pwPage`, runs caller JS, returns
+ * a serializable value), but a DIFFERENT context: `eval` runs a page-world
+ * EXPRESSION via `page.evaluate`; `script` runs the caller's JS IN-PROCESS and
+ * hands it the full Playwright `page` so one call drives a whole sub-flow
+ * (locate + act + auto-wait + read). The live `page` never crosses the seam
+ * (the script closes over it in-process); only the script's serializable RETURN
+ * crosses, exactly as `eval`'s result does (ADR-0003; see {@link runScript}).
+ *
+ * TRUST: the SAME page-script surface as `eval` (caller JS, loopback-only), NOT
+ * the `hands.json` hand-loading / npm-dependency surface — no module is loaded,
+ * only a JS source string is read and run (ADR-0012).
+ */
+export const scriptHand: Hand = ({pwPage, ensureOpen}) => ({
+	verbs: {
+		async script(source: string, options?: ScriptOptions): Promise<unknown> {
+			ensureOpen();
+			return runScript(pwPage, source, options);
 		},
 	},
 });
@@ -539,6 +566,7 @@ export const BUILT_IN_HANDS: readonly Hand[] = [
 	snapshotHand,
 	interactionHand,
 	evalHand,
+	scriptHand,
 	waitHand,
 	cookiesHand,
 	queryHand,
@@ -660,6 +688,77 @@ export async function evalExpression(
 	// frame-scoped result crosses the seam by value exactly as the top-document
 	// `eval` does.
 	return frame.evaluate(expression);
+}
+
+/**
+ * Run the `script` verb against a Playwright page: the DRIVER-CONTEXT batch
+ * escape hatch (idea `webhands-execute-script-verb`, ADR-0012). Shared by both
+ * Playwright transports (via the built-in {@link scriptHand}) so the verb
+ * behaves identically (mirrors {@link evalExpression}; no parallel second
+ * implementation).
+ *
+ * `source` is JS that EVALUATES TO A FUNCTION of the page, e.g.
+ * `async (page) => { await page.fill('#user', 'u'); return await
+ * page.locator('.list').count(); }`. We evaluate the source as an EXPRESSION (so
+ * the value is the function) in a tiny sandbox where `page`/`p` is bound — the
+ * SAME `new Function('page', 'p', 'return (...)')` shape {@link resolveLocator}
+ * uses for a locator expression — then INVOKE that function with the live page
+ * and AWAIT its result. A sync function works too (its return is awaited
+ * harmlessly). Binding `page`/`p` in the factory means a bare statement body
+ * that already references `page` (e.g. `() => page.title()`) resolves it, but
+ * the contract is the function-of-page form so the script names its own
+ * parameter.
+ *
+ * The DRIVER context is deliberate: the script gets the FULL Playwright `page`
+ * (real locators + actions + auto-waiting), NOT a page-world `evaluate`. That
+ * `page` is in-process Node JS the script closes over, so the API it CALLS is
+ * NOT an ADR-3 seam surface (no constraint on what Playwright methods it uses).
+ *
+ * SEAM BOUNDARY (ADR-0003, the load-bearing rule). The script's RETURN VALUE is
+ * what crosses the seam (and the RPC wire for the served session), so it must be
+ * SEAM-CLEAN: a serializable value with no Playwright/CDP type. We DO NOT clone
+ * or re-encode it here (a returned plain value is already serializable; a
+ * returned live Playwright handle is a CALLER error that simply will not
+ * round-trip over the wire, the same way `eval` returning a DOM node hands back
+ * an opaque preview). The thrown error is a plain `Error` (we surface the
+ * underlying message), so a throwing script REJECTS cleanly with no
+ * Playwright/CDP type leaking across the seam, exactly as `eval` does.
+ */
+export async function runScript(
+	page: Page,
+	source: string,
+	_options?: ScriptOptions,
+): Promise<unknown> {
+	let fn: unknown;
+	try {
+		// eslint-disable-next-line no-new-func
+		const factory = new Function('page', 'p', `return (${source});`) as (
+			page: Page,
+			p: Page,
+		) => unknown;
+		fn = factory(page, page);
+	} catch (cause) {
+		// A source that is not a valid function-of-page expression (a syntax error,
+		// or a value that is not a function) is a CALLER mistake; surface it LOUD as
+		// a clean error rather than a cryptic crash, mirroring the repo's
+		// loud-over-silent style.
+		throw new Error(
+			`script: the source must be JS that evaluates to a function of the page, ` +
+				`e.g. async (page) => { ... }. ${
+					cause instanceof Error ? cause.message : String(cause)
+				}`,
+		);
+	}
+	if (typeof fn !== 'function') {
+		throw new Error(
+			`script: the source must evaluate to a function of the page ` +
+				`(got ${typeof fn}), e.g. async (page) => { ... }.`,
+		);
+	}
+	// Invoke the caller's function with the live page and await its result, so a
+	// returned Promise resolves before the value crosses the seam (the same
+	// await-the-result contract `eval` has for a Promise expression).
+	return await (fn as (page: Page) => unknown)(page);
 }
 
 /**
