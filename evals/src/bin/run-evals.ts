@@ -2,6 +2,20 @@ import {ShellAdapter} from '../agent-under-test.js';
 import {runEval} from '../run-eval.js';
 import type {WebhandsCommand} from '../verb-client.js';
 import type {EvalEntry} from '../eval-contract.js';
+import {saucedemoCoreFlowEval} from '../catalogue/saucedemo-core-flow.eval.js';
+import {saucedemoDiscoveryEval} from '../catalogue/saucedemo-discovery.eval.js';
+
+/**
+ * The real-site catalogue: STATIC `*.eval.ts` entries this runner can launch by
+ * id (one file per eval, work/ contract rule 2: no shared manifest, so this is
+ * just an id->entry lookup over the imported modules, not a config file). The
+ * local-fixture self-test BUILDER is deliberately NOT here: it needs a live
+ * fixture URL and is driven only by the D3 self-test, never as a real-site eval.
+ */
+const CATALOGUE: Readonly<Record<string, EvalEntry>> = {
+	[saucedemoCoreFlowEval.id]: saucedemoCoreFlowEval,
+	[saucedemoDiscoveryEval.id]: saucedemoDiscoveryEval,
+};
 
 /**
  * The harness's OWN runner command (task: "The harness has its OWN runner
@@ -11,9 +25,9 @@ import type {EvalEntry} from '../eval-contract.js';
  *
  * It runs ONE real-site eval against a REAL agent (the generic shell adapter,
  * D1). It is OPT-IN and live-by-nature: it shells to a third-party site and a
- * real agent command, so it can never be in the gate. The foundation ships no
- * real-site catalogue entry (those are the per-tier tasks), so this runner is
- * the spine they plug a `--eval <id>` into; run with `--help` for usage.
+ * real agent command, so it can never be in the gate. The per-tier eval tasks
+ * register their `*.eval.ts` entries in {@link CATALOGUE} (the Tier-1 SauceDemo
+ * core-flow + discovery evals are the first); run with `--help` for usage.
  *
  * The DETERMINISTIC machinery proof is the SEPARATE D3 self-test
  * (`pnpm --filter @webhands/evals self-test`), against the LOCAL fixture, never
@@ -38,8 +52,15 @@ Options:
   --max-attempts <n>   Bounded retries on INCONCLUSIVE (default 3).
   --help               Show this help.
 
-The foundation ships no real-site catalogue entry; the per-tier eval tasks
-(SauceDemo / stateful / Magento) add the \`*.eval.ts\` entries this runner loads.
+Registered real-site evals:
+  saucedemo-core-flow   Tier-1 SauceDemo: log in, sort by price, add the
+                        cheapest item, complete checkout (end state: the
+                        order-complete confirmation).
+  saucedemo-discovery   Tier-1 SauceDemo: complete a purchase starting from the
+                        broken \`problem_user\` account, which requires noticing
+                        the breakage and switching to a working demo account.
+
+More per-tier eval tasks (stateful / Magento) add further \`*.eval.ts\` entries.
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
 interface Args {
@@ -105,17 +126,20 @@ function asWebhandsCommand(raw: string | undefined): WebhandsCommand {
 }
 
 /**
- * Load a catalogue eval entry by id. The foundation ships only the self-test
- * BUILDER (which needs a live fixture URL, so it is not runnable as a real-site
- * eval here); real-site STATIC entries are added by the per-tier tasks. Until
- * one exists, this throws a clear, actionable error.
+ * Load a real-site catalogue eval entry by id from {@link CATALOGUE}. Throws a
+ * clear, actionable error (listing the known ids) when the id is unknown, so a
+ * typo or an unregistered entry fails fast before any serve/agent is launched.
  */
-async function loadEval(_id: string): Promise<EvalEntry> {
-	throw new Error(
-		'no real-site catalogue eval is registered yet: the foundation ships only ' +
-			'the local-fixture self-test (run `self-test`). Add a `*.eval.ts` ' +
-			'real-site entry (a per-tier task) and register it here to run it.',
-	);
+async function loadEval(id: string): Promise<EvalEntry> {
+	const entry = CATALOGUE[id];
+	if (entry === undefined) {
+		const known = Object.keys(CATALOGUE).join(', ') || '(none)';
+		throw new Error(
+			`unknown eval id '${id}'. Known real-site evals: ${known}. ` +
+				'(The local-fixture self-test is run separately via `self-test`.)',
+		);
+	}
+	return entry;
 }
 
 async function main(): Promise<void> {
