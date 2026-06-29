@@ -799,6 +799,19 @@ export function resolveLocator(page: Page, expression: string) {
  * bad locator) surfaces its timeout quickly instead of hanging the dispatch on
  * Playwright's 30s default — the dispatch escape is for elements that EXIST but
  * are not actionable (hidden custom inputs), not for absent ones.
+ *
+ * The happy-path click passes `noWaitAfter: true` on purpose. Playwright's
+ * `Locator.click()` normally clicks AND THEN auto-waits for any navigation the
+ * click scheduled to finish, and that post-click wait counts against the same
+ * timeout. A real submit button whose navigation takes longer than
+ * {@link NORMAL_CLICK_TIMEOUT_MS} would therefore have its (already-performed)
+ * click reported as a `TimeoutError` and be wrongly routed to the dispatch
+ * escape, which then re-clicks a page that is already navigating away. We only
+ * want the short budget to measure ACTIONABILITY (can we click it?), not how
+ * long the resulting navigation takes — `noWaitAfter` returns as soon as the
+ * click is performed, so a slow-but-successful submit no longer trips the
+ * fallback. A genuinely non-actionable hidden input still cannot be clicked
+ * within the budget and still falls through to `dispatchEvent` as before.
  */
 export async function clickLocator(
 	page: Page,
@@ -806,7 +819,7 @@ export async function clickLocator(
 ): Promise<void> {
 	const target = resolveLocator(page, expression);
 	try {
-		await target.click({timeout: NORMAL_CLICK_TIMEOUT_MS});
+		await target.click({timeout: NORMAL_CLICK_TIMEOUT_MS, noWaitAfter: true});
 	} catch (cause) {
 		if (!(cause instanceof pwErrors.TimeoutError)) {
 			throw cause;

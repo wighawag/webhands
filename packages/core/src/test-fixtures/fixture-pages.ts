@@ -102,6 +102,36 @@ const CLICK_TYPE = `<!doctype html>
 `;
 
 /**
+ * A page whose submit button triggers a SLOW navigation (PRD story 8, the
+ * "real submit button" path). Clicking `#slow-submit` navigates to
+ * `index.html?delayMs=1500`; the fixture server holds that response back ~1.5s,
+ * so the navigation the click schedules takes far longer than the verb's short
+ * actionability budget. The element is a perfectly normal, visible, actionable
+ * button, so `click` must perform the click and NOT mistake the slow post-click
+ * navigation for a non-actionable element (which would wrongly route it to the
+ * dispatch escape and re-click a page already navigating away). The test
+ * asserts the effect: after the click, the reader ends up on `index.html`.
+ */
+const SLOW_SUBMIT = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>slow submit fixture</title>
+	</head>
+	<body>
+		<h1 id="heading">Slow Submit Fixture</h1>
+		<!-- GET form: the action's query is dropped and rebuilt from the fields,
+		     so delayMs is carried as a hidden field (a bare action query would be
+		     lost on submit). -->
+		<form action="/index.html" method="get">
+			<input type="hidden" name="delayMs" value="1500" />
+			<input id="slow-submit" type="submit" value="Continue" />
+		</form>
+	</body>
+</html>
+`;
+
+/**
  * A page that NAVIGATES itself to `index.html` ~150ms after load, the way a
  * landing/redirect page bounces to the real destination. `goto` here settles on
  * THIS page's `load`; only `wait({kind: 'navigation'})` (PRD story 10) blocks
@@ -1168,6 +1198,7 @@ export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
 	'click-type.html': CLICK_TYPE,
 	'delayed.html': DELAYED_CONTENT,
+	'slow-submit.html': SLOW_SUBMIT,
 	'redirecting.html': REDIRECTING,
 	'eval.html': EVAL,
 	'cookies.html': COOKIES,

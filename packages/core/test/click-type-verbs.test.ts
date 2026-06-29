@@ -123,6 +123,40 @@ describe('click + type verbs (real browser, local fixture, seam)', () => {
 				await session.close();
 			}
 		}, 15_000);
+
+		// Regression: a real, visible, actionable submit button whose click
+		// triggers a navigation SLOWER than the verb's short actionability budget.
+		// `Locator.click()` normally clicks and then auto-waits for the scheduled
+		// navigation to finish, charging that wait to the same timeout — so a slow
+		// submit would have its (already-performed) click reported as a timeout and
+		// be wrongly routed to the dispatch escape, which re-clicks a page already
+		// navigating away. The verb must perform the click and return without
+		// waiting for navigation; the navigation still settles, here driven to
+		// completion by `wait({kind: 'navigation'})`, and the reader lands on the
+		// destination. (DVSA login "Continue" button, examples/basic.)
+		it('clicks a submit button whose navigation is slower than the actionability budget', async () => {
+			const session = await openOnFixture('click-slow-submit');
+			try {
+				await session.page.navigate(`${server.url}/slow-submit.html`);
+				expect((await session.page.snapshot()).url).toBe(
+					`${server.url}/slow-submit.html`,
+				);
+
+				// The click itself must NOT throw a timeout (the bug): it performs the
+				// click and returns even though the navigation it scheduled is still in
+				// flight (the server holds the response ~1.5s, > the 1s budget).
+				await session.page.click(locator(`page.locator('#slow-submit')`));
+
+				// Let the slow navigation settle, then assert the reader actually moved
+				// to the destination (the click really submitted the form).
+				await session.page.wait({kind: 'navigation'});
+				expect((await session.page.snapshot()).url).toBe(
+					`${server.url}/index.html?delayMs=1500`,
+				);
+			} finally {
+				await session.close();
+			}
+		}, 15_000);
 	});
 
 	describe('type', () => {
