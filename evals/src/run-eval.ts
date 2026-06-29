@@ -87,6 +87,49 @@ function compact(n: number): string {
 	return `${(n / 1000).toFixed(1)}k`;
 }
 
+/**
+ * A SIDE-BY-SIDE comparison of the SAME eval run under two agent configs (task
+ * `eval-playwright-only-baseline-comparison`): the concrete "does webhands
+ * deliver?" scoreboard. Both runs used the SAME goal + the SAME harness
+ * end-state assertion; only the agent's toolkit + preamble differed, so the rows
+ * below are apples-to-apples.
+ *
+ * Render with {@link formatComparison}. The fields are EXACTLY the ones a single
+ * run prints (outcome, milestones, tokens), so a comparison adds no new
+ * measurement, it just aligns two runs.
+ */
+export interface ComparisonResult {
+	/** The eval id both configs ran (identical goal + assertion). */
+	readonly evalId: string;
+	/** The webhands-agent run. */
+	readonly webhands: EvalRunResult;
+	/** The Playwright-only baseline run. */
+	readonly playwright: EvalRunResult;
+}
+
+/**
+ * Render a {@link ComparisonResult} as a compact side-by-side block: one labelled
+ * row per config carrying its outcome, milestone count, and token usage in the
+ * SAME shape {@link formatUsage} prints for a single run. The two configs line
+ * up on identical fields so a human (or a grep) can read the "does webhands
+ * deliver?" answer directly: same goal, two toolkits, compare outcome + tokens.
+ */
+export function formatComparison(comparison: ComparisonResult): string {
+	const line = (label: string, result: EvalRunResult): string => {
+		const {outcome} = result;
+		const milestones = `${outcome.score.milestonesReached.length}/${outcome.score.milestoneTotal}`;
+		return (
+			`  ${label.padEnd(11)} ${outcome.kind.padEnd(12)} ` +
+			`milestones ${milestones.padEnd(5)} ${formatUsage(result.launch.usage)}`
+		);
+	};
+	return (
+		`comparison: ${comparison.evalId} (same goal + assertion, two toolkits)\n` +
+		`${line(comparison.webhands.adapter, comparison.webhands)}\n` +
+		`${line(comparison.playwright.adapter, comparison.playwright)}`
+	);
+}
+
 /** Config for one eval run. */
 export interface RunEvalOptions {
 	/** The eval to run. */

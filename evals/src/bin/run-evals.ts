@@ -1,5 +1,15 @@
-import {ShellAdapter} from '../agent-under-test.js';
-import {formatUsage, runEval} from '../run-eval.js';
+import {
+	PlaywrightAdapter,
+	ShellAdapter,
+	type AgentUnderTest,
+} from '../agent-under-test.js';
+import {
+	formatComparison,
+	formatUsage,
+	runEval,
+	type ComparisonResult,
+	type EvalRunResult,
+} from '../run-eval.js';
 import type {WebhandsCommand} from '../verb-client.js';
 import type {EvalEntry} from '../eval-contract.js';
 import {saucedemoCoreFlowEval} from '../catalogue/saucedemo-core-flow.eval.js';
@@ -51,13 +61,34 @@ generic shell adapter, prd D1). NEVER part of \`pnpm test\` / the verify gate.
 
 Usage:
   pnpm --filter @webhands/evals run-eval --eval <id> --agent-cmd "<command>" [options]
+  pnpm --filter @webhands/evals run-eval --eval <id> --compare \\
+      --agent-cmd "<webhands-agent-cmd>" --playwright-cmd "<playwright-agent-cmd>"
 
 Options:
   --eval <id>          The catalogue eval id to run (a *.eval.ts entry).
   --agent-cmd "<cmd>"  The shell command that launches the unaided agent. The
-                       goal-prompt is fed on its stdin. Use {model} for the
-                       model-pinning substitution (dorfl's pattern).
-  --model <model>      The model to substitute for {model} in --agent-cmd.
+                       goal-prompt (wrapped in the per-adapter protocol
+                       preamble) is fed on its stdin. Use {model} for the
+                       model-pinning substitution (dorfl's pattern). In
+                       --compare mode this is the WEBHANDS agent command.
+  --agent-kind <kind>  Which agent config to launch: \`webhands\` (default, the
+                       agent drives the published webhands verb surface) or
+                       \`playwright\` (the BASELINE: the agent drives its OWN
+                       raw Playwright, never webhands). Only the agent's
+                       toolkit + protocol preamble differ; the eval goal and the
+                       harness's end-state assertion are identical either way.
+  --compare            Run the SAME eval under BOTH configs (webhands +
+                       Playwright-only) and print a side-by-side comparison of
+                       outcome + milestones + tokens (the "does webhands
+                       deliver?" scoreboard). Requires --agent-cmd (webhands)
+                       and --playwright-cmd (Playwright-only).
+  --playwright-cmd "<cmd>"
+                       The shell command that launches the Playwright-only
+                       baseline agent (used in --compare mode, or as the agent
+                       command when --agent-kind playwright is set without
+                       --agent-cmd).
+  --model <model>      The model to substitute for {model} in the agent
+                       command(s).
   --parse-usage        OPT-IN, BEST-EFFORT: sum token usage from the agent's
                        stdout when it is a pi \`--mode json\` stream (whose
                        events carry a \`usage\` object). Off by default: the
@@ -91,9 +122,14 @@ Registered real-site evals:
 
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
+type AgentKind = 'webhands' | 'playwright';
+
 interface Args {
 	readonly eval?: string;
 	readonly agentCmd?: string;
+	readonly playwrightCmd?: string;
+	readonly agentKind: AgentKind;
+	readonly compare: boolean;
 	readonly model?: string;
 	readonly webhands?: string;
 	readonly maxAttempts?: number;
@@ -105,6 +141,9 @@ interface Args {
 function parseArgs(argv: readonly string[]): Args {
 	let evalId: string | undefined;
 	let agentCmd: string | undefined;
+	let playwrightCmd: string | undefined;
+	let agentKind: AgentKind = 'webhands';
+	let compare = false;
 	let model: string | undefined;
 	let webhands: string | undefined;
 	let maxAttempts: number | undefined;
@@ -119,6 +158,22 @@ function parseArgs(argv: readonly string[]): Args {
 				break;
 			case '--agent-cmd':
 				agentCmd = argv[++i];
+				break;
+			case '--playwright-cmd':
+				playwrightCmd = argv[++i];
+				break;
+			case '--agent-kind': {
+				const kind = argv[++i];
+				if (kind !== 'webhands' && kind !== 'playwright') {
+					throw new Error(
+						`--agent-kind must be 'webhands' or 'playwright' (got '${kind}')`,
+					);
+				}
+				agentKind = kind;
+				break;
+			}
+			case '--compare':
+				compare = true;
 				break;
 			case '--model':
 				model = argv[++i];
@@ -146,6 +201,9 @@ function parseArgs(argv: readonly string[]): Args {
 	return {
 		...(evalId !== undefined ? {eval: evalId} : {}),
 		...(agentCmd !== undefined ? {agentCmd} : {}),
+		...(playwrightCmd !== undefined ? {playwrightCmd} : {}),
+		agentKind,
+		compare,
 		...(model !== undefined ? {model} : {}),
 		...(webhands !== undefined ? {webhands} : {}),
 		...(maxAttempts !== undefined ? {maxAttempts} : {}),
@@ -153,6 +211,41 @@ function parseArgs(argv: readonly string[]): Args {
 		parseUsage,
 		help,
 	};
+}
+
+/**
+ * Build the agent adapter for one config. The webhands config drives the
+ * published verb surface (the {@link ShellAdapter} default preamble); the
+ * Playwright-only baseline drives raw Playwright via the {@link PlaywrightAdapter}
+ * (its protocol preamble teaches Playwright, never webhands). Both are the SAME
+ * shell launch shape; only the toolkit + preamble differ.
+ */
+function buildAgent(
+	kind: AgentKind,
+	cmd: string,
+	model: string | undefined,
+	parseUsage: boolean,
+): AgentUnderTest {
+	const opts = {
+		agentCmd: cmd,
+		...(model !== undefined ? {model} : {}),
+		...(parseUsage ? {parseUsage: true} : {}),
+	};
+	return kind === 'playwright'
+		? new PlaywrightAdapter(opts)
+		: new ShellAdapter(opts);
+}
+
+/** Format ONE run's result line (shared by single-run and the comparison legs). */
+function formatRunLine(result: EvalRunResult): string {
+	const {entry, outcome} = result;
+	return (
+		`${entry.id} [${entry.tier}] (${result.adapter}) -> ${outcome.kind} ` +
+		`(milestones ${outcome.score.milestonesReached.length}/${outcome.score.milestoneTotal}` +
+		`${outcome.score.milestonesReached.length > 0 ? ': ' + outcome.score.milestonesReached.join(', ') : ''})` +
+		`${outcome.inconclusiveReason !== undefined ? ` [${outcome.inconclusiveReason}]` : ''}` +
+		` [${formatUsage(result.launch.usage)}]`
+	);
 }
 
 /** Split a `--webhands`/`--agent-cmd` string into command + leading args. */
@@ -184,45 +277,106 @@ async function loadEval(id: string): Promise<EvalEntry> {
 	return builder();
 }
 
-async function main(): Promise<void> {
-	const args = parseArgs(process.argv.slice(2));
-	if (args.help || args.eval === undefined) {
-		process.stdout.write(`${HELP}\n`);
-		process.exit(args.help ? 0 : 1);
-	}
-	if (args.agentCmd === undefined || args.agentCmd.trim() === '') {
-		process.stderr.write(
-			'error: --agent-cmd is required (the shell command that launches the ' +
-				'unaided agent).\n',
-		);
-		process.exit(1);
-	}
-
-	const entry = await loadEval(args.eval);
-	const agent = new ShellAdapter({
-		agentCmd: args.agentCmd,
-		...(args.model !== undefined ? {model: args.model} : {}),
-		...(args.parseUsage ? {parseUsage: true} : {}),
-	});
-	const result = await runEval({
+/**
+ * Run ONE config (a freshly-built eval entry + an agent adapter) end to end.
+ * Built fresh per leg so a per-run NONCE-tagged eval (ParaBank, prd D2) mints an
+ * independent identity for each run, including each leg of a --compare.
+ */
+async function runOne(
+	evalId: string,
+	agent: AgentUnderTest,
+	args: Args,
+): Promise<EvalRunResult> {
+	const entry = await loadEval(evalId);
+	return await runEval({
 		entry,
 		webhands: asWebhandsCommand(args.webhands),
 		agent,
 		...(args.maxAttempts !== undefined ? {maxAttempts: args.maxAttempts} : {}),
 		...(args.headed ? {serve: {headed: true}} : {}),
 	});
+}
 
-	const {outcome} = result;
-	process.stdout.write(
-		`${entry.id} [${entry.tier}] -> ${outcome.kind} ` +
-			`(milestones ${outcome.score.milestonesReached.length}/${outcome.score.milestoneTotal}` +
-			`${outcome.score.milestonesReached.length > 0 ? ': ' + outcome.score.milestonesReached.join(', ') : ''})` +
-			`${outcome.inconclusiveReason !== undefined ? ` [${outcome.inconclusiveReason}]` : ''}` +
-			` [${formatUsage(result.launch.usage)}]\n`,
-	);
+async function main(): Promise<void> {
+	const args = parseArgs(process.argv.slice(2));
+	if (args.help || args.eval === undefined) {
+		process.stdout.write(`${HELP}\n`);
+		process.exit(args.help ? 0 : 1);
+	}
+
+	if (args.compare) {
+		await runComparison(args);
+		return;
+	}
+
+	// Single-config run. --agent-kind picks the toolkit; the Playwright-only
+	// config may take its command from --playwright-cmd as well as --agent-cmd.
+	const cmd =
+		args.agentKind === 'playwright'
+			? (args.playwrightCmd ?? args.agentCmd)
+			: args.agentCmd;
+	if (cmd === undefined || cmd.trim() === '') {
+		process.stderr.write(
+			`error: ${
+				args.agentKind === 'playwright'
+					? '--playwright-cmd (or --agent-cmd)'
+					: '--agent-cmd'
+			} is required (the shell command that launches the unaided agent).\n`,
+		);
+		process.exit(1);
+	}
+
+	const agent = buildAgent(args.agentKind, cmd, args.model, args.parseUsage);
+	const result = await runOne(args.eval, agent, args);
+	process.stdout.write(`${formatRunLine(result)}\n`);
 	// A capability FAIL is a real signal but not a CRASH: exit 0 on PASS, 1 on
 	// FAIL, 2 on INCONCLUSIVE, so a scheduler can route on the three states.
-	process.exit(outcome.kind === 'PASS' ? 0 : outcome.kind === 'FAIL' ? 1 : 2);
+	process.exit(
+		result.outcome.kind === 'PASS' ? 0 : result.outcome.kind === 'FAIL' ? 1 : 2,
+	);
+}
+
+/**
+ * Run the SAME eval under BOTH configs (webhands + Playwright-only) and print a
+ * side-by-side comparison: the "does webhands deliver?" scoreboard. Both legs
+ * use the SAME goal + the SAME harness end-state assertion; only the toolkit +
+ * preamble differ. The webhands leg runs first, then the Playwright-only leg
+ * (sequential so the two never contend for the same isolated serve/home).
+ *
+ * The comparison is INFORMATIONAL, so it exits 0 whenever both legs ran; the
+ * per-leg verdicts are in the printed block. (Use a single --agent-kind run when
+ * you want the three-state exit code for scheduler routing.)
+ */
+async function runComparison(args: Args): Promise<void> {
+	if (
+		args.agentCmd === undefined ||
+		args.agentCmd.trim() === '' ||
+		args.playwrightCmd === undefined ||
+		args.playwrightCmd.trim() === ''
+	) {
+		process.stderr.write(
+			'error: --compare requires BOTH --agent-cmd (the webhands agent) and ' +
+				'--playwright-cmd (the Playwright-only baseline agent).\n',
+		);
+		process.exit(1);
+	}
+	const evalId = args.eval!;
+	const webhands = await runOne(
+		evalId,
+		buildAgent('webhands', args.agentCmd, args.model, args.parseUsage),
+		args,
+	);
+	process.stdout.write(`${formatRunLine(webhands)}\n`);
+	const playwright = await runOne(
+		evalId,
+		buildAgent('playwright', args.playwrightCmd, args.model, args.parseUsage),
+		args,
+	);
+	process.stdout.write(`${formatRunLine(playwright)}\n`);
+
+	const comparison: ComparisonResult = {evalId, webhands, playwright};
+	process.stdout.write(`\n${formatComparison(comparison)}\n`);
+	process.exit(0);
 }
 
 void main().catch((cause: unknown) => {

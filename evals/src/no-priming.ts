@@ -25,6 +25,83 @@ export const VERB_SURFACE_REFERENCE =
 	'Use only those verbs to drive the browser; do not assume any site-specific ' +
 	'selectors, steps, or URLs beyond the one named in the goal.';
 
+/**
+ * A per-adapter PROTOCOL PREAMBLE: the toolkit-specific wrapper the harness
+ * composes AROUND the (toolkit-agnostic) goal-prompt. It is NOT goal priming
+ * (see
+ * `work/notes/observations/eval-end-state-assertion-needs-the-agent-to-leave-the-session-open.md`):
+ * it tells the agent HOW the test is administered (which toolkit it has, and the
+ * rule of the test that it must leave the browser open for the harness to
+ * verify), NOT how to SOLVE the goal. The no-priming rule still binds the GOAL
+ * itself; the preamble is a separate, legitimate layer.
+ *
+ * Both the webhands config and the Playwright-only config share the SAME goal +
+ * the SAME harness end-state assertion; ONLY this preamble differs (different
+ * toolkit, different leave-open wording). That difference is exactly what makes
+ * the two configs a fair "does webhands deliver?" comparison: same goal, two
+ * toolkits.
+ */
+export interface ProtocolPreamble {
+	/** A stable name for this preamble's toolkit (`webhands`, `playwright`). */
+	readonly toolkit: string;
+	/**
+	 * The toolkit reference: how the agent reaches/drives the browser. For the
+	 * webhands config this is the verb-surface reference; for the Playwright-only
+	 * config it teaches RAW Playwright (drive a browser via Playwright APIs), with
+	 * NO mention of webhands (routing it through webhands would defeat the
+	 * baseline).
+	 */
+	readonly toolkitReference: string;
+	/**
+	 * The harness-PROTOCOL rule, toolkit-worded: when done, STOP and leave the
+	 * browser open on the final page for the harness to verify; do not
+	 * close/reset it. Toolkit-specific wording (webhands: do not run
+	 * `webhands stop`; Playwright: do not `browser.close()`), but the RULE is the
+	 * same for every adapter, because the harness asserts the end state AFTER the
+	 * agent finishes (the resolving insight in the observation note).
+	 */
+	readonly leaveOpenRule: string;
+}
+
+/**
+ * The WEBHANDS protocol preamble (the default): the agent drives the browser
+ * through the published `webhands` verb surface, and must not tear the session
+ * down (the harness reads that same session for its verdict).
+ */
+export const WEBHANDS_PREAMBLE: ProtocolPreamble = {
+	toolkit: 'webhands',
+	toolkitReference: VERB_SURFACE_REFERENCE,
+	leaveOpenRule:
+		'When you have finished, STOP and leave the browser open on the final ' +
+		'page so the result can be verified. Do NOT close, reset, or run ' +
+		'`webhands stop`.',
+};
+
+/**
+ * The PLAYWRIGHT-ONLY protocol preamble (the baseline): the agent drives a
+ * browser using RAW Playwright APIs ONLY, with NO webhands. It must bring its
+ * own Playwright + a browser and write its own automation (a heavier agent
+ * contract than the webhands case, where the agent just runs `npx webhands
+ * <verb>`); the harness hands it no page. Routing this agent through webhands
+ * would defeat the whole point of the baseline, so the preamble never mentions
+ * it. The harness STILL keeps its own serve session alive for its OWN verdict
+ * reads, but the AGENT never touches it.
+ */
+export const PLAYWRIGHT_PREAMBLE: ProtocolPreamble = {
+	toolkit: 'playwright',
+	toolkitReference:
+		'Your only tool is raw Playwright (the `playwright` library). Drive a real ' +
+		'browser yourself via the Playwright APIs (launch a browser, open a page, ' +
+		'`goto` the entry URL, locate/click/type, etc.); you must have Playwright ' +
+		'and a browser available and write your own automation. Do NOT use ' +
+		'webhands or any other browser-automation toolkit. Do not assume any ' +
+		'site-specific selectors, steps, or URLs beyond the one named in the goal.',
+	leaveOpenRule:
+		'When you have finished, STOP and leave the browser open on the final ' +
+		'page so the result can be verified. Do NOT call `browser.close()`, ' +
+		'`context.close()`, or `page.close()`, and do not reset the page.',
+};
+
 /** A locator/selector-shaped fragment a goal-prompt must NOT carry. */
 const SELECTOR_SHAPES: readonly RegExp[] = [
 	/page\.locator\(/i,
@@ -75,14 +152,30 @@ export function assertNoPriming(entry: EvalEntry): void {
 
 /**
  * Assemble the EXACT text handed to the agent-under-test on stdin: the
- * goal-prompt + the verb-surface reference, and nothing else. Runs
- * {@link assertNoPriming} first, so building the input is the enforcement point.
- * This is the ONLY sanctioned way to produce agent input; the shell adapter
- * consumes its return verbatim.
+ * (toolkit-agnostic) goal-prompt + the per-adapter PROTOCOL preamble, and
+ * nothing else. Runs {@link assertNoPriming} on the GOAL first, so building the
+ * input is the no-priming enforcement point; the preamble is a separate,
+ * legitimate layer (toolkit + leave-open rule) NOT subject to the no-priming
+ * guard, because it administers the test rather than solving it.
+ *
+ * The `preamble` defaults to {@link WEBHANDS_PREAMBLE} so an existing caller
+ * gets the webhands config unchanged; the Playwright-only config passes
+ * {@link PLAYWRIGHT_PREAMBLE}. The GOAL text is IDENTICAL across preambles, which
+ * is what keeps the two configs an apples-to-apples comparison.
+ *
+ * This is the ONLY sanctioned way to produce agent input; the adapter consumes
+ * its return verbatim.
  */
-export function buildAgentInput(entry: EvalEntry): string {
+export function buildAgentInput(
+	entry: EvalEntry,
+	preamble: ProtocolPreamble = WEBHANDS_PREAMBLE,
+): string {
 	assertNoPriming(entry);
-	return `${entry.goalPrompt.trim()}\n\n${VERB_SURFACE_REFERENCE}\n`;
+	return (
+		`${entry.goalPrompt.trim()}\n\n` +
+		`${preamble.toolkitReference}\n\n` +
+		`${preamble.leaveOpenRule}\n`
+	);
 }
 
 /** Extract http(s) URLs mentioned in text. */
