@@ -5,6 +5,7 @@ import type {EvalEntry} from '../eval-contract.js';
 import {saucedemoCoreFlowEval} from '../catalogue/saucedemo-core-flow.eval.js';
 import {saucedemoDiscoveryEval} from '../catalogue/saucedemo-discovery.eval.js';
 import {buildParabankTransferEval} from '../catalogue/parabank-transfer.eval.js';
+import {magentoCheckoutEval} from '../catalogue/magento-checkout.eval.js';
 
 /**
  * The real-site catalogue: `*.eval.ts` entries this runner can launch by id (one
@@ -22,6 +23,8 @@ const CATALOGUE: Readonly<Record<string, () => EvalEntry>> = {
 	[saucedemoDiscoveryEval.id]: () => saucedemoDiscoveryEval,
 	// Tier-2 ParaBank: a per-run builder, fresh nonce-tagged identity each launch.
 	'parabank-transfer': () => buildParabankTransferEval(),
+	// Tier-3 Magento (Luma): a STATIC, no-account guest flow on a messy real DOM.
+	[magentoCheckoutEval.id]: () => magentoCheckoutEval,
 };
 
 /**
@@ -71,8 +74,13 @@ Registered real-site evals:
                         them, and confirm it (end state: the nonce-tagged
                         transaction is present in an account's activity). A fresh
                         nonce-tagged identity is minted each run (prd D2).
+  magento-checkout      Tier-3 Magento demo (Luma): as a GUEST (no account),
+                        search for a jacket, open a product, add it to the cart,
+                        and reach the checkout (end state: the checkout page is
+                        reached with the item in the cart). The messy-real DOM
+                        regression catcher; a down/Cloudflare-blocked Magento
+                        reports INCONCLUSIVE, never a capability fail.
 
-More per-tier eval tasks (Magento) add further \`*.eval.ts\` entries.
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
 interface Args {
