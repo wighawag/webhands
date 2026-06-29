@@ -64,17 +64,93 @@ export interface ProtocolPreamble {
 }
 
 /**
- * The WEBHANDS protocol preamble (the default): the agent drives the browser
- * through the published `webhands` verb surface, and must not tear the session
- * down (the harness reads that same session for its verdict).
+ * The WEBHANDS protocol preamble (the default, the COLD config): the agent
+ * drives the browser through the published `webhands` verb surface, and must not
+ * tear the session down (the harness reads that same session for its verdict).
+ * COLD because it only POINTS the agent at the discovery command (`--llms-full`)
+ * rather than handing it the surface up front, so the agent pays the runtime
+ * "discovery tax" a real deployment with the skill synced would not
+ * (`work/notes/findings/scoreboard-transcript-analysis-where-the-token-gap-comes-from.md`).
  */
+/** The webhands leave-open rule, shared by the cold and skilled preambles. */
+const WEBHANDS_LEAVE_OPEN_RULE =
+	'When you have finished, STOP and leave the browser open on the final ' +
+	'page so the result can be verified. Do NOT close, reset, or run ' +
+	'`webhands stop`.';
+
 export const WEBHANDS_PREAMBLE: ProtocolPreamble = {
 	toolkit: 'webhands',
 	toolkitReference: VERB_SURFACE_REFERENCE,
-	leaveOpenRule:
-		'When you have finished, STOP and leave the browser open on the final ' +
-		'page so the result can be verified. Do NOT close, reset, or run ' +
-		'`webhands stop`.',
+	leaveOpenRule: WEBHANDS_LEAVE_OPEN_RULE,
+};
+
+/**
+ * The SKILLED webhands toolkit reference: the curated, SITE-AGNOSTIC workflow
+ * knowledge from `skills/use-webhands/SKILL.md`, inlined so the agent STARTS
+ * already knowing the webhands surface (the way a real agent with the
+ * `use-webhands` skill synced would), instead of discovering it COLD at runtime.
+ *
+ * WHY a curated transcription and not the raw SKILL.md file: the shipped skill
+ * carries worked EXAMPLES that name a specific site URL
+ * (`kayak.co.uk/flights/...`) and selector-shaped fragments (`frameLocator(`,
+ * `querySelector`). Those are legitimate teaching examples in the skill, but if
+ * fed to the agent-under-test they would trip the no-priming SELECTOR_SHAPES /
+ * extra-URL rules: a site URL + selectors in the agent's input is exactly the
+ * shape the no-priming guard forbids. So this reference distils the skill's
+ * PROTOCOL layer (the serve lifecycle, the verb pipe, reading cheaply, pacing
+ * XHR, the verb quick-reference) and DROPS the site-specific worked examples.
+ * It is generic tool-usage knowledge (how to use webhands), site-agnostic by
+ * construction, so it is PROTOCOL not goal priming. The {@link assertSkilledReferenceUnprimed}
+ * guard + the self-test assert it carries no selector-shaped fragment and no
+ * site URL, so this property cannot silently rot.
+ */
+export const WEBHANDS_SKILL_REFERENCE =
+	'Your only tool is the `webhands` CLI: it owns ONE long-lived headless ' +
+	'browser (a `serve` process bound to a profile) and every other verb is a ' +
+	'thin client that drives that SAME live page and exits, so you compose verbs ' +
+	'across separate invocations. The core flow:\n' +
+	'1. Start and HOLD the session: `serve` blocks its shell, so from automation ' +
+	'start it backgrounded and poll its log for the endpoint, e.g. ' +
+	'`nohup npx webhands serve > /tmp/webhands-serve.log 2>&1 &` then ' +
+	'`sleep 12 && cat /tmp/webhands-serve.log` (expect ok:true, an endpoint, a ' +
+	'pid). The tool NEVER silently spawns a browser; if a verb prints "run ' +
+	'`serve` first", start serve and retry.\n' +
+	'2. Drive it as separate invocations against the same page: `goto <url>`, ' +
+	'`wait --ms <n>` (or `--navigation`/`--locator`) to pace, then `snapshot`, ' +
+	'then `click`/`type`/`eval` as needed.\n' +
+	'3. Read cheaply: `snapshot` returns a token-cheap accessibility-tree + text ' +
+	'view (your default for "what is on the page"); use `--token-limit <n>` to ' +
+	'cap output and `--full` only when you truly need raw DOM. Pipe a snapshot ' +
+	'through grep to pull just the lines you care about. For structured ' +
+	'extraction, `eval` a small JS expression and return a plain array/object ' +
+	'(`--format json`); keep matching LOOSE and text-based (site DOM/class names ' +
+	'change), and expect to iterate once or twice.\n' +
+	'4. Pacing: results often arrive after navigation via background XHR. If a ' +
+	'snapshot is empty or sparse the page is still loading; `wait --ms 6000-9000` ' +
+	'(or `wait --navigation`) before snapshotting. This is normal, not a failure.\n' +
+	'Verb quick reference: `serve` start & hold the one browser (headless ' +
+	'default, `--headed` to show); `goto <url>` navigate; `wait` pace/settle; ' +
+	'`snapshot` token-cheap a11y+text view; `eval <expr>` run JS and return a ' +
+	'serializable result; `click`/`type` act via a Playwright locator; `cookies` ' +
+	'export/import the active session; `stop` tear the session down. For exact ' +
+	'flags reach for `npx webhands <verb> --help` or `npx webhands --llms-full`. ' +
+	'Use only those verbs to drive the browser; do not assume any site-specific ' +
+	'selectors, steps, or URLs beyond the one named in the goal.';
+
+/**
+ * The WEBHANDS-SKILLED protocol preamble: the SAME webhands verb surface and the
+ * SAME leave-open rule as {@link WEBHANDS_PREAMBLE}, but its toolkit reference is
+ * the inlined {@link WEBHANDS_SKILL_REFERENCE} so the agent starts KNOWING the
+ * surface instead of discovering it cold. ONLY the up-front knowledge differs
+ * from the cold config: the verb surface the agent drives, the goal, and the
+ * harness's end-state assertion are all identical, which is what makes
+ * cold-vs-skilled a clean A/B of the skill's value (and skilled-vs-Playwright the
+ * fair-shake number a real deployment would see).
+ */
+export const WEBHANDS_SKILLED_PREAMBLE: ProtocolPreamble = {
+	toolkit: 'webhands-skilled',
+	toolkitReference: WEBHANDS_SKILL_REFERENCE,
+	leaveOpenRule: WEBHANDS_LEAVE_OPEN_RULE,
 };
 
 /**
@@ -175,6 +251,40 @@ export function assertNoPriming(entry: EvalEntry): void {
 }
 
 /**
+ * Assert a SKILLED preamble's inlined toolkit reference does not smuggle goal
+ * priming: it must carry NO selector-shaped fragment (the same SELECTOR_SHAPES
+ * the GOAL is held to) and NO http(s) URL at all (the skilled reference is
+ * site-agnostic; it should never name ANY site, even one). This is the
+ * preamble-layer analogue of {@link assertNoPriming}: the no-priming guard binds
+ * the GOAL, but an inlined skill is a NEW way priming could sneak in through the
+ * PROTOCOL layer, so the skilled reference is held to the same spirit. The skill
+ * teaches HOW to use webhands (generic, site-agnostic), never how to solve a
+ * given site; if a future edit pasted a worked example with a real URL/selector,
+ * this throws {@link PrimingViolationError} so it cannot silently rot into goal
+ * priming.
+ */
+export function assertSkilledReferenceUnprimed(reference: string): void {
+	for (const shape of SELECTOR_SHAPES) {
+		if (shape.test(reference)) {
+			throw new PrimingViolationError(
+				`the skilled toolkit reference carries a selector-shaped fragment ` +
+					`(matched ${shape}); inlined skill text is PROTOCOL (how to use ` +
+					`webhands), not goal priming, so it must name NO site-specific ` +
+					`selectors. Drop the worked example that carries it.`,
+			);
+		}
+	}
+	const urls = extractUrls(reference);
+	if (urls.length > 0) {
+		throw new PrimingViolationError(
+			`the skilled toolkit reference names a URL (${urls[0]}); the inlined ` +
+				`skill is SITE-AGNOSTIC protocol and must name no site at all. Drop ` +
+				`the worked example that carries it.`,
+		);
+	}
+}
+
+/**
  * Assemble the EXACT text handed to the agent-under-test on stdin: the
  * (toolkit-agnostic) goal-prompt + the per-adapter PROTOCOL preamble, and
  * nothing else. Runs {@link assertNoPriming} on the GOAL first, so building the
@@ -195,6 +305,13 @@ export function buildAgentInput(
 	preamble: ProtocolPreamble = WEBHANDS_PREAMBLE,
 ): string {
 	assertNoPriming(entry);
+	// A SKILLED preamble inlines skill text into the PROTOCOL layer, a new path
+	// priming could sneak in through; hold its reference to the no-priming spirit
+	// too, so a primed inlined skill never reaches a real agent (load-bearing like
+	// assertNoPriming on the goal).
+	if (preamble.toolkit === WEBHANDS_SKILLED_PREAMBLE.toolkit) {
+		assertSkilledReferenceUnprimed(preamble.toolkitReference);
+	}
 	return (
 		`${entry.goalPrompt.trim()}\n\n` +
 		`${preamble.toolkitReference}\n\n` +

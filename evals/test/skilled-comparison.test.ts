@@ -1,0 +1,253 @@
+import {describe, expect, it} from 'vitest';
+import {
+	ShellAdapter,
+	WebhandsSkilledAdapter,
+	type AgentUsage,
+	type LaunchResult,
+} from '../src/agent-under-test.js';
+import {
+	assertSkilledReferenceUnprimed,
+	buildAgentInput,
+	PrimingViolationError,
+	VERB_SURFACE_REFERENCE,
+	WEBHANDS_PREAMBLE,
+	WEBHANDS_SKILL_REFERENCE,
+	WEBHANDS_SKILLED_PREAMBLE,
+	type ProtocolPreamble,
+} from '../src/no-priming.js';
+import {
+	formatComparison,
+	type ComparisonResult,
+	type EvalRunResult,
+} from '../src/run-eval.js';
+import type {EvalEntry} from '../src/eval-contract.js';
+import type {Outcome} from '../src/outcome.js';
+
+/**
+ * The WEBHANDS-SKILLED in-context comparison plumbing self-test (task
+ * `eval-webhands-skill-in-context-variant`).
+ *
+ * DETERMINISTIC, no live site, no real agent, no browser: it exercises the
+ * skilled-variant MACHINERY in isolation:
+ *  - the SKILLED preamble inlines the webhands skill text so the agent starts
+ *    knowing the surface, while driving the SAME verb surface as the cold config
+ *    (only the up-front knowledge differs);
+ *  - the inlined skill text carries NO goal priming (no selector-shaped fragment,
+ *    no site URL): the no-priming spirit binds the inlined PROTOCOL text too, and
+ *    the no-priming guard still binds the GOAL;
+ *  - {@link WebhandsSkilledAdapter} is the SAME launch shape as the cold
+ *    {@link ShellAdapter}, only its adapter NAME + preamble differ;
+ *  - {@link formatComparison} renders a THREE-WAY read (cold / skilled /
+ *    Playwright) on the SAME fields (outcome, milestones, tokens), and still
+ *    renders the original two-way read when no skilled leg is present.
+ *
+ * It runs under `evals/`'s OWN vitest (the `self-test` script), NEVER the repo
+ * gate (`pnpm test` = `pnpm --filter './packages/*' test` cannot reach here).
+ */
+
+/** A minimal toolkit-agnostic eval entry (no selectors, only the entry URL). */
+function fakeEntry(): EvalEntry {
+	return {
+		id: 'skilled-fake',
+		tier: 'self-test',
+		target: 'fake',
+		entryUrl: 'http://127.0.0.1:0/',
+		goalPrompt:
+			'Log in and complete a purchase, starting at http://127.0.0.1:0/.',
+		health: [],
+		milestones: [],
+		endState: [],
+	};
+}
+
+/** A minimal fake EvalRunResult carrying a known outcome + usage, for the summary. */
+function fakeRun(
+	adapter: string,
+	kind: Outcome['kind'],
+	milestonesReached: readonly string[],
+	milestoneTotal: number,
+	usage: AgentUsage | undefined,
+): EvalRunResult {
+	const launch: LaunchResult = {
+		status: 'reported-done',
+		output: 'done',
+		...(usage !== undefined ? {usage} : {}),
+	};
+	const outcome: Outcome = {
+		kind,
+		score: {
+			passed: kind === 'PASS',
+			milestonesReached,
+			milestoneTotal,
+			checks: [],
+		},
+		attempts: 1,
+	};
+	return {entry: fakeEntry(), adapter, launch, outcome, cleanedUp: 'skipped'};
+}
+
+describe('webhands-skilled in-context comparison plumbing (deterministic, no live site)', () => {
+	describe('the SKILLED preamble inlines the skill but drives the SAME verb surface', () => {
+		it('embeds the webhands skill text so the agent starts knowing the surface', () => {
+			const input = buildAgentInput(fakeEntry(), WEBHANDS_SKILLED_PREAMBLE);
+			// The skilled toolkit reference is the inlined skill, present verbatim.
+			expect(input).toContain(WEBHANDS_SKILL_REFERENCE);
+			// It actually teaches the surface up front: the serve lifecycle + the
+			// core verbs (not merely a pointer at a discovery command).
+			expect(WEBHANDS_SKILL_REFERENCE).toMatch(/serve/);
+			expect(WEBHANDS_SKILL_REFERENCE).toMatch(/snapshot/);
+			expect(WEBHANDS_SKILL_REFERENCE).toMatch(/goto/);
+		});
+
+		it('drives the SAME webhands verb surface as the cold config (only up-front knowledge differs)', () => {
+			// Both configs are the webhands verb surface; the skilled preamble is a
+			// distinct toolkit name but still webhands.
+			expect(WEBHANDS_SKILLED_PREAMBLE.toolkit).toBe('webhands-skilled');
+			expect(WEBHANDS_PREAMBLE.toolkit).toBe('webhands');
+			// The skilled reference points at the SAME verb surface (it still tells
+			// the agent to drive via the webhands CLI verbs), so it is comparable.
+			expect(WEBHANDS_SKILL_REFERENCE).toMatch(/webhands/i);
+			// The leave-open rule is the webhands one, UNCHANGED from cold.
+			expect(WEBHANDS_SKILLED_PREAMBLE.leaveOpenRule).toBe(
+				WEBHANDS_PREAMBLE.leaveOpenRule,
+			);
+			// The skilled input differs from the cold input ONLY in the toolkit
+			// reference (the up-front knowledge), with the SAME goal + leave-open rule.
+			const cold = buildAgentInput(fakeEntry(), WEBHANDS_PREAMBLE);
+			const skilled = buildAgentInput(fakeEntry(), WEBHANDS_SKILLED_PREAMBLE);
+			expect(skilled).not.toBe(cold);
+			// The cold config's bare discovery pointer is NOT what the skilled config
+			// hands the agent (skilled inlines the surface instead of pointing at it).
+			expect(skilled).not.toContain(VERB_SURFACE_REFERENCE);
+		});
+	});
+
+	describe('the inlined skill text carries NO goal priming (it is PROTOCOL, site-agnostic)', () => {
+		it('passes the no-priming spirit: no selector-shaped fragment, no site URL', () => {
+			// The dedicated guard holds the inlined reference to the no-priming spirit.
+			expect(() =>
+				assertSkilledReferenceUnprimed(WEBHANDS_SKILL_REFERENCE),
+			).not.toThrow();
+			// Concretely: no selector-shaped fragments the no-priming guard forbids...
+			expect(WEBHANDS_SKILL_REFERENCE).not.toMatch(/page\.locator\(/i);
+			expect(WEBHANDS_SKILL_REFERENCE).not.toMatch(/getByRole\(/i);
+			expect(WEBHANDS_SKILL_REFERENCE).not.toMatch(/frameLocator\(/i);
+			expect(WEBHANDS_SKILL_REFERENCE).not.toMatch(/querySelector/i);
+			expect(WEBHANDS_SKILL_REFERENCE).not.toMatch(/data-testid/i);
+			// ...and NO http(s) URL at all (the skill is site-agnostic; it names no
+			// site, so it can never leak the goal's site).
+			expect(WEBHANDS_SKILL_REFERENCE).not.toMatch(/https?:\/\//i);
+		});
+
+		it('the guard REJECTS a skilled reference that smuggles a selector or a URL (so it cannot rot)', () => {
+			expect(() =>
+				assertSkilledReferenceUnprimed(
+					'Drive the page with `page.locator("#login")`.',
+				),
+			).toThrow(PrimingViolationError);
+			expect(() =>
+				assertSkilledReferenceUnprimed(
+					'For example go to https://www.saucedemo.com/ and log in.',
+				),
+			).toThrow(PrimingViolationError);
+		});
+
+		it('buildAgentInput runs the skilled-reference guard, so a primed inlined skill never reaches a real agent', () => {
+			const primedPreamble: ProtocolPreamble = {
+				...WEBHANDS_SKILLED_PREAMBLE,
+				toolkitReference:
+					'Use webhands. For example, https://example.com/ then ' +
+					'`page.locator("#go")`.',
+			};
+			// The guard fires inside buildAgentInput for a skilled-toolkit preamble.
+			expect(() => buildAgentInput(fakeEntry(), primedPreamble)).toThrow(
+				PrimingViolationError,
+			);
+		});
+
+		it('the no-priming guard still binds the GOAL under the skilled preamble', () => {
+			const primed: EvalEntry = {
+				...fakeEntry(),
+				goalPrompt: `Click page.locator('#submit') to finish.`,
+			};
+			// A primed GOAL throws regardless of which preamble wraps it.
+			expect(() =>
+				buildAgentInput(primed, WEBHANDS_SKILLED_PREAMBLE),
+			).toThrow();
+		});
+	});
+
+	describe('WebhandsSkilledAdapter (same launch shape, skilled preamble)', () => {
+		it('is named `webhands-skilled` (distinct from the cold `shell`)', () => {
+			const skilled = new WebhandsSkilledAdapter({agentCmd: 'true'});
+			const cold = new ShellAdapter({agentCmd: 'true'});
+			expect(skilled.adapter).toBe('webhands-skilled');
+			expect(cold.adapter).toBe('shell');
+		});
+
+		it('feeds the agent the inlined skill on stdin (same launch mechanism as the cold adapter)', async () => {
+			// The adapter writes the wrapped goal (goal + skilled reference +
+			// leave-open) to the agent's stdin; `cat` echoes it so we can assert the
+			// skill text reached the spawned process verbatim.
+			const adapter = new WebhandsSkilledAdapter({agentCmd: 'cat'});
+			const result = await adapter.launch({
+				entry: fakeEntry(),
+				webhands: {command: 'true', args: []},
+				home: '/tmp/fake-home',
+				timeoutMs: 30_000,
+			});
+			expect(result.status).toBe('reported-done');
+			// A distinctive phrase from the inlined skill made it to the agent.
+			expect(result.output).toContain('token-cheap accessibility-tree');
+		});
+	});
+
+	describe('formatComparison three-way (cold / skilled / Playwright, identical fields)', () => {
+		it('renders all THREE legs on the SAME fields (outcome, milestones, tokens)', () => {
+			const comparison: ComparisonResult = {
+				evalId: 'skilled-fake',
+				webhands: fakeRun('shell', 'PASS', ['a'], 4, {
+					output: 15_200,
+					total: 6_582_300,
+				}),
+				skilled: fakeRun('webhands-skilled', 'PASS', ['a'], 4, {
+					output: 9100,
+					total: 2_100_000,
+				}),
+				playwright: fakeRun('playwright', 'PASS', ['a'], 4, {
+					output: 6400,
+					total: 839_500,
+				}),
+			};
+			const out = formatComparison(comparison);
+			// The header frames it as same-goal and counts THREE toolkits.
+			expect(out).toContain('skilled-fake');
+			expect(out).toMatch(/same goal/i);
+			expect(out).toContain('3 toolkits');
+			// One labelled row per leg, in cold -> skilled -> Playwright order.
+			const coldIdx = out.indexOf('shell');
+			const skilledIdx = out.indexOf('webhands-skilled');
+			const pwIdx = out.indexOf('playwright');
+			expect(coldIdx).toBeGreaterThanOrEqual(0);
+			expect(skilledIdx).toBeGreaterThan(coldIdx);
+			expect(pwIdx).toBeGreaterThan(skilledIdx);
+			// Tokens print in the SAME shape for every leg (apples-to-apples).
+			expect(out).toContain('out 15.2k');
+			expect(out).toContain('out 9.1k');
+			expect(out).toContain('out 6.4k');
+		});
+
+		it('still renders the original TWO-WAY read when no skilled leg is present', () => {
+			const comparison: ComparisonResult = {
+				evalId: 'skilled-fake',
+				webhands: fakeRun('shell', 'PASS', [], 0, {total: 1000}),
+				playwright: fakeRun('playwright', 'PASS', [], 0, {total: 500}),
+			};
+			const out = formatComparison(comparison);
+			expect(out).toContain('2 toolkits');
+			expect(out).toContain('shell');
+			expect(out).toContain('playwright');
+			expect(out).not.toContain('webhands-skilled');
+		});
+	});
+});

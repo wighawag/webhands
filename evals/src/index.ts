@@ -33,6 +33,7 @@ export {
 	type LaunchResult,
 	ShellAdapter,
 	PlaywrightAdapter,
+	WebhandsSkilledAdapter,
 	UsageAccumulator,
 	extractUsage,
 	substituteModel,
@@ -47,11 +48,14 @@ export {
 } from './scripted-trace.js';
 export {
 	assertNoPriming,
+	assertSkilledReferenceUnprimed,
 	buildAgentInput,
 	PrimingViolationError,
 	VERB_SURFACE_REFERENCE,
+	WEBHANDS_SKILL_REFERENCE,
 	type ProtocolPreamble,
 	WEBHANDS_PREAMBLE,
+	WEBHANDS_SKILLED_PREAMBLE,
 	PLAYWRIGHT_PREAMBLE,
 } from './no-priming.js';
 export {

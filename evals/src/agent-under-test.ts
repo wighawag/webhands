@@ -6,6 +6,7 @@ import {
 	CDP_ENDPOINT_ENV,
 	PLAYWRIGHT_PREAMBLE,
 	WEBHANDS_PREAMBLE,
+	WEBHANDS_SKILLED_PREAMBLE,
 	type ProtocolPreamble,
 } from './no-priming.js';
 import type {WebhandsCommand} from './verb-client.js';
@@ -309,6 +310,30 @@ export class PlaywrightAdapter extends ShellAdapter {
 			...opts,
 			adapter: 'playwright',
 			preamble: PLAYWRIGHT_PREAMBLE,
+		});
+	}
+}
+
+/**
+ * The WEBHANDS-SKILLED adapter (task `eval-webhands-skill-in-context-variant`):
+ * the SAME {@link ShellAdapter} launch mechanism pinned to the
+ * {@link WEBHANDS_SKILLED_PREAMBLE} and a `webhands-skilled` adapter name. It
+ * drives the EXACT SAME webhands verb surface as the cold {@link ShellAdapter}
+ * default; the ONLY difference is that its preamble INLINES the webhands skill
+ * text so the agent starts already knowing the surface, instead of discovering
+ * it cold via `--llms-full` at runtime (paying the ~37% discovery tax the
+ * transcript analysis found). That single-variable difference is what makes a
+ * cold-vs-skilled run a clean A/B of the skill's value, and a
+ * skilled-vs-Playwright run the FAIR-SHAKE number a real deployment (which has
+ * the skill in context) would see. Same launch shape, same goal, same harness
+ * end-state assertion: only the up-front knowledge differs.
+ */
+export class WebhandsSkilledAdapter extends ShellAdapter {
+	constructor(opts: {agentCmd: string; model?: string; parseUsage?: boolean}) {
+		super({
+			...opts,
+			adapter: 'webhands-skilled',
+			preamble: WEBHANDS_SKILLED_PREAMBLE,
 		});
 	}
 }

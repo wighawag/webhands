@@ -1,6 +1,7 @@
 import {
 	PlaywrightAdapter,
 	ShellAdapter,
+	WebhandsSkilledAdapter,
 	type AgentUnderTest,
 } from '../agent-under-test.js';
 import {
@@ -63,6 +64,8 @@ Usage:
   pnpm --filter @webhands/evals run-eval --eval <id> --agent-cmd "<command>" [options]
   pnpm --filter @webhands/evals run-eval --eval <id> --compare \\
       --agent-cmd "<webhands-agent-cmd>" --playwright-cmd "<playwright-agent-cmd>"
+  pnpm --filter @webhands/evals run-eval --eval <id> --compare3 \\
+      --agent-cmd "<webhands-agent-cmd>" --playwright-cmd "<playwright-agent-cmd>"
 
 Options:
   --eval <id>          The catalogue eval id to run (a *.eval.ts entry).
@@ -72,21 +75,39 @@ Options:
                        model-pinning substitution (dorfl's pattern). In
                        --compare mode this is the WEBHANDS agent command.
   --agent-kind <kind>  Which agent config to launch: \`webhands\` (default, the
-                       agent drives the published webhands verb surface) or
-                       \`playwright\` (the BASELINE: the agent drives its OWN
-                       raw Playwright, never webhands). Only the agent's
-                       toolkit + protocol preamble differ; the eval goal and the
-                       harness's end-state assertion are identical either way.
-  --compare            Run the SAME eval under BOTH configs (webhands +
-                       Playwright-only) and print a side-by-side comparison of
-                       outcome + milestones + tokens (the "does webhands
-                       deliver?" scoreboard). Requires --agent-cmd (webhands)
-                       and --playwright-cmd (Playwright-only).
+                       COLD config: the agent drives the published webhands verb
+                       surface and discovers it at runtime via \`--llms-full\`),
+                       \`webhands-skilled\` (the SAME verb surface, but the
+                       preamble INLINES the use-webhands skill so the agent
+                       starts knowing the surface), or \`playwright\` (the
+                       BASELINE: the agent drives its OWN raw Playwright, never
+                       webhands). Only the agent's toolkit + protocol preamble
+                       differ; the eval goal and the harness's end-state
+                       assertion are identical across all three.
+  --compare            Run the SAME eval under the cold webhands + Playwright-only
+                       configs and print a side-by-side comparison of outcome +
+                       milestones + tokens (the "does webhands deliver?"
+                       scoreboard). Requires --agent-cmd (webhands) and
+                       --playwright-cmd (Playwright-only).
+  --compare3           Run the SAME eval under ALL THREE configs (webhands-cold +
+                       webhands-skilled + Playwright-only) and print a three-way
+                       side-by-side comparison on identical fields. cold->skilled
+                       is the SKILL's value; skilled-vs-Playwright is the
+                       fair-shake number. Requires --agent-cmd (the cold/skilled
+                       webhands agent, reused for the skilled leg unless
+                       --skilled-cmd is given) and --playwright-cmd.
+  --skilled-cmd "<cmd>"
+                       The shell command that launches the webhands-SKILLED agent
+                       (used in --compare3, or as the agent command when
+                       --agent-kind webhands-skilled is set without --agent-cmd).
+                       Defaults to --agent-cmd: the skilled leg drives the SAME
+                       webhands surface as the cold leg; only the preamble
+                       differs.
   --playwright-cmd "<cmd>"
                        The shell command that launches the Playwright-only
-                       baseline agent (used in --compare mode, or as the agent
-                       command when --agent-kind playwright is set without
-                       --agent-cmd).
+                       baseline agent (used in --compare/--compare3 mode, or as
+                       the agent command when --agent-kind playwright is set
+                       without --agent-cmd).
   --model <model>      The model to substitute for {model} in the agent
                        command(s).
   --parse-usage        OPT-IN, BEST-EFFORT: sum token usage from the agent's
@@ -122,14 +143,22 @@ Registered real-site evals:
 
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
-type AgentKind = 'webhands' | 'playwright';
+type AgentKind = 'webhands' | 'webhands-skilled' | 'playwright';
+
+const AGENT_KINDS: readonly AgentKind[] = [
+	'webhands',
+	'webhands-skilled',
+	'playwright',
+];
 
 interface Args {
 	readonly eval?: string;
 	readonly agentCmd?: string;
+	readonly skilledCmd?: string;
 	readonly playwrightCmd?: string;
 	readonly agentKind: AgentKind;
 	readonly compare: boolean;
+	readonly compare3: boolean;
 	readonly model?: string;
 	readonly webhands?: string;
 	readonly maxAttempts?: number;
@@ -141,9 +170,11 @@ interface Args {
 function parseArgs(argv: readonly string[]): Args {
 	let evalId: string | undefined;
 	let agentCmd: string | undefined;
+	let skilledCmd: string | undefined;
 	let playwrightCmd: string | undefined;
 	let agentKind: AgentKind = 'webhands';
 	let compare = false;
+	let compare3 = false;
 	let model: string | undefined;
 	let webhands: string | undefined;
 	let maxAttempts: number | undefined;
@@ -159,21 +190,29 @@ function parseArgs(argv: readonly string[]): Args {
 			case '--agent-cmd':
 				agentCmd = argv[++i];
 				break;
+			case '--skilled-cmd':
+				skilledCmd = argv[++i];
+				break;
 			case '--playwright-cmd':
 				playwrightCmd = argv[++i];
 				break;
 			case '--agent-kind': {
 				const kind = argv[++i];
-				if (kind !== 'webhands' && kind !== 'playwright') {
+				if (!AGENT_KINDS.includes(kind as AgentKind)) {
 					throw new Error(
-						`--agent-kind must be 'webhands' or 'playwright' (got '${kind}')`,
+						`--agent-kind must be one of ${AGENT_KINDS.map(
+							(k) => `'${k}'`,
+						).join(', ')} (got '${kind}')`,
 					);
 				}
-				agentKind = kind;
+				agentKind = kind as AgentKind;
 				break;
 			}
 			case '--compare':
 				compare = true;
+				break;
+			case '--compare3':
+				compare3 = true;
 				break;
 			case '--model':
 				model = argv[++i];
@@ -201,9 +240,11 @@ function parseArgs(argv: readonly string[]): Args {
 	return {
 		...(evalId !== undefined ? {eval: evalId} : {}),
 		...(agentCmd !== undefined ? {agentCmd} : {}),
+		...(skilledCmd !== undefined ? {skilledCmd} : {}),
 		...(playwrightCmd !== undefined ? {playwrightCmd} : {}),
 		agentKind,
 		compare,
+		compare3,
 		...(model !== undefined ? {model} : {}),
 		...(webhands !== undefined ? {webhands} : {}),
 		...(maxAttempts !== undefined ? {maxAttempts} : {}),
@@ -214,11 +255,13 @@ function parseArgs(argv: readonly string[]): Args {
 }
 
 /**
- * Build the agent adapter for one config. The webhands config drives the
- * published verb surface (the {@link ShellAdapter} default preamble); the
- * Playwright-only baseline drives raw Playwright via the {@link PlaywrightAdapter}
- * (its protocol preamble teaches Playwright, never webhands). Both are the SAME
- * shell launch shape; only the toolkit + preamble differ.
+ * Build the agent adapter for one config. The webhands-COLD config drives the
+ * published verb surface and discovers it at runtime (the {@link ShellAdapter}
+ * default preamble); webhands-SKILLED drives the SAME verb surface but its
+ * preamble INLINES the skill ({@link WebhandsSkilledAdapter}), so it starts
+ * knowing the surface; the Playwright-only baseline drives raw Playwright via the
+ * {@link PlaywrightAdapter} (its preamble teaches Playwright, never webhands).
+ * All three are the SAME shell launch shape; only the toolkit + preamble differ.
  */
 function buildAgent(
 	kind: AgentKind,
@@ -231,9 +274,14 @@ function buildAgent(
 		...(model !== undefined ? {model} : {}),
 		...(parseUsage ? {parseUsage: true} : {}),
 	};
-	return kind === 'playwright'
-		? new PlaywrightAdapter(opts)
-		: new ShellAdapter(opts);
+	switch (kind) {
+		case 'playwright':
+			return new PlaywrightAdapter(opts);
+		case 'webhands-skilled':
+			return new WebhandsSkilledAdapter(opts);
+		case 'webhands':
+			return new ShellAdapter(opts);
+	}
 }
 
 /** Format ONE run's result line (shared by single-run and the comparison legs). */
@@ -304,23 +352,34 @@ async function main(): Promise<void> {
 		process.exit(args.help ? 0 : 1);
 	}
 
+	if (args.compare3) {
+		await runComparison3(args);
+		return;
+	}
+
 	if (args.compare) {
 		await runComparison(args);
 		return;
 	}
 
-	// Single-config run. --agent-kind picks the toolkit; the Playwright-only
-	// config may take its command from --playwright-cmd as well as --agent-cmd.
+	// Single-config run. --agent-kind picks the toolkit. The Playwright-only config
+	// may take its command from --playwright-cmd as well as --agent-cmd; the
+	// webhands-skilled config from --skilled-cmd as well as --agent-cmd (so the
+	// same eval can be run skilled without a separate flag dance).
 	const cmd =
 		args.agentKind === 'playwright'
 			? (args.playwrightCmd ?? args.agentCmd)
-			: args.agentCmd;
+			: args.agentKind === 'webhands-skilled'
+				? (args.skilledCmd ?? args.agentCmd)
+				: args.agentCmd;
 	if (cmd === undefined || cmd.trim() === '') {
 		process.stderr.write(
 			`error: ${
 				args.agentKind === 'playwright'
 					? '--playwright-cmd (or --agent-cmd)'
-					: '--agent-cmd'
+					: args.agentKind === 'webhands-skilled'
+						? '--skilled-cmd (or --agent-cmd)'
+						: '--agent-cmd'
 			} is required (the shell command that launches the unaided agent).\n`,
 		);
 		process.exit(1);
@@ -375,6 +434,66 @@ async function runComparison(args: Args): Promise<void> {
 	process.stdout.write(`${formatRunLine(playwright)}\n`);
 
 	const comparison: ComparisonResult = {evalId, webhands, playwright};
+	process.stdout.write(`\n${formatComparison(comparison)}\n`);
+	process.exit(0);
+}
+
+/**
+ * Run the SAME eval under ALL THREE configs (webhands-cold + webhands-skilled +
+ * Playwright-only) and print a three-way side-by-side comparison: the
+ * cold->skilled delta is the SKILL's value (it removes the runtime discovery
+ * tax), and skilled-vs-Playwright is the FAIR-SHAKE number a real deployment
+ * (skill in context) would see. Every leg uses the SAME goal + the SAME harness
+ * end-state assertion; only the toolkit + preamble differ. The legs run
+ * sequentially (cold, skilled, Playwright) so they never contend for the same
+ * isolated serve/home.
+ *
+ * Like {@link runComparison} it is INFORMATIONAL and exits 0 whenever every leg
+ * ran; per-leg verdicts are in the printed block. (Use a single --agent-kind run
+ * for the three-state exit code.)
+ */
+async function runComparison3(args: Args): Promise<void> {
+	const webhandsCmd = args.agentCmd;
+	// The skilled leg drives the SAME webhands surface as the cold leg, so its
+	// command defaults to --agent-cmd when --skilled-cmd is not given (the only
+	// difference between the two legs is the preamble, not the launch command).
+	const skilledCmd = args.skilledCmd ?? args.agentCmd;
+	if (
+		webhandsCmd === undefined ||
+		webhandsCmd.trim() === '' ||
+		skilledCmd === undefined ||
+		skilledCmd.trim() === '' ||
+		args.playwrightCmd === undefined ||
+		args.playwrightCmd.trim() === ''
+	) {
+		process.stderr.write(
+			'error: --compare3 requires --agent-cmd (the webhands COLD agent; reused ' +
+				'for the SKILLED leg unless --skilled-cmd is given) and --playwright-cmd ' +
+				'(the Playwright-only baseline agent).\n',
+		);
+		process.exit(1);
+	}
+	const evalId = args.eval!;
+	const webhands = await runOne(
+		evalId,
+		buildAgent('webhands', webhandsCmd, args.model, args.parseUsage),
+		args,
+	);
+	process.stdout.write(`${formatRunLine(webhands)}\n`);
+	const skilled = await runOne(
+		evalId,
+		buildAgent('webhands-skilled', skilledCmd, args.model, args.parseUsage),
+		args,
+	);
+	process.stdout.write(`${formatRunLine(skilled)}\n`);
+	const playwright = await runOne(
+		evalId,
+		buildAgent('playwright', args.playwrightCmd, args.model, args.parseUsage),
+		args,
+	);
+	process.stdout.write(`${formatRunLine(playwright)}\n`);
+
+	const comparison: ComparisonResult = {evalId, webhands, skilled, playwright};
 	process.stdout.write(`\n${formatComparison(comparison)}\n`);
 	process.exit(0);
 }
