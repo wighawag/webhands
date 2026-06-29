@@ -1,4 +1,5 @@
-import {spawnSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
 import type {EvalEntry} from './eval-contract.js';
 import {buildAgentInput} from './no-priming.js';
 import type {WebhandsCommand} from './verb-client.js';
@@ -96,33 +97,128 @@ export class ShellAdapter implements AgentUnderTest {
 			// SAME session the harness reads for its verdict.
 			WEBHANDS_HOME: input.home,
 		};
-		const result = spawnSync('bash', ['-c', command], {
-			input: stdin,
-			env,
-			encoding: 'utf8',
-			timeout: input.timeoutMs,
-			maxBuffer: 64 * 1024 * 1024,
+		return await new Promise<LaunchResult>((resolve) => {
+			const child = spawn('bash', ['-c', command], {
+				env,
+				stdio: ['pipe', 'pipe', 'pipe'],
+			});
+			let out = '';
+			let err = '';
+			let timedOut = false;
+			const timer = setTimeout(() => {
+				timedOut = true;
+				child.kill('SIGTERM');
+			}, input.timeoutMs);
+			// TEE + LIVE PRETTY-PRINT: capture the agent's stdout for the (untrusted)
+			// self-report AND stream a human-readable view to the terminal as it
+			// happens, so a human can WATCH the agent work. pi `--mode json` emits one
+			// JSON event per line (NDJSON); we render each event compactly. (This is
+			// demo-grade tee; a proper pi-native adapter would parse this stream as a
+			// first-class capability behind the same seam.)
+			const rl = createInterface({input: child.stdout});
+			rl.on('line', (line) => {
+				out += line + '\n';
+				process.stdout.write(renderAgentLine(line));
+			});
+			child.stderr.on('data', (d: Buffer) => {
+				err += d.toString();
+				process.stderr.write(d);
+			});
+			child.on('error', (e) => {
+				clearTimeout(timer);
+				resolve({status: 'crashed', output: out.trim(), detail: e.message});
+			});
+			child.on('close', (code) => {
+				clearTimeout(timer);
+				const output = out.trim();
+				if (timedOut) {
+					resolve({
+						status: 'timed-out',
+						output,
+						detail: `agent exceeded ${input.timeoutMs}ms`,
+					});
+					return;
+				}
+				if ((code ?? -1) !== 0) {
+					resolve({
+						status: 'crashed',
+						output,
+						detail: err.trim() || `exit ${code}`,
+					});
+					return;
+				}
+				resolve({status: 'reported-done', output});
+			});
+			child.stdin.write(stdin);
+			child.stdin.end();
 		});
-		const output = (result.stdout ?? '').trim();
-		if (result.error !== undefined) {
-			const timedOut =
-				(result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT' ||
-				result.signal === 'SIGTERM';
-			return {
-				status: timedOut ? 'timed-out' : 'crashed',
-				output,
-				detail: result.error.message,
-			};
-		}
-		if ((result.status ?? -1) !== 0) {
-			return {
-				status: 'crashed',
-				output,
-				detail: (result.stderr ?? '').trim() || `exit ${result.status}`,
-			};
-		}
-		return {status: 'reported-done', output};
 	}
+}
+
+/**
+ * DEMO-GRADE live renderer for pi's `--mode json` NDJSON event stream: turn one
+ * event line into a short human-readable terminal line so a human can WATCH the
+ * agent work. Unknown / non-JSON lines pass through verbatim. This is scaffolding
+ * for live viewing; a proper pi-native adapter would parse this stream as a
+ * first-class capability behind the {@link AgentUnderTest} seam.
+ */
+export function renderAgentLine(line: string): string {
+	const trimmed = line.trim();
+	if (trimmed === '') return '';
+	let ev: Record<string, unknown>;
+	try {
+		ev = JSON.parse(trimmed) as Record<string, unknown>;
+	} catch {
+		return `${line}\n`; // not JSON (e.g. text mode) — pass through
+	}
+	const type = ev.type;
+	// A completed assistant or tool message: show role + a compact content summary.
+	if (type === 'message_end' || type === 'tool_call' || type === 'tool_result') {
+		const msg = (ev.message ?? ev) as Record<string, unknown>;
+		if (type === 'tool_call') {
+			const name = (ev.name ?? msg.name ?? 'tool') as string;
+			const args = JSON.stringify(ev.arguments ?? ev.input ?? msg.arguments ?? {});
+			return `  \u001b[36m\u2192 ${name}\u001b[0m ${truncate(args, 160)}\n`;
+		}
+		if (type === 'tool_result') {
+			const content = stringifyContent(msg.content ?? ev.result);
+			return `  \u001b[90m\u2190 ${truncate(content, 160)}\u001b[0m\n`;
+		}
+		const role = msg.role as string | undefined;
+		if (role === 'assistant') {
+			const text = stringifyContent(msg.content).trim();
+			return text === '' ? '' : `\u001b[1m[agent]\u001b[0m ${text}\n`;
+		}
+		return '';
+	}
+	// Lifecycle markers worth one line each; everything else (deltas, partials) is
+	// suppressed to keep the live view readable.
+	if (type === 'agent_start') return '\u001b[90m[agent starting\u2026]\u001b[0m\n';
+	if (type === 'agent_end') return '\u001b[90m[agent done]\u001b[0m\n';
+	return '';
+}
+
+/** Flatten a message `content` (array of parts or a string) to plain text. */
+function stringifyContent(content: unknown): string {
+	if (typeof content === 'string') return content;
+	if (Array.isArray(content)) {
+		return content
+			.map((p) => {
+				const part = p as Record<string, unknown>;
+				if (part.type === 'text') return part.text as string;
+				if (part.type === 'tool_use' || part.type === 'tool_call') {
+					return `\u2192 ${part.name as string} ${JSON.stringify(part.input ?? {})}`;
+				}
+				return '';
+			})
+			.filter((s) => s !== '')
+			.join(' ');
+	}
+	return '';
+}
+
+function truncate(s: string, n: number): string {
+	return s.length <= n ? s : `${s.slice(0, n)}\u2026`;
 }
 
 /** The `{model}` placeholder the shell adapter substitutes (dorfl's pattern). */
