@@ -1,2 +1,7 @@
 packages:
   - "packages/*"
+  # The eval harness is a workspace member so its deps install + it can import
+  # `webhands`/`@webhands/core`, but it is deliberately OUTSIDE `packages/*`: the
+  # gate is `pnpm --filter './packages/*' test`, so it never fans out here. Run
+  # the harness via its own `@webhands/evals` scripts (`self-test` / `run-eval`).
+  - "evals"
