@@ -169,30 +169,34 @@ export function renderAgentLine(line: string): string {
 	try {
 		ev = JSON.parse(trimmed) as Record<string, unknown>;
 	} catch {
-		return `${line}\n`; // not JSON (e.g. text mode) — pass through
+		return `${line}\n`; // not JSON (e.g. text mode): pass through
 	}
 	const type = ev.type;
-	// A completed assistant or tool message: show role + a compact content summary.
-	if (type === 'message_end' || type === 'tool_call' || type === 'tool_result') {
-		const msg = (ev.message ?? ev) as Record<string, unknown>;
-		if (type === 'tool_call') {
-			const name = (ev.name ?? msg.name ?? 'tool') as string;
-			const args = JSON.stringify(ev.arguments ?? ev.input ?? msg.arguments ?? {});
-			return `  \u001b[36m\u2192 ${name}\u001b[0m ${truncate(args, 160)}\n`;
-		}
-		if (type === 'tool_result') {
-			const content = stringifyContent(msg.content ?? ev.result);
-			return `  \u001b[90m\u2190 ${truncate(content, 160)}\u001b[0m\n`;
-		}
-		const role = msg.role as string | undefined;
-		if (role === 'assistant') {
+	// TOOL CALL: pi emits `tool_execution_start` once when a tool actually runs
+	// (the noisy `message_update` toolcall_start/delta partials are suppressed).
+	// Show the tool NAME + a bit of its args, e.g. `\u2192 bash {"command":"..."}`.
+	if (type === 'tool_execution_start') {
+		const name = (ev.toolName ?? 'tool') as string;
+		const args = JSON.stringify(ev.args ?? {});
+		return `  \u001b[36m\u2192 ${name}\u001b[0m ${truncate(args, 160)}\n`;
+	}
+	// TOOL RESULT: `tool_execution_end` carries the result + an isError flag.
+	if (type === 'tool_execution_end') {
+		const content = stringifyContent(ev.result);
+		const mark = ev.isError === true ? '\u001b[31m\u2190!' : '\u001b[90m\u2190';
+		return `  ${mark} ${truncate(content, 160)}\u001b[0m\n`;
+	}
+	// A completed assistant message: show its text (deltas/partials suppressed).
+	if (type === 'message_end') {
+		const msg = (ev.message ?? {}) as Record<string, unknown>;
+		if (msg.role === 'assistant') {
 			const text = stringifyContent(msg.content).trim();
 			return text === '' ? '' : `\u001b[1m[agent]\u001b[0m ${text}\n`;
 		}
 		return '';
 	}
-	// Lifecycle markers worth one line each; everything else (deltas, partials) is
-	// suppressed to keep the live view readable.
+	// Lifecycle markers worth one line each; everything else (deltas, partials,
+	// tool_execution_update) is suppressed to keep the live view readable.
 	if (type === 'agent_start') return '\u001b[90m[agent starting\u2026]\u001b[0m\n';
 	if (type === 'agent_end') return '\u001b[90m[agent done]\u001b[0m\n';
 	return '';
@@ -201,6 +205,15 @@ export function renderAgentLine(line: string): string {
 /** Flatten a message `content` (array of parts or a string) to plain text. */
 function stringifyContent(content: unknown): string {
 	if (typeof content === 'string') return content;
+	// A tool result is `{content: [...]}`; unwrap to the parts array.
+	if (
+		content !== null &&
+		typeof content === 'object' &&
+		!Array.isArray(content) &&
+		Array.isArray((content as Record<string, unknown>).content)
+	) {
+		return stringifyContent((content as Record<string, unknown>).content);
+	}
 	if (Array.isArray(content)) {
 		return content
 			.map((p) => {
