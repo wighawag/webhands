@@ -4,17 +4,24 @@ import type {WebhandsCommand} from '../verb-client.js';
 import type {EvalEntry} from '../eval-contract.js';
 import {saucedemoCoreFlowEval} from '../catalogue/saucedemo-core-flow.eval.js';
 import {saucedemoDiscoveryEval} from '../catalogue/saucedemo-discovery.eval.js';
+import {buildParabankTransferEval} from '../catalogue/parabank-transfer.eval.js';
 
 /**
- * The real-site catalogue: STATIC `*.eval.ts` entries this runner can launch by
- * id (one file per eval, work/ contract rule 2: no shared manifest, so this is
- * just an id->entry lookup over the imported modules, not a config file). The
- * local-fixture self-test BUILDER is deliberately NOT here: it needs a live
- * fixture URL and is driven only by the D3 self-test, never as a real-site eval.
+ * The real-site catalogue: `*.eval.ts` entries this runner can launch by id (one
+ * file per eval, work/ contract rule 2: no shared manifest, so this is just an
+ * id->builder lookup over the imported modules, not a config file). Each value
+ * is a BUILDER `() => EvalEntry` invoked fresh per run: a STATIC entry (Tier-1
+ * SauceDemo) is wrapped as a constant builder; a per-run NONCE-tagged entry
+ * (Tier-2 ParaBank, prd D2) mints a fresh nonce on every invocation, so re-runs
+ * are independent. The local-fixture self-test builder is deliberately NOT here:
+ * it needs a live fixture URL and is driven only by the D3 self-test, never as a
+ * real-site eval.
  */
-const CATALOGUE: Readonly<Record<string, EvalEntry>> = {
-	[saucedemoCoreFlowEval.id]: saucedemoCoreFlowEval,
-	[saucedemoDiscoveryEval.id]: saucedemoDiscoveryEval,
+const CATALOGUE: Readonly<Record<string, () => EvalEntry>> = {
+	[saucedemoCoreFlowEval.id]: () => saucedemoCoreFlowEval,
+	[saucedemoDiscoveryEval.id]: () => saucedemoDiscoveryEval,
+	// Tier-2 ParaBank: a per-run builder, fresh nonce-tagged identity each launch.
+	'parabank-transfer': () => buildParabankTransferEval(),
 };
 
 /**
@@ -59,8 +66,13 @@ Registered real-site evals:
   saucedemo-discovery   Tier-1 SauceDemo: complete a purchase starting from the
                         broken \`problem_user\` account, which requires noticing
                         the breakage and switching to a working demo account.
+  parabank-transfer     Tier-2 ParaBank: register a NEW account, open a second
+                        account, transfer a per-run nonce-tagged amount between
+                        them, and confirm it (end state: the nonce-tagged
+                        transaction is present in an account's activity). A fresh
+                        nonce-tagged identity is minted each run (prd D2).
 
-More per-tier eval tasks (stateful / Magento) add further \`*.eval.ts\` entries.
+More per-tier eval tasks (Magento) add further \`*.eval.ts\` entries.
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
 interface Args {
@@ -131,15 +143,17 @@ function asWebhandsCommand(raw: string | undefined): WebhandsCommand {
  * typo or an unregistered entry fails fast before any serve/agent is launched.
  */
 async function loadEval(id: string): Promise<EvalEntry> {
-	const entry = CATALOGUE[id];
-	if (entry === undefined) {
+	const builder = CATALOGUE[id];
+	if (builder === undefined) {
 		const known = Object.keys(CATALOGUE).join(', ') || '(none)';
 		throw new Error(
 			`unknown eval id '${id}'. Known real-site evals: ${known}. ` +
 				'(The local-fixture self-test is run separately via `self-test`.)',
 		);
 	}
-	return entry;
+	// Built FRESH per run: a per-run NONCE-tagged eval (ParaBank, prd D2) mints a
+	// new identity on each invocation here; a static eval just returns its constant.
+	return builder();
 }
 
 async function main(): Promise<void> {
