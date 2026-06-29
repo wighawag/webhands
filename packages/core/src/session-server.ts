@@ -59,6 +59,18 @@ export interface SessionServerOptions extends ProfileLocationOptions {
 	readonly host?: string;
 	/** TCP port to bind. Defaults to `0` (an OS-assigned ephemeral port). */
 	readonly port?: number;
+	/**
+	 * OPTIONAL resolver for the served browser's CDP / remote-debugging endpoint,
+	 * to advertise a SHARED driving surface (finding
+	 * `baseline-comparison-needs-a-shared-driving-surface-not-two-browsers`).
+	 * Called AFTER the session opens (so the transport has resolved its debugging
+	 * port); its result is folded into the written {@link SessionEndpoint} as
+	 * `cdpEndpoint`. Kept as a resolver (not a value) so the CDP endpoint stays a
+	 * CONCRETE-transport detail off the verb seam (ADR-0003: no CDP type on
+	 * {@link Transport}/{@link Session}). Omit (or resolve `undefined`) for the
+	 * default no-shared-surface serve.
+	 */
+	readonly cdpEndpoint?: () => string | undefined;
 }
 
 /** A running {@link SessionServer}: its advertised endpoint and how to stop it. */
@@ -86,10 +98,21 @@ export async function startSessionServer(
 	target: OpenTarget,
 	options: SessionServerOptions,
 ): Promise<RunningSessionServer> {
-	const {transport, host = '127.0.0.1', port = 0, ...location} = options;
+	const {
+		transport,
+		host = '127.0.0.1',
+		port = 0,
+		cdpEndpoint,
+		...location
+	} = options;
 
 	// Open the ONE live session up front: the browser launches here, once.
 	const session: Session = await transport.open(target);
+
+	// Resolve the shared-driving-surface CDP endpoint AFTER open (the transport
+	// has its debugging port by now), if a resolver was supplied. Undefined when
+	// not requested or unavailable (e.g. an attach session).
+	const cdp = cdpEndpoint?.();
 
 	let server: Server;
 	try {
@@ -113,6 +136,7 @@ export async function startSessionServer(
 	const endpoint: SessionEndpoint = {
 		url: `http://${host}:${address.port}`,
 		pid: process.pid,
+		...(cdp !== undefined && cdp !== '' ? {cdpEndpoint: cdp} : {}),
 	};
 
 	try {

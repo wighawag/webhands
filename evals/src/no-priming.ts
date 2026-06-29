@@ -78,28 +78,52 @@ export const WEBHANDS_PREAMBLE: ProtocolPreamble = {
 };
 
 /**
+ * The env var the harness passes the SHARED driving surface's CDP endpoint in,
+ * and that the Playwright-only preamble points the agent at. Administered as
+ * PROTOCOL (env + preamble), the SAME channel the webhands command reaches the
+ * agent through (`WEBHANDS_HOME`), NOT goal priming: it tells the agent HOW the
+ * test is administered (which browser to drive), never how to SOLVE the goal, so
+ * the no-priming rule still binds the goal.
+ */
+export const CDP_ENDPOINT_ENV = 'WEBHANDS_CDP_ENDPOINT';
+
+/**
  * The PLAYWRIGHT-ONLY protocol preamble (the baseline): the agent drives a
- * browser using RAW Playwright APIs ONLY, with NO webhands. It must bring its
- * own Playwright + a browser and write its own automation (a heavier agent
- * contract than the webhands case, where the agent just runs `npx webhands
- * <verb>`); the harness hands it no page. Routing this agent through webhands
- * would defeat the whole point of the baseline, so the preamble never mentions
- * it. The harness STILL keeps its own serve session alive for its OWN verdict
- * reads, but the AGENT never touches it.
+ * browser using RAW Playwright APIs ONLY, with NO webhands. It CONNECTS its
+ * Playwright to the SHARED browser the harness already serves
+ * (`chromium.connectOverCDP(<endpoint>)`), NOT a browser of its own, and drives
+ * the EXISTING page there. That shared surface is what makes the baseline's
+ * verdict trustworthy: the harness reads the SAME page the agent drove,
+ * regardless of toolkit (finding
+ * `baseline-comparison-needs-a-shared-driving-surface-not-two-browsers`).
+ * Routing this agent through webhands would defeat the baseline, so the preamble
+ * never points it at a webhands verb (it may only name webhands to FORBID it).
+ *
+ * The CDP endpoint is supplied as PROTOCOL via the {@link CDP_ENDPOINT_ENV}
+ * environment variable (the same env channel the webhands command's
+ * `WEBHANDS_HOME` rides), so the preamble's wording is STATIC (it names the env
+ * var) while the live endpoint value reaches the agent at launch. This keeps the
+ * endpoint protocol, not goal priming.
  */
 export const PLAYWRIGHT_PREAMBLE: ProtocolPreamble = {
 	toolkit: 'playwright',
 	toolkitReference:
-		'Your only tool is raw Playwright (the `playwright` library). Drive a real ' +
-		'browser yourself via the Playwright APIs (launch a browser, open a page, ' +
-		'`goto` the entry URL, locate/click/type, etc.); you must have Playwright ' +
-		'and a browser available and write your own automation. Do NOT use ' +
-		'webhands or any other browser-automation toolkit. Do not assume any ' +
-		'site-specific selectors, steps, or URLs beyond the one named in the goal.',
+		'Your only tool is raw Playwright (the `playwright` library). A browser is ' +
+		`ALREADY RUNNING for you; its CDP endpoint is in the \`${CDP_ENDPOINT_ENV}\` ` +
+		'environment variable. CONNECT to it with ' +
+		`\`chromium.connectOverCDP(process.env.${CDP_ENDPOINT_ENV})\`, take the ` +
+		'existing context and its existing page (`browser.contexts()[0]`, ' +
+		'`context.pages()[0]`), and drive THAT page (`goto` the entry URL, ' +
+		'locate/click/type, etc.). Do NOT launch your own browser ' +
+		'(`chromium.launch()` / `launchPersistentContext`); you must drive the ' +
+		'shared one so the result can be verified. Do NOT use webhands or any other ' +
+		'browser-automation toolkit. Do not assume any site-specific selectors, ' +
+		'steps, or URLs beyond the one named in the goal.',
 	leaveOpenRule:
 		'When you have finished, STOP and leave the browser open on the final ' +
 		'page so the result can be verified. Do NOT call `browser.close()`, ' +
-		'`context.close()`, or `page.close()`, and do not reset the page.',
+		'`context.close()`, or `page.close()`, and do not reset the page. ' +
+		'(Disconnecting from the shared browser is fine; closing it is not.)',
 };
 
 /** A locator/selector-shaped fragment a goal-prompt must NOT carry. */

@@ -1,4 +1,5 @@
-import {stat} from 'node:fs/promises';
+import {readFile, stat} from 'node:fs/promises';
+import {join} from 'node:path';
 import {chromium, type BrowserContext, type Page} from 'playwright';
 import {
 	MissingBrowserBinaryError,
@@ -147,6 +148,32 @@ export interface PlaywrightLaunchTransportOptions {
 	 * {@link StealthChromiumImporter}.
 	 */
 	readonly importStealthChromium?: StealthChromiumImporter;
+	/**
+	 * Opt-in: expose a Chromium CDP / remote-debugging endpoint for the launched
+	 * persistent context, so a SEPARATE Playwright client can
+	 * `chromium.connectOverCDP(<endpoint>)` and drive the SAME live page this
+	 * transport serves (the SHARED-DRIVING-SURFACE the eval baseline needs, finding
+	 * `baseline-comparison-needs-a-shared-driving-surface-not-two-browsers`).
+	 * Default `false`.
+	 *
+	 * It works by appending `--remote-debugging-port=0` to the launch args (an
+	 * OS-assigned port) and, after the context is up, resolving the port Chromium
+	 * chose from the `DevToolsActivePort` file it writes into the profile
+	 * user-data dir — the SAME mechanism the `attach` transport's own tests use to
+	 * discover a user-started browser's endpoint. The resolved endpoint is read
+	 * back via {@link PlaywrightLaunchTransport.cdpEndpoint} after {@link open}.
+	 *
+	 * It does NOT change the seam: the endpoint is a plain HTTP URL string (like
+	 * the attach `endpoint`), surfaced off the CONCRETE transport, never on the
+	 * verb {@link Session}/{@link Transport} surface (ADR-0003: no CDP type leaks
+	 * across the seam).
+	 *
+	 * Security: a remote-debugging port is a code-execution surface on the live
+	 * page (CONTEXT.md). It binds to loopback only (Chromium binds the debugging
+	 * port to `127.0.0.1`), exactly as the localhost-only `serve` endpoint does;
+	 * do not expose it to untrusted callers.
+	 */
+	readonly exposeCdp?: boolean;
 }
 
 /**
@@ -200,7 +227,15 @@ export class PlaywrightLaunchTransport implements Transport {
 	readonly #ignoreDefaultArgs: boolean | readonly string[] | undefined;
 	readonly #proxy: string | undefined;
 	readonly #proxyNoLeak: boolean | undefined;
+	readonly #exposeCdp: boolean;
 	readonly #importStealthChromium: StealthChromiumImporter;
+	/**
+	 * The CDP / remote-debugging endpoint of the LAST {@link open}ed context when
+	 * {@link exposeCdp} is on, or `undefined` (exposeCdp off, or not yet opened).
+	 * A plain HTTP URL string, read by the serve wiring to advertise the shared
+	 * driving surface; it never crosses the verb seam (ADR-0003).
+	 */
+	#cdpEndpoint: string | undefined;
 
 	/**
 	 * @param location overrides for where profiles live (a `root` dir and/or an
@@ -231,8 +266,21 @@ export class PlaywrightLaunchTransport implements Transport {
 		this.#ignoreDefaultArgs = options.ignoreDefaultArgs;
 		this.#proxy = options.proxy;
 		this.#proxyNoLeak = options.proxyNoLeak;
+		this.#exposeCdp = options.exposeCdp === true;
 		this.#importStealthChromium =
 			options.importStealthChromium ?? defaultStealthImporter;
+	}
+
+	/**
+	 * The CDP / remote-debugging endpoint of the most recently {@link open}ed
+	 * context, when this transport was constructed with {@link
+	 * PlaywrightLaunchTransportOptions.exposeCdp}; otherwise `undefined`. A plain
+	 * `http://127.0.0.1:<port>` URL (no CDP type), readable by the serve wiring to
+	 * advertise a SHARED driving surface a separate Playwright client can
+	 * `connectOverCDP` to.
+	 */
+	cdpEndpoint(): string | undefined {
+		return this.#cdpEndpoint;
 	}
 
 	async open(target: OpenTarget): Promise<Session> {
@@ -322,6 +370,13 @@ export class PlaywrightLaunchTransport implements Transport {
 		) {
 			hardeningArgs.push(...this.#extraLaunchArgs);
 		}
+		// CDP exposure: ask Chromium for an OS-assigned remote-debugging port so a
+		// separate Playwright client can connectOverCDP to the SAME live page. The
+		// chosen port is read back from DevToolsActivePort after launch (below).
+		// Loopback-only by Chromium's default bind, like the localhost serve endpoint.
+		if (this.#exposeCdp) {
+			hardeningArgs.push('--remote-debugging-port=0');
+		}
 		if (hardeningArgs.length > 0) {
 			launchOptions.args = hardeningArgs;
 		}
@@ -342,6 +397,16 @@ export class PlaywrightLaunchTransport implements Transport {
 			}
 			throw cause;
 		}
+
+		// CDP exposure (opt-in): resolve the remote-debugging port Chromium chose
+		// from the DevToolsActivePort file it writes into the user-data dir, and hold
+		// the resulting endpoint for the serve wiring to advertise. A best-effort
+		// read: if the file never appears we leave the endpoint undefined rather than
+		// failing the launch (the session still works; only the shared surface is
+		// unavailable).
+		this.#cdpEndpoint = this.#exposeCdp
+			? await resolveCdpEndpoint(loc.profileDir)
+			: undefined;
 
 		// launchPersistentContext always opens with exactly one page; reuse it as
 		// the single active page (PRD: single active session in v1). Create one if
@@ -380,6 +445,35 @@ export class PlaywrightLaunchTransport implements Transport {
 		}
 		return mod.chromium;
 	}
+}
+
+/**
+ * Resolve the CDP / remote-debugging endpoint of a Chromium launched with
+ * `--remote-debugging-port=0` by reading the port it chose from the
+ * `DevToolsActivePort` file it writes into the user-data dir (the file's first
+ * line is the port). Polls briefly because the file appears shortly AFTER the
+ * persistent context resolves. Returns `http://127.0.0.1:<port>` (the loopback
+ * endpoint a Playwright client passes to `connectOverCDP`), or `undefined` if
+ * the file never appears in time (best-effort: never fail the launch over the
+ * shared-surface endpoint).
+ */
+async function resolveCdpEndpoint(
+	profileDir: string,
+): Promise<string | undefined> {
+	const portFile = join(profileDir, 'DevToolsActivePort');
+	for (let attempt = 0; attempt < 50; attempt++) {
+		try {
+			const raw = await readFile(portFile, 'utf8');
+			const port = raw.split('\n')[0]?.trim();
+			if (port !== undefined && port !== '') {
+				return `http://127.0.0.1:${port}`;
+			}
+		} catch {
+			// not written yet
+		}
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	return undefined;
 }
 
 /** True iff `path` exists and is a directory. */

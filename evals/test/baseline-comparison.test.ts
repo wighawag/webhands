@@ -7,6 +7,7 @@ import {
 } from '../src/agent-under-test.js';
 import {
 	buildAgentInput,
+	CDP_ENDPOINT_ENV,
 	PLAYWRIGHT_PREAMBLE,
 	WEBHANDS_PREAMBLE,
 } from '../src/no-priming.js';
@@ -107,6 +108,23 @@ describe('Playwright-only baseline comparison plumbing (deterministic, no live s
 			);
 		});
 
+		it('the Playwright-only preamble tells the agent to CONNECT over CDP to the shared browser, NOT launch its own', () => {
+			const playwrightInput = buildAgentInput(fakeEntry(), PLAYWRIGHT_PREAMBLE);
+			// CONNECT to the harness's existing browser (the shared driving surface)...
+			expect(playwrightInput).toMatch(/connectOverCDP/i);
+			// ...via the CDP endpoint supplied as PROTOCOL in the env var (not priming).
+			expect(playwrightInput).toContain(CDP_ENDPOINT_ENV);
+			// ...and explicitly NOT launch its own browser (that was the false-FAIL bug).
+			expect(PLAYWRIGHT_PREAMBLE.toolkitReference).toMatch(
+				/do not launch your own browser/i,
+			);
+			// The endpoint VALUE is never baked into the static preamble text (it is
+			// delivered at launch via the env var); the preamble only NAMES the var.
+			expect(PLAYWRIGHT_PREAMBLE.toolkitReference).not.toMatch(
+				/http:\/\/127\.0\.0\.1:\d+/,
+			);
+		});
+
 		it('the webhands preamble teaches the webhands verb surface', () => {
 			const webhandsInput = buildAgentInput(fakeEntry(), WEBHANDS_PREAMBLE);
 			expect(webhandsInput).toMatch(/webhands/i);
@@ -144,6 +162,57 @@ describe('Playwright-only baseline comparison plumbing (deterministic, no live s
 			const webhands = new ShellAdapter({agentCmd: 'true'});
 			expect(playwright.adapter).toBe('playwright');
 			expect(webhands.adapter).toBe('shell');
+		});
+	});
+
+	describe('CDP endpoint plumbing (the shared driving surface reaches the agent as PROTOCOL)', () => {
+		/** A toolkit-agnostic LaunchInput whose agentCmd echoes the CDP env var. */
+		function echoEnvLaunch(cdpEndpoint?: string) {
+			return {
+				entry: fakeEntry(),
+				webhands: {command: 'true', args: []},
+				home: '/tmp/fake-home',
+				timeoutMs: 30_000,
+				...(cdpEndpoint !== undefined ? {cdpEndpoint} : {}),
+			};
+		}
+
+		it('passes the CDP endpoint into the agent env as WEBHANDS_CDP_ENDPOINT', async () => {
+			// The agent command just prints the protocol env var so we can assert it
+			// reached the spawned process verbatim.
+			// `cat >/dev/null` drains the goal the adapter writes to stdin (so the
+			// pipe stays open), then we echo the protocol env var to assert it reached
+			// the spawned process verbatim.
+			const adapter = new PlaywrightAdapter({
+				agentCmd: `cat >/dev/null; printf '%s' "$${CDP_ENDPOINT_ENV}"`,
+			});
+			const result = await adapter.launch(
+				echoEnvLaunch('http://127.0.0.1:9777'),
+			);
+			expect(result.status).toBe('reported-done');
+			expect(result.output).toContain('http://127.0.0.1:9777');
+		});
+
+		it('omits the env var when no shared surface was advertised (honest absence, not empty string baked in)', async () => {
+			// With no cdpEndpoint, the var is simply unset; echoing it yields nothing.
+			const adapter = new PlaywrightAdapter({
+				agentCmd: `cat >/dev/null; printf 'value=[%s]' "$${CDP_ENDPOINT_ENV}"`,
+			});
+			const result = await adapter.launch(echoEnvLaunch(undefined));
+			expect(result.status).toBe('reported-done');
+			expect(result.output).toContain('value=[]');
+		});
+
+		it('the webhands config also forwards the var when present (toolkit-agnostic plumbing) but ignores it', async () => {
+			// The plumbing is on the shared ShellAdapter, so a webhands run carries
+			// the var too; the webhands agent simply never reads it (it drives verbs).
+			const adapter = new ShellAdapter({
+				agentCmd: `cat >/dev/null; printf '%s' "$${CDP_ENDPOINT_ENV}"`,
+			});
+			const result = await adapter.launch(
+				echoEnvLaunch('http://127.0.0.1:9888'),
+			);
+			expect(result.output).toContain('http://127.0.0.1:9888');
 		});
 	});
 

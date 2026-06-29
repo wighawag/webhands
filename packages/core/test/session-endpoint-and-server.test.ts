@@ -57,6 +57,26 @@ describe('session endpoint discovery + served RPC (stub transport)', () => {
 			expect(await readSessionEndpoint({root})).toBeUndefined();
 		});
 
+		it('round-trips an OPTIONAL cdpEndpoint (the shared driving surface)', async () => {
+			const root = await tempRoot();
+			const endpoint = {
+				url: 'http://127.0.0.1:51234',
+				pid: 4242,
+				cdpEndpoint: 'http://127.0.0.1:9333',
+			};
+			await writeSessionEndpoint(endpoint, {root});
+			expect(await readSessionEndpoint({root})).toEqual(endpoint);
+		});
+
+		it('omits cdpEndpoint when absent (a plain serve endpoint round-trips cleanly)', async () => {
+			const root = await tempRoot();
+			const endpoint = {url: 'http://127.0.0.1:51234', pid: 4242};
+			await writeSessionEndpoint(endpoint, {root});
+			const read = await readSessionEndpoint({root});
+			expect(read).toEqual(endpoint);
+			expect(read).not.toHaveProperty('cdpEndpoint');
+		});
+
 		it('treats a malformed endpoint file as "no live server" (no crash)', async () => {
 			const root = await tempRoot();
 			const {writeFile, mkdir} = await import('node:fs/promises');
@@ -118,6 +138,33 @@ describe('session endpoint discovery + served RPC (stub transport)', () => {
 				'https://example.test/a',
 				'https://example.test/b',
 			]);
+		});
+
+		it('folds a resolved CDP endpoint into the advertised endpoint (shared driving surface)', async () => {
+			const root = await tempRoot();
+			const transport = new StubTransport();
+			const server = await startSessionServer(
+				{mode: 'launch', profile: 'default'},
+				{root, transport, cdpEndpoint: () => 'http://127.0.0.1:9444'},
+			);
+			running.push(server);
+			expect(server.endpoint.cdpEndpoint).toBe('http://127.0.0.1:9444');
+			// And it is persisted in the endpoint file for client/harness discovery.
+			expect((await readSessionEndpoint({root}))?.cdpEndpoint).toBe(
+				'http://127.0.0.1:9444',
+			);
+		});
+
+		it('advertises no CDP endpoint when the resolver yields undefined (e.g. an attach session)', async () => {
+			const root = await tempRoot();
+			const transport = new StubTransport();
+			const server = await startSessionServer(
+				{mode: 'launch', profile: 'default'},
+				{root, transport, cdpEndpoint: () => undefined},
+			);
+			running.push(server);
+			expect(server.endpoint.cdpEndpoint).toBeUndefined();
+			expect((await readSessionEndpoint({root}))?.cdpEndpoint).toBeUndefined();
 		});
 
 		it('the single-session guard names the "already active" refusal', () => {

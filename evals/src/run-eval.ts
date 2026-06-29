@@ -190,6 +190,14 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 			entry: opts.entry,
 			webhands: opts.webhands,
 			home,
+			// Hand the agent the SHARED driving surface's CDP endpoint (when serve
+			// advertised one) as PROTOCOL: the Playwright-only agent connectOverCDP-s
+			// to the harness's EXISTING page, so the harness's end-state assertion
+			// (unchanged) reads the page the agent drove (finding
+			// `baseline-comparison-needs-a-shared-driving-surface-not-two-browsers`).
+			...(serveSession.cdpEndpoint !== undefined
+				? {cdpEndpoint: serveSession.cdpEndpoint}
+				: {}),
 			timeoutMs: opts.agentTimeoutMs ?? 10 * 60_000,
 			...(opts.env !== undefined ? {env: opts.env} : {}),
 		});
