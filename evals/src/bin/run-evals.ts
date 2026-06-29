@@ -60,6 +60,8 @@ Options:
   --model <model>      The model to substitute for {model} in --agent-cmd.
   --webhands "<cmd>"   How to invoke webhands (default: \`npx webhands\`).
   --max-attempts <n>   Bounded retries on INCONCLUSIVE (default 3).
+  --headed             Show the browser window (default headless) so a human
+                       can WATCH the agent drive the site live.
   --help               Show this help.
 
 Registered real-site evals:
@@ -89,6 +91,7 @@ interface Args {
 	readonly model?: string;
 	readonly webhands?: string;
 	readonly maxAttempts?: number;
+	readonly headed: boolean;
 	readonly help: boolean;
 }
 
@@ -98,6 +101,7 @@ function parseArgs(argv: readonly string[]): Args {
 	let model: string | undefined;
 	let webhands: string | undefined;
 	let maxAttempts: number | undefined;
+	let headed = false;
 	let help = false;
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
@@ -117,6 +121,9 @@ function parseArgs(argv: readonly string[]): Args {
 			case '--max-attempts':
 				maxAttempts = Number.parseInt(argv[++i] ?? '', 10);
 				break;
+			case '--headed':
+				headed = true;
+				break;
 			case '--help':
 			case '-h':
 				help = true;
@@ -131,6 +138,7 @@ function parseArgs(argv: readonly string[]): Args {
 		...(model !== undefined ? {model} : {}),
 		...(webhands !== undefined ? {webhands} : {}),
 		...(maxAttempts !== undefined ? {maxAttempts} : {}),
+		headed,
 		help,
 	};
 }
@@ -188,6 +196,7 @@ async function main(): Promise<void> {
 		webhands: asWebhandsCommand(args.webhands),
 		agent,
 		...(args.maxAttempts !== undefined ? {maxAttempts: args.maxAttempts} : {}),
+		...(args.headed ? {serve: {headed: true}} : {}),
 	});
 
 	const {outcome} = result;
