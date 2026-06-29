@@ -9,6 +9,7 @@ import type {
 	QueryRow,
 	Screenshot,
 	ScreenshotOptions,
+	ScriptOptions,
 	ScrollTarget,
 	SelectChoice,
 	Session,
@@ -98,6 +99,16 @@ export class StubTransport implements Transport {
 			async eval(expression: string, options?: EvalOptions): Promise<unknown> {
 				ensureOpen();
 				calls.push({verb: 'eval', args: [expression, options]});
+				return undefined;
+			},
+			async script(source: string, options?: ScriptOptions): Promise<unknown> {
+				ensureOpen();
+				// Record the options only when given, so a bare script stays `[source]`
+				// (mirrors the optional-options recording the other verbs use).
+				calls.push({
+					verb: 'script',
+					args: options !== undefined ? [source, options] : [source],
+				});
 				return undefined;
 			},
 			async wait(condition: WaitCondition): Promise<void> {

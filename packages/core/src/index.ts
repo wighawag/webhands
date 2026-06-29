@@ -15,6 +15,7 @@ export type {
 	Screenshot,
 	ScreenshotOptions,
 	ScreenshotScope,
+	ScriptOptions,
 	ScrollTarget,
 	SelectChoice,
 	WebHandsPage,

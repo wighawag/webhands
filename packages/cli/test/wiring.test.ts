@@ -1,3 +1,6 @@
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {describe, expect, it} from 'vitest';
 import {
 	StubTransport,
@@ -154,9 +157,19 @@ function fakeServe(): {
 async function run(
 	provider: SessionProvider,
 	argv: string[],
-	extra: {serveSession?: ServeSession} = {},
+	extra: {
+		serveSession?: ServeSession;
+		readScriptStdin?: () => Promise<string | undefined>;
+	} = {},
 ): Promise<{stdout: string; code: number}> {
-	const cli = createCli({sessionProvider: provider, ...extra});
+	// Default the `script` stdin reader to "no pipe" so a `script` command in a
+	// test never blocks on the runner's own stdin (a test opts into a piped
+	// source by passing its own reader).
+	const cli = createCli({
+		sessionProvider: provider,
+		readScriptStdin: async () => undefined,
+		...extra,
+	});
 	let stdout = '';
 	let code = 0;
 	await cli.serve(argv, {
@@ -175,7 +188,10 @@ async function run(
 async function runEnvelope(
 	provider: SessionProvider,
 	argv: string[],
-	extra: {serveSession?: ServeSession} = {},
+	extra: {
+		serveSession?: ServeSession;
+		readScriptStdin?: () => Promise<string | undefined>;
+	} = {},
 ): Promise<{
 	ok: boolean;
 	data?: unknown;
@@ -218,6 +234,7 @@ describe('incur CLI wiring', () => {
 			{argv: ['click'], wantArgs: true, outputKeys: ['ok', 'verb']},
 			{argv: ['type'], wantArgs: true, outputKeys: ['ok', 'verb']},
 			{argv: ['eval'], wantArgs: true, outputKeys: ['ok', 'verb', 'result']},
+			{argv: ['script'], wantArgs: true, outputKeys: ['ok', 'verb', 'result']},
 			{argv: ['query'], wantArgs: true, outputKeys: ['ok', 'verb', 'rows']},
 			{argv: ['count'], wantArgs: true, outputKeys: ['ok', 'verb', 'count']},
 			{argv: ['exists'], wantArgs: true, outputKeys: ['ok', 'verb', 'exists']},
@@ -435,6 +452,77 @@ describe('incur CLI wiring', () => {
 				'window.__childValue',
 				{frame: '#main-iframe'},
 			]);
+		});
+	});
+
+	describe('script verb wiring (driver-context batch, ADR-0012)', () => {
+		const SRC = `async (page) => { await page.click('#go'); return 1; }`;
+
+		it('forwards an INLINE source argument into the seam script call', async () => {
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, ['script', SRC]);
+			expect(env.ok).toBe(true);
+			const call = transport.calls.find((c) => c.verb === 'script');
+			// The bare form carries just the source (no options object).
+			expect(call?.args).toEqual([SRC]);
+		});
+
+		it('reads the source from --file <path> into the seam script call', async () => {
+			const dir = await mkdtemp(join(tmpdir(), 'mbc-script-file-'));
+			try {
+				const file = join(dir, 'flow.js');
+				await writeFile(file, SRC, 'utf8');
+				const {provider, transport} = stubProvider();
+				const env = await runEnvelope(provider, ['script', '--file', file]);
+				expect(env.ok).toBe(true);
+				const call = transport.calls.find((c) => c.verb === 'script');
+				// The FILE's contents reach the seam exactly as the inline form would.
+				expect(call?.args).toEqual([SRC]);
+			} finally {
+				await rm(dir, {recursive: true, force: true});
+			}
+		});
+
+		it('reads the source from piped STDIN when no inline/--file is given', async () => {
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, ['script'], {
+				readScriptStdin: async () => SRC,
+			});
+			expect(env.ok).toBe(true);
+			const call = transport.calls.find((c) => c.verb === 'script');
+			expect(call?.args).toEqual([SRC]);
+		});
+
+		it('rejects loud when BOTH an inline arg AND --file are given', async () => {
+			const dir = await mkdtemp(join(tmpdir(), 'mbc-script-both-'));
+			try {
+				const file = join(dir, 'flow.js');
+				await writeFile(file, SRC, 'utf8');
+				const {provider, transport} = stubProvider();
+				const env = await runEnvelope(provider, [
+					'script',
+					SRC,
+					'--file',
+					file,
+				]);
+				expect(env.ok).toBe(false);
+				expect(env.error?.code).toBe('invalid-script');
+				expect(env.error?.message).toMatch(/exactly one source/i);
+				// A validation failure never reaches the page.
+				expect(
+					transport.calls.find((c) => c.verb === 'script'),
+				).toBeUndefined();
+			} finally {
+				await rm(dir, {recursive: true, force: true});
+			}
+		});
+
+		it('rejects loud when NO source is given (no inline, no --file, no stdin)', async () => {
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, ['script']);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('invalid-script');
+			expect(transport.calls.find((c) => c.verb === 'script')).toBeUndefined();
 		});
 	});
 
@@ -807,6 +895,7 @@ describe('incur CLI wiring', () => {
 				'click',
 				'type',
 				'eval',
+				'script',
 				'query',
 				'count',
 				'exists',

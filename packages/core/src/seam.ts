@@ -105,6 +105,17 @@ export interface EvalOptions {
 	readonly frame?: string;
 }
 
+/**
+ * Options for the {@link WebHandsPage.script} verb (the driver-context `script`).
+ *
+ * An OPTIONS OBJECT, not positional fields, so future qualifiers stay additive
+ * (mirrors {@link EvalOptions}/{@link QueryOptions}, R1). There are no options
+ * today; the type exists so the verb's signature is already shaped for an
+ * additive extension and so a `script` request can carry an options object the
+ * day one is needed.
+ */
+export interface ScriptOptions {} // eslint-disable-line @typescript-eslint/no-empty-object-type
+
 /** What to wait for in the {@link WebHandsPage.wait} verb. */
 export type WaitCondition =
 	| {readonly kind: 'timeout'; readonly ms: number}
@@ -597,6 +608,45 @@ export interface WebHandsPage {
 	 * never a silent empty result.
 	 */
 	eval(expression: string, options?: EvalOptions): Promise<unknown>;
+	/**
+	 * Run a caller-supplied DRIVER-CONTEXT script against the live page and return
+	 * its serializable result. Unlike {@link WebHandsPage.eval} (which runs a
+	 * single page-world JS EXPRESSION via `page.evaluate`), `script` runs the
+	 * caller's JS in the controller's OWN Node process and hands it the full
+	 * Playwright `page` (the same live page the hands close over), so ONE call can
+	 * locate + act + auto-wait + read a whole sub-flow the way the Playwright
+	 * baseline writes by hand. This closes the "one process per action" gap: an
+	 * agent batches a sub-flow into one turn against the page it ALREADY opened.
+	 *
+	 * `source` is JS that EVALUATES TO A FUNCTION taking the page, e.g.
+	 * `async (page) => { await page.fill('#user', 'u'); await page.click('#go');
+	 * return await page.locator('.list').count(); }` (a sync function is fine too;
+	 * its return is awaited). The function is invoked with the live page and its
+	 * (awaited) return value is the result. `script` does NOT supersede `eval`:
+	 * the name + this contract signal you get the FULL Playwright `page` (DRIVER
+	 * context), not a bigger page-world `eval`.
+	 *
+	 * SERIALIZATION CONTRACT (the load-bearing part, ADR-0003). The script runs
+	 * IN-PROCESS, so its `page` API is plain Node JS, NOT the seam: there is no
+	 * ADR-3 constraint on what the script CALLS. But the script's RETURN VALUE
+	 * crosses the seam (and, over the served session, the RPC wire), so it MUST be
+	 * SEAM-CLEAN: a serializable value with NO Playwright/CDP type in it (return a
+	 * `.count()` number, a `.textContent()` string, a plain object — never a live
+	 * `Locator`/`Page`/handle). A returned Playwright object does not round-trip;
+	 * read a serializable property of it inside the script instead. A script that
+	 * THROWS REJECTS with a transport-neutral `Error` carrying the message (no
+	 * Playwright/CDP type leaks across the seam), exactly as `eval` does, so a
+	 * thrown script is a CLEAN structured error, never a crash.
+	 *
+	 * TRUST: `script` is the SAME page-script code-execution surface as `eval`
+	 * (caller JS against your own logged-in session, loopback-only), NOT the larger
+	 * `hands.json` hand-loading / npm-dependency surface — no module is loaded,
+	 * only a JS source string is read and run (see `docs/adr/0012`).
+	 *
+	 * The return type is `unknown` because the script decides the shape; callers
+	 * narrow it (mirrors {@link WebHandsPage.eval}).
+	 */
+	script(source: string, options?: ScriptOptions): Promise<unknown>;
 	/** Pace actions by waiting for a condition. */
 	wait(condition: WaitCondition): Promise<void>;
 	/** Read the session's cookies. */
