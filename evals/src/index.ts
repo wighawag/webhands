@@ -1,0 +1,64 @@
+/**
+ * The agent-capability eval harness (prd `agent-capability-eval-harness`).
+ *
+ * This is the FOUNDATION spine: a typed eval contract, a launch seam + generic
+ * shell adapter (D1), the harness-owned serve lifecycle (ADR-0005), the
+ * read-verb end-state assertion + milestone scorer, the three-state
+ * pass/fail/INCONCLUSIVE outcome with precheck + bounded retry, the enforced
+ * no-priming guard, and the D3 scripted-trace self-test machinery. It lives
+ * OUTSIDE `packages/*` so the repo gate can never reach the live-site path.
+ *
+ * The real-site evals (SauceDemo / stateful / Magento) and the docs are SEPARATE
+ * dependent tasks that plug into this surface.
+ */
+
+export type {
+	EvalEntry,
+	EvalTier,
+	EndStateCheck,
+	Milestone,
+	HealthProbe,
+} from './eval-contract.js';
+export {
+	VerbClient,
+	parseEnvelope,
+	type WebhandsCommand,
+	type VerbClientOptions,
+} from './verb-client.js';
+export {
+	type AgentUnderTest,
+	type LaunchInput,
+	type LaunchResult,
+	ShellAdapter,
+	substituteModel,
+	MODEL_PLACEHOLDER,
+} from './agent-under-test.js';
+export {
+	replayTrace,
+	type ScriptedTrace,
+	type TraceStep,
+	type ReplayOptions,
+	type ReplayResult,
+} from './scripted-trace.js';
+export {
+	assertNoPriming,
+	buildAgentInput,
+	PrimingViolationError,
+	VERB_SURFACE_REFERENCE,
+} from './no-priming.js';
+export {
+	startServe,
+	type ServeSession,
+	type ServeLaunchOptions,
+	type StartServeOptions,
+} from './serve-lifecycle.js';
+export {runPrecheck, type HealthResult} from './precheck.js';
+export {scoreEval, type ScoreResult} from './scorer.js';
+export {
+	evaluateOutcome,
+	type Outcome,
+	type OutcomeKind,
+	type EvaluateOptions,
+} from './outcome.js';
+export {runEval, type EvalRunResult, type RunEvalOptions} from './run-eval.js';
+export {buildSelfTestEval} from './catalogue/self-test-fixture.eval.js';

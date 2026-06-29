@@ -1,0 +1,22 @@
+{
+	"name": "@webhands/evals",
+	"version": "0.0.0",
+	"private": true,
+	"description": "The agent-capability eval harness for webhands. Lives OUTSIDE packages/* by design: the repo gate (`pnpm test` = `pnpm --filter './packages/*' test`) structurally cannot reach it, so a flaky live third-party site can never red the build. Run it manually via this package's own `run`/`self-test` scripts.",
+	"type": "module",
+	"scripts": {
+		"self-test": "vitest run",
+		"self-test:watch": "vitest",
+		"run-eval": "tsx src/bin/run-evals.ts"
+	},
+	"dependencies": {
+		"webhands": "workspace:*",
+		"@webhands/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^25.2.0",
+		"tsx": "^4.21.0",
+		"typescript": "^5.3.3",
+		"vitest": "^4.0.18"
+	}
+}
