@@ -397,6 +397,26 @@ describe('incur CLI wiring', () => {
 			expect(typed?.args).toEqual([`p.locator("#in")`, 'hello', {byRef: true}]);
 		});
 
+		it('forwards a bare snapshot ref (eN) verbatim with {byRef:true} (core normalizes it to aria-ref=)', async () => {
+			// The actionable snapshot ref (ADR-0013): an agent reads `snapshot`, sees
+			// `[ref=e3]`, and clicks it directly. The CLI is a thin forwarder — it
+			// passes the bare `e3` straight through as the locator argument with
+			// {byRef: true}; the `core` interaction hand normalizes `eN` to the
+			// `aria-ref=` engine, so the CLI surface stays identical to the durable
+			// ref path (same flag, same forward).
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, ['click', 'e3', '--by-ref']);
+			await runEnvelope(provider, ['type', 'aria-ref=e7', 'hi', '--by-ref']);
+			const click = transport.calls.find(
+				(c) => c.verb === 'click' && c.args[0] === 'e3',
+			);
+			expect(click?.args).toEqual(['e3', {byRef: true}]);
+			const typed = transport.calls.find(
+				(c) => c.verb === 'type' && c.args[0] === 'aria-ref=e7',
+			);
+			expect(typed?.args).toEqual(['aria-ref=e7', 'hi', {byRef: true}]);
+		});
+
 		it('count/exists/is-visible/get-attribute each return their tiny structured result', async () => {
 			const {provider} = stubProvider();
 			expect(

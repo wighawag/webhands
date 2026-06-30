@@ -354,12 +354,15 @@ function nextAct() {
 	return [
 		{
 			command: 'click',
-			description: 'Click an element addressed by a Playwright locator string.',
+			description:
+				'Click an element by a Playwright locator string, or act on a snapshot ' +
+				'[ref=eN] directly with --by-ref (pass the bare eN).',
 		},
 		{
 			command: 'type',
 			description:
-				'Type into an element addressed by a Playwright locator string.',
+				'Type into an element by a Playwright locator string, or act on a snapshot ' +
+				'[ref=eN] directly with --by-ref (pass the bare eN).',
 		},
 		{
 			command: 'query',
@@ -740,7 +743,10 @@ export function createCli(deps: CliDeps = {}) {
 
 	cli.command('snapshot', {
 		description:
-			'Return a token-cheap structured view of the page (accessibility tree + text, or --full raw DOM).',
+			'Return a token-cheap structured view of the page (accessibility tree + text, or --full raw DOM). ' +
+			'Each node is tagged [ref=eN]; act on what you read by passing that eN straight to ' +
+			'`click`/`type` --by-ref (a snapshot-scoped "act on what I just saw" handle). For a ref that ' +
+			'SURVIVES list mutation, use `query --with-refs` instead.',
 		env: ctaEnv,
 		options: connectionOptions.extend({
 			...ctaOptions.shape,
@@ -778,7 +784,8 @@ export function createCli(deps: CliDeps = {}) {
 				.string()
 				.describe(
 					"A raw Playwright locator expression, e.g. getByRole('button', { name: 'Search' }). " +
-						'With --by-ref, a durable `ref` from `query --with-refs` instead.',
+						'With --by-ref, a `ref` instead: either a `snapshot` [ref=eN] (pass the bare ' +
+						'eN or aria-ref=eN) or a durable `ref` from `query --with-refs`.',
 				),
 		}),
 		env: ctaEnv,
@@ -788,9 +795,11 @@ export function createCli(deps: CliDeps = {}) {
 				.boolean()
 				.default(false)
 				.describe(
-					'Treat the argument as a durable `ref` from `query --with-refs`: ' +
-						'resolve it but fail LOUD (stale-ref) if it now matches zero or more ' +
-						'than one element, instead of silently clicking the wrong one.',
+					'Treat the argument as a `ref`, not a raw locator: a `snapshot` [ref=eN] ' +
+						'(the bare eN / aria-ref=eN, a snapshot-scoped handle) OR a durable `ref` from ' +
+						'`query --with-refs` (survives list mutation). Either way it is resolved but fails ' +
+						'LOUD (stale-ref) if it now matches zero or more than one element, instead of ' +
+						'silently clicking the wrong one.',
 				),
 		}),
 		output: actionOutput.extend({verb: z.literal('click')}),
@@ -820,7 +829,8 @@ export function createCli(deps: CliDeps = {}) {
 				.string()
 				.describe(
 					'A raw Playwright locator expression for the target input. ' +
-						'With --by-ref, a durable `ref` from `query --with-refs` instead.',
+						'With --by-ref, a `ref` instead: either a `snapshot` [ref=eN] (pass the bare ' +
+						'eN or aria-ref=eN) or a durable `ref` from `query --with-refs`.',
 				),
 			text: z.string().describe('The text to type into the element.'),
 		}),
@@ -831,9 +841,11 @@ export function createCli(deps: CliDeps = {}) {
 				.boolean()
 				.default(false)
 				.describe(
-					'Treat the locator argument as a durable `ref` from `query --with-refs`: ' +
-						'resolve it but fail LOUD (stale-ref) if it now matches zero or more ' +
-						'than one element, instead of silently typing into the wrong one.',
+					'Treat the locator argument as a `ref`, not a raw locator: a `snapshot` [ref=eN] ' +
+						'(the bare eN / aria-ref=eN, a snapshot-scoped handle) OR a durable `ref` from ' +
+						'`query --with-refs` (survives list mutation). Either way it is resolved but fails ' +
+						'LOUD (stale-ref) if it now matches zero or more than one element, instead of ' +
+						'silently typing into the wrong one.',
 				),
 		}),
 		output: actionOutput.extend({verb: z.literal('type')}),

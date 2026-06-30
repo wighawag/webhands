@@ -326,25 +326,36 @@ export const snapshotHand: Hand = ({pwPage, ensureOpen}) => ({
 /**
  * The `click` + `type` verbs: page interaction by raw locator (ADR-0004).
  *
- * With `{byRef: true}` the target is a durable `query` {@link QueryRow.ref}: it
- * is resolved through the SAME {@link resolveLocator} but FIRST asserted to match
- * EXACTLY ONE element ({@link assertRefResolvesToOne}), so a stale (zero) or
- * ambiguous (many) ref fails LOUD with a {@link StaleRefError} instead of
- * silently acting on the wrong element — the safety the durable ref exists for.
+ * With `{byRef: true}` the target is a REF — either a durable `query`
+ * {@link QueryRow.ref} (already a `p.locator(...)` expression) OR a `snapshot`
+ * `[ref=eN]` (a bare `eN` / `aria-ref=eN`, normalized by
+ * {@link normalizeRefToLocator} to `p.locator("aria-ref=eN")`; ADR-0013). BOTH
+ * are resolved through the SAME {@link resolveLocator} but FIRST asserted to
+ * match EXACTLY ONE element ({@link assertRefResolvesToOne}), so a stale (zero)
+ * or ambiguous (many) ref fails LOUD with a {@link StaleRefError} instead of
+ * silently acting on the wrong element — the safety EITHER ref exists for. The
+ * SAME normalized expression is used for the assert AND the act, so the
+ * fail-loud check and the action can never resolve different elements.
  */
 export const interactionHand: Hand = ({pwPage, ensureOpen}) => ({
 	verbs: {
 		async click(t, options?: ActionOptions): Promise<void> {
 			ensureOpen();
 			if (options?.byRef === true) {
-				await assertRefResolvesToOne(pwPage, t, 'click');
+				const ref = normalizeRefToLocator(t);
+				await assertRefResolvesToOne(pwPage, ref, 'click');
+				await clickLocator(pwPage, ref);
+				return;
 			}
 			await clickLocator(pwPage, t);
 		},
 		async type(t, text, options?: ActionOptions): Promise<void> {
 			ensureOpen();
 			if (options?.byRef === true) {
-				await assertRefResolvesToOne(pwPage, t, 'type');
+				const ref = normalizeRefToLocator(t);
+				await assertRefResolvesToOne(pwPage, ref, 'type');
+				await resolveLocator(pwPage, ref).fill(text);
+				return;
 			}
 			await resolveLocator(pwPage, t).fill(text);
 		},
@@ -1083,6 +1094,53 @@ async function computeRef(cell: Locator): Promise<string> {
 	// through the SAME resolver as every other locator. JSON-encode the CSS so a
 	// quote/backslash in a reused attribute value cannot break out of the call.
 	return `p.locator(${JSON.stringify(css)})`;
+}
+
+/**
+ * A bare `snapshot` ref id (`e1`, `e42`), as Playwright's `ariaSnapshot({mode:
+ * 'ai'})` tags every node `[ref=eN]`. The actionable-snapshot-ref path accepts
+ * this form (and the fuller `aria-ref=eN`) and rewrites it to the `aria-ref=`
+ * locator engine (ADR-0013).
+ */
+const SNAPSHOT_REF_ID = /^e\d+$/;
+
+/**
+ * Normalize a `{byRef: true}` target to a locator EXPRESSION the ONE
+ * {@link resolveLocator} resolves (ADR-0013). A `--by-ref` target is one of two
+ * kinds of ref, and this is the single point that unifies them onto the same
+ * resolver + the same loud-stale guard:
+ *
+ * - a `snapshot` `[ref=eN]` ref — a bare `eN` or the fuller `aria-ref=eN` — is
+ *   rewritten to `p.locator("aria-ref=eN")`, Playwright's native snapshot-ref
+ *   locator engine (the spike in the task confirmed `page.locator('aria-ref=eN')`
+ *   resolves the element a snapshot just showed). The id is JSON-encoded into
+ *   the call so nothing can break out of the expression. This is the SNAPSHOT
+ *   ref made first-class actionable: "read the page with `snapshot`, act on what
+ *   you read" in one loop, no `query --with-refs` / `eval` detour.
+ * - a durable `query` ref — already a `p.locator(...)` expression minted by
+ *   {@link computeRef} — is passed through UNCHANGED, so the durable-ref path and
+ *   its loud-stale safety are byte-for-byte the same as before.
+ *
+ * The two are honestly DIFFERENT in durability (the snapshot ref is
+ * snapshot-scoped — Playwright re-keys `eN` on each `ariaSnapshot`, so it is an
+ * "act on what I just saw" handle; the durable ref survives list mutation), but
+ * they share the SAME `{byRef: true}` flag and the SAME exactly-one fail-loud
+ * contract ({@link assertRefResolvesToOne} / {@link StaleRefError}), so neither
+ * silently does the other's job and neither silently acts on the wrong element.
+ * Nothing Playwright-shaped crosses the seam: the ref arrives as an opaque
+ * string and stays a string (ADR-0003); it resolves through the same
+ * locator-expression addressing as every other verb (ADR-0004).
+ */
+export function normalizeRefToLocator(ref: string): string {
+	if (SNAPSHOT_REF_ID.test(ref)) {
+		return `p.locator(${JSON.stringify(`aria-ref=${ref}`)})`;
+	}
+	const ariaRefMatch = /^aria-ref=(e\d+)$/.exec(ref);
+	if (ariaRefMatch !== null) {
+		return `p.locator(${JSON.stringify(`aria-ref=${ariaRefMatch[1]}`)})`;
+	}
+	// A durable `query` ref is already a `p.locator(...)` expression — unchanged.
+	return ref;
 }
 
 /**
