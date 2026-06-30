@@ -275,8 +275,39 @@ parabank-transfer (playwright)              FAIL  tokens: in  82 / out  1.6k / c
 
 > FOLLOW-UP measured here is the overhead-cut re-measure for task #24. The
 > `snapshot-ref-actionable` re-measure (cutting the `eval`-fallback round-trips the
-> ParaBank `cold-cta` leg above stumbled into) is its own follow-up, and the
+> ParaBank `cold-cta` leg above stumbled into) is recorded just below, and the
 > dynamic-eval run lands in its own `## Dynamic (non-scriptable) read` section.
+
+### Post-#25 re-measure: actionable snapshot ref `--by-ref` (2026-06-30)
+
+> After `snapshot-ref-actionable-unify-with-by-ref` landed (PR #25): a `snapshot`
+> `[ref=eN]` is now directly actionable via `click`/`type --by-ref`, so an agent
+> can read-then-act in one loop without the `eval`/`querySelectorAll` fallback the
+> transcripts exposed. Re-ran the `skilled` + `script-forward` legs on the
+> fully-improved surface (both #24 and #25 live). All PASS. Totals (millions):
+>
+> | Eval | skilled | script-forward |
+> | --- | --- | --- |
+> | `saucedemo-core-flow` | 0.61M | 1.20M |
+> | `saucedemo-discovery` | 2.66M | 3.37M |
+> | `parabank-transfer` | 1.64M | 5.02M |
+>
+> **Honest finding: the snapshot-act `--by-ref` path was NOT exercised by the
+> agent on these STATIC scriptable flows.** A transcript pass over the six runs
+> (counting `--by-ref` / `aria-ref` tool calls) shows **0 snapshot-ref `--by-ref`
+> acts**: the agents that read with `snapshot` still preferred to batch the
+> sub-flow via `script` (script-forward) or to `eval` a small extraction (a couple
+> of `eval`/`querySelector` calls remain), rather than the per-element
+> `snapshot -> click eN --by-ref` loop. This is expected and is exactly WHY the
+> dynamic eval (#3, `eval-dynamic-non-scriptable-mid-run-goal-shift`) is serialised
+> LAST: the snapshot-ref fix's value is the look->decide->act-on-one-element loop,
+> which a statically scriptable flow under-exercises (the agent can plan the whole
+> flow up front and batch it). The CAPABILITY is present and correct (proven by
+> `packages/core/test/snapshot-ref-actionable.test.ts`: read->act hits the right
+> element, stale fails loud, re-snapshot supersedes); the per-flow ADOPTION on
+> these easy flows is low, and the dynamic eval is the measurement designed to
+> surface it. (Single-run variance is real, so do not over-read the small
+> per-cell shifts vs the five-way table above.)
 
 ## How to read it: does webhands deliver?
 
