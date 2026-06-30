@@ -78,6 +78,23 @@ stopped): start `serve` and retry. The tool NEVER silently spawns a browser.
 - `snapshot` returns a token-cheap accessibility-tree + text view — your default
   for "what's on the page". Use `--token-limit <n>` to cap output, `--full` only
   when you truly need raw DOM.
+- **Read then act in ONE loop.** `snapshot` tags every node `[ref=eN]`. To act on
+  what you just read, pass that bare `eN` straight to `click`/`type --by-ref` —
+  NO `query --with-refs` and NO `eval`/`querySelectorAll` detour to rediscover a
+  selector:
+
+  ```sh
+  npx webhands snapshot                       # ... button "Search" [ref=e7] ...
+  npx webhands click e7 --by-ref              # acts on exactly that element
+  npx webhands type  e4 'flights to BOM' --by-ref
+  ```
+
+  A snapshot ref is SNAPSHOT-SCOPED: it is an "act on what I just saw" handle,
+  re-keyed every `snapshot`, so it goes stale after a DOM change or a fresh
+  snapshot (you get a loud `stale-ref` error, never a wrong-element click — just
+  re-`snapshot` for fresh refs). For a ref that SURVIVES list mutation between
+  read and act, use `query --with-refs` instead (below). Both use the same
+  `--by-ref` flag and the same fail-loud safety; they differ only in durability.
 - Pipe a snapshot through `grep`/filters to pull just the lines you care about
   (prices, airlines, headings) instead of dumping the whole tree into context.
 - For structured extraction, `eval` a small JS expression and return a plain
@@ -214,8 +231,13 @@ Navigate + pace + read:
 Act:
 
 - `click <locator> [--by-ref]` — click the element a `page.`-prefixed locator
-  addresses (or a durable `ref` from `query --with-refs` with `--by-ref`).
-- `type <locator> <text> [--by-ref]` — type text into the addressed input.
+  addresses. With `--by-ref` the argument is a REF instead: a `snapshot` `[ref=eN]`
+  (pass the bare `eN` / `aria-ref=eN`, a snapshot-scoped "act on what I just saw"
+  handle) OR a durable `ref` from `query --with-refs` (survives list mutation).
+  Either way a ref that no longer matches exactly one element fails LOUD
+  (`stale-ref`), never a silent wrong-element click.
+- `type <locator> <text> [--by-ref]` — type text into the addressed input; same
+  `--by-ref` ref forms as `click` (snapshot `[ref=eN]` or durable `query` ref).
 - `press <key> [--locator <loc>]` — press a key/chord (e.g. Enter, Control+A) at a
   locator or, with none, the focused element.
 - `hover <locator>` — hover to reveal on-hover menus/controls.
