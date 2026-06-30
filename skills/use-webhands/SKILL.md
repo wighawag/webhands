@@ -110,14 +110,16 @@ submit, read the result), `script` runs it in ONE call against the SAME served
 page, the way a Playwright user writes a script by hand:
 
 ```sh
-# Inline: the source is JS that evaluates to a function of the live page.
-npx webhands script "async (page) => { await page.fill('#user', 'me'); await page.click('#login'); return await page.locator('.inventory_list').count(); }" --format json
-
-# The common case: write a flow file and point the verb at it.
-npx webhands script --file ./flow.js --format json   # (or pipe JS on stdin)
+# Write the flow to a JS file: the source is JS that evaluates to a function of
+# the live page, e.g. flow.js:
+#   async (page) => { await page.fill('#user', 'me'); await page.click('#login'); return await page.locator('.inventory_list').count(); }
+# then point the verb at that FILE PATH (the one and only source):
+npx webhands script ./flow.js --format json
 ```
 
-The script gets the FULL Playwright `page` (real locators + actions +
+The source is a FILE PATH: `script` takes a path to a JS file, reads it, and runs
+it (there is no inline-string, no `--file` flag, and no stdin form). The script
+gets the FULL Playwright `page` (real locators + actions +
 auto-waiting), NOT a page-world `eval` expression. RETURN a SERIALIZABLE value (a
 count, a string, a small object) — never a live locator/handle (it cannot cross
 back). A thrown script comes back as a clean structured error. This is the SAME
@@ -224,9 +226,10 @@ Navigate + pace + read:
   view (your default for "what is on the page"); `--full` for raw DOM.
 - `eval <expr> [--frame <css>]` — run a page-world JS EXPRESSION, return its
   serializable result. `--frame` evaluates inside a same-origin child frame.
-- `script (<js> | --file <path> | <stdin>)` — run a DRIVER-CONTEXT function of the
-  FULL live Playwright `page` to batch a whole locate/act/wait/read sub-flow in
-  ONE call; return a serializable value. Exactly one source.
+- `script <path>` — run a DRIVER-CONTEXT function of the FULL live Playwright
+  `page` to batch a whole locate/act/wait/read sub-flow in ONE call; return a
+  serializable value. The source is a PATH to a JS file (read and run); e.g.
+  `npx webhands script ./flow.js`.
 
 Act:
 

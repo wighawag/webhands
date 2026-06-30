@@ -139,8 +139,8 @@ export const WEBHANDS_SKILL_REFERENCE =
 	'async function of the FULL live Playwright page \u2014 ' +
 	'`async (page) => { ...use the standard Playwright page API (fill, click, ' +
 	'select, the role/test-id/text locator helpers, auto-waiting) to do the whole ' +
-	'flow...; return a serializable value }` \u2014 passed inline as ' +
-	'`npx webhands script "<that function>"` or via `script --file flow.js`, and ' +
+	'flow...; return a serializable value }` \u2014 supplied as a FILE PATH: write ' +
+	'that function to a file, then `npx webhands script flow.js`, and ' +
 	"returns the function's serializable result. It gets real locators + " +
 	'actions + auto-waiting; a thrown script returns a clean error.\n' +
 	'LOCATOR GRAMMAR (the discrete act/read verbs): a locator argument is a raw ' +
@@ -158,9 +158,9 @@ export const WEBHANDS_SKILL_REFERENCE =
 	'<url>` navigate; `wait` pace/settle (`--ms <n>` | `--locator <loc>` | ' +
 	'`--navigation`, exactly one); `snapshot` token-cheap a11y+text view ' +
 	'(`--full`, `--token-limit <n>`); `eval <expr>` run a page-world JS ' +
-	'expression (`--frame <css>` for a same-origin child frame); `script` run a ' +
-	'DRIVER-CONTEXT function of the full Playwright page to batch a whole sub-flow ' +
-	'in ONE call (inline | `--file <path>` | stdin); `click <loc>` / `type <loc> ' +
+	'expression (`--frame <css>` for a same-origin child frame); `script ' +
+	'<path>` run a DRIVER-CONTEXT function of the full Playwright page (read from a ' +
+	'JS file PATH) to batch a whole sub-flow in ONE call; `click <loc>` / `type <loc> ' +
 	'<text>` act via a `page.`-prefixed locator (`--by-ref` to use a durable ref ' +
 	'from `query --with-refs`); `press <key>` press a key/chord (`--locator ' +
 	'<loc>` or the focused element); `hover <loc>` reveal on-hover controls; ' +
@@ -197,8 +197,8 @@ export const WEBHANDS_SCRIPT_FORWARD_REFERENCE =
 	'result \u2014 `async (page) => { ...navigate, then use the standard ' +
 	'Playwright page API (fill, click, select, the role/test-id/text locator ' +
 	'helpers, auto-waiting) to run the whole flow...; return a serializable ' +
-	'value }` \u2014 passed inline as `npx webhands script "<that function>"` or ' +
-	'via `script --file flow.js`. It gets real locators + actions + auto-waiting; ' +
+	'value }` \u2014 supplied as a FILE PATH: write that function to a file, then ' +
+	'`npx webhands script flow.js`. It gets real locators + actions + auto-waiting; ' +
 	'a thrown script returns a clean error. Prefer this for any multi-step flow ' +
 	'you can plan.\n' +
 	'Start and HOLD the session first (`serve` blocks, so background it: ' +
@@ -219,8 +219,8 @@ export const WEBHANDS_SCRIPT_FORWARD_REFERENCE =
 	'--endpoint <url>` reuse a Chromium started with remote debugging; `goto ' +
 	'<url>` navigate; `wait` pace/settle (`--ms`|`--locator`|`--navigation`); ' +
 	'`snapshot` token-cheap a11y+text view (`--full`, `--token-limit`); `eval ' +
-	'<expr>` page-world JS (`--frame <css>`); `script` driver-context batch (inline' +
-	'|`--file`|stdin); `click <loc>`/`type <loc> <text>` act via a `page.`-' +
+	'<expr>` page-world JS (`--frame <css>`); `script <path>` driver-context batch ' +
+	'from a JS file PATH; `click <loc>`/`type <loc> <text>` act via a `page.`-' +
 	'prefixed locator (`--by-ref`); `press <key>` (`--locator`); `hover <loc>`; ' +
 	'`select <loc>` (`--value`|`--label`); `scroll` (`--to`|`--by <dx,dy>`); ' +
 	'`drag <source> <target>`; `mouse --x <n> --y <n>` viewport-pixel input ' +

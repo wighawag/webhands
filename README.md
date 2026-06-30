@@ -277,7 +277,8 @@ session, but it means the running `serve` endpoint is a code-execution surface.
 `script` is the SAME page-script surface as `eval` (caller JS against your own
 session), widened from one page-world expression to a driver-context body + the
 `page` object — NOT a new privilege, and NOT the larger `hands.json` hand-loading
-(npm-dependency) surface: it reads and runs a JS source file/string, it loads no
+(npm-dependency) surface: it reads and runs a JS source FILE (a path you pass,
+`npx webhands script ./flow.js`), it loads no
 module (see [`docs/adr/0012`](docs/adr/0012-script-verb-driver-context-page.md)).
 The same loopback-only rule below covers it.
 

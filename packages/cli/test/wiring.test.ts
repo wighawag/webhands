@@ -159,18 +159,13 @@ async function run(
 	argv: string[],
 	extra: {
 		serveSession?: ServeSession;
-		readScriptStdin?: () => Promise<string | undefined>;
 		/** Override the env the CLI reads (e.g. to pin `WEBHANDS_CTA`). */
 		env?: Record<string, string | undefined>;
 	} = {},
 ): Promise<{stdout: string; code: number}> {
-	// Default the `script` stdin reader to "no pipe" so a `script` command in a
-	// test never blocks on the runner's own stdin (a test opts into a piped
-	// source by passing its own reader).
 	const {env, ...cliExtra} = extra;
 	const cli = createCli({
 		sessionProvider: provider,
-		readScriptStdin: async () => undefined,
 		...cliExtra,
 	});
 	let stdout = '';
@@ -193,7 +188,6 @@ async function runEnvelope(
 	argv: string[],
 	extra: {
 		serveSession?: ServeSession;
-		readScriptStdin?: () => Promise<string | undefined>;
 		/** Override the env the CLI reads (e.g. to pin `WEBHANDS_CTA`). */
 		env?: Record<string, string | undefined>;
 	} = {},
@@ -480,60 +474,38 @@ describe('incur CLI wiring', () => {
 		});
 	});
 
-	describe('script verb wiring (driver-context batch, ADR-0012)', () => {
+	describe('script verb wiring (driver-context batch, ADR-0012, file-only)', () => {
 		const SRC = `async (page) => { await page.click('#go'); return 1; }`;
 
-		it('forwards an INLINE source argument into the seam script call', async () => {
-			const {provider, transport} = stubProvider();
-			const env = await runEnvelope(provider, ['script', SRC]);
-			expect(env.ok).toBe(true);
-			const call = transport.calls.find((c) => c.verb === 'script');
-			// The bare form carries just the source (no options object).
-			expect(call?.args).toEqual([SRC]);
-		});
-
-		it('reads the source from --file <path> into the seam script call', async () => {
+		it('reads the source from the PATH positional into the seam script call', async () => {
 			const dir = await mkdtemp(join(tmpdir(), 'mbc-script-file-'));
 			try {
 				const file = join(dir, 'flow.js');
 				await writeFile(file, SRC, 'utf8');
 				const {provider, transport} = stubProvider();
-				const env = await runEnvelope(provider, ['script', '--file', file]);
+				const env = await runEnvelope(provider, ['script', file]);
 				expect(env.ok).toBe(true);
 				const call = transport.calls.find((c) => c.verb === 'script');
-				// The FILE's contents reach the seam exactly as the inline form would.
+				// The FILE's contents reach the seam (no options object); the path is
+				// read and only its source forwarded.
 				expect(call?.args).toEqual([SRC]);
 			} finally {
 				await rm(dir, {recursive: true, force: true});
 			}
 		});
 
-		it('reads the source from piped STDIN when no inline/--file is given', async () => {
-			const {provider, transport} = stubProvider();
-			const env = await runEnvelope(provider, ['script'], {
-				readScriptStdin: async () => SRC,
-			});
-			expect(env.ok).toBe(true);
-			const call = transport.calls.find((c) => c.verb === 'script');
-			expect(call?.args).toEqual([SRC]);
-		});
-
-		it('rejects loud when BOTH an inline arg AND --file are given', async () => {
-			const dir = await mkdtemp(join(tmpdir(), 'mbc-script-both-'));
+		it('fails LOUD with a typed error when the path is missing/unreadable', async () => {
+			const dir = await mkdtemp(join(tmpdir(), 'mbc-script-missing-'));
 			try {
-				const file = join(dir, 'flow.js');
-				await writeFile(file, SRC, 'utf8');
+				const missing = join(dir, 'does-not-exist.js');
 				const {provider, transport} = stubProvider();
-				const env = await runEnvelope(provider, [
-					'script',
-					SRC,
-					'--file',
-					file,
-				]);
+				const env = await runEnvelope(provider, ['script', missing]);
 				expect(env.ok).toBe(false);
+				// The `invalid-script` error shape is preserved, the message is
+				// non-cryptic (names the path), and the page is never reached.
 				expect(env.error?.code).toBe('invalid-script');
-				expect(env.error?.message).toMatch(/exactly one source/i);
-				// A validation failure never reaches the page.
+				expect(env.error?.message).toMatch(/could not read the source file/i);
+				expect(env.error?.message).toContain(missing);
 				expect(
 					transport.calls.find((c) => c.verb === 'script'),
 				).toBeUndefined();
@@ -542,11 +514,12 @@ describe('incur CLI wiring', () => {
 			}
 		});
 
-		it('rejects loud when NO source is given (no inline, no --file, no stdin)', async () => {
+		it('requires a path: a bare `script` fails (path positional required)', async () => {
 			const {provider, transport} = stubProvider();
-			const env = await runEnvelope(provider, ['script']);
-			expect(env.ok).toBe(false);
-			expect(env.error?.code).toBe('invalid-script');
+			const {code} = await run(provider, ['script']);
+			// The required positional is missing, so the command never reaches the
+			// page (incur rejects the missing arg with a non-zero exit).
+			expect(code).not.toBe(0);
 			expect(transport.calls.find((c) => c.verb === 'script')).toBeUndefined();
 		});
 	});
