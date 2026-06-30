@@ -3,6 +3,7 @@ import {
 	ShellAdapter,
 	WebhandsSkilledAdapter,
 	WebhandsScriptForwardAdapter,
+	WebhandsScriptOnlyAdapter,
 	WebhandsColdCtaAdapter,
 	type AgentUnderTest,
 } from '../agent-under-test.js';
@@ -103,7 +104,15 @@ Options:
                        scoreboard measured; \`cold-cta - cold\` isolates the CTA
                        cost), \`webhands-skilled\` (the SAME verb surface, but the
                        preamble INLINES the use-webhands skill so the agent
-                       starts knowing the surface), or \`playwright\` (the
+                       starts knowing the surface), \`webhands-script-forward\`
+                       (skilled, but the preamble LEADS with the \`script\` batch
+                       path to nudge one-call sub-flows), \`webhands-script-only\`
+                       (skilled, but the agent drives EXCLUSIVELY via file-only
+                       \`script\` runs \u2014 no discrete click/type/snapshot
+                       path \u2014 so it writes the SAME automation a
+                       raw-Playwright agent does against the SAME shared browser;
+                       the truest head-to-head, isolating the surface from the
+                       chattiness confound), or \`playwright\` (the
                        BASELINE: the agent drives its OWN raw Playwright, never
                        webhands). Only the agent's toolkit + protocol preamble
                        (and, for cold-cta, the pinned CTA env) differ; the eval
@@ -184,6 +193,7 @@ type AgentKind =
 	| 'webhands-cold-cta'
 	| 'webhands-skilled'
 	| 'webhands-script-forward'
+	| 'webhands-script-only'
 	| 'playwright';
 
 const AGENT_KINDS: readonly AgentKind[] = [
@@ -191,6 +201,7 @@ const AGENT_KINDS: readonly AgentKind[] = [
 	'webhands-cold-cta',
 	'webhands-skilled',
 	'webhands-script-forward',
+	'webhands-script-only',
 	'playwright',
 ];
 
@@ -324,6 +335,8 @@ function buildAgent(
 			return new WebhandsSkilledAdapter(opts);
 		case 'webhands-script-forward':
 			return new WebhandsScriptForwardAdapter(opts);
+		case 'webhands-script-only':
+			return new WebhandsScriptOnlyAdapter(opts);
 		case 'webhands-cold-cta':
 			return new WebhandsColdCtaAdapter(opts);
 		case 'webhands':
