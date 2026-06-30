@@ -558,6 +558,123 @@ webhands-script-only  PASS  milestones 4/4   tokens: in 538 / out 15.3k / cacheR
   load-bearing part and held; the exact `disconnect()` call is the recommended
   mechanism, not the only thing that makes the process exit.
 
+## Tier-3 (messy DOM, explore-then-act) read: a hostile DOM a blind script cannot encode (2026-06-30)
+
+> The FIRST stable TIER-3 head-to-head (task
+> `eval-tier3-local-messy-dom-explore-then-act`; eval `messy-dom-explore`,
+> fixture `evals/src/messy-dom-fixture.ts`). The live `magento-checkout` tier-3 is
+> hard-down (HTTP 526 for days, re-probed 2026-06-30; finding
+> `work/notes/findings/magento-demo-tier3-stability.md`), so it yields NO
+> head-to-head; this LOCAL, host-deterministic, agent-unpredictable messy-DOM
+> fixture replaces that gap (the SAME proven pattern as `cart-threshold-checkout`
+> above). It measures webhands' INTENDED edge directly: a MESSY, unfamiliar DOM
+> where a blind write-once script breaks down because the agent must EXPLORE
+> (read) to FIND the right elements before it can act. It is the natural next
+> measurement after the easy-fixture token TIE (the `### Script-only head-to-head`
+> re-run above): the thesis is that the edge shows on messier DOMs.
+>
+> **The messy levers (the decision), all nonce-seeded so a cached script is
+> useless, and PLAYWRIGHT-FAIR (both legs face the IDENTICAL DOM, so the edge is
+> the EXPLORE surface, never a rigged DOM):**
+>
+> - **No stable hooks on the targets**: the section toggles + option rows carry NO
+>   `id`/`data-testid`/`name`/ARIA role and nonce-RANDOMISED meaningless class
+>   names (`t9k2f`, `cq7a1`), so neither toolkit can hardcode a selector; BOTH
+>   must locate by VISIBLE TEXT / structure discovered at run time.
+> - **Target by run-revealed nonce CONTENT**: the page prints an instruction
+>   naming a nonce-seeded SECTION word + option CODE; the correct controls are the
+>   matching ones, with decoy rows alongside. A blind script cannot pre-encode
+>   either (both vary per run, only shown on the page).
+> - **Multi-step explore-to-reveal + late content**: the option rows are NOT on
+>   the first view - the agent must OPEN the correct section (act) to REVEAL them,
+>   and the rows are injected via a short `setTimeout`, so the flow is
+>   read -> act -> wait -> read -> act, never one blind script.
+>
+> The end state is HOST-CHECKABLE by the harness's OWN reads: a stable result
+> marker (`#explore-result`) is written ONLY when the correct row is actioned, and
+> the harness asserts its `data-selected-code` equals the nonce-seeded correct
+> code ({@link computeExpectedTarget}); a decoy click never writes it, so a wrong
+> target is a genuine FAIL (self-test: `evals/test/messy-dom-explore-eval.test.ts`,
+> which proves nonce-determinism, the levers hold, the goal passes
+> `assertNoPriming`, and primed-correct -> PASS / decoy -> FAIL).
+>
+> **Hypothesis (NARROW-or-FLIP):** on a hostile DOM the agent MUST explore,
+> webhands' token-cheap `script`/`snapshot` reads should NARROW or FLIP the gap vs
+> a Playwright agent that serialises DOM to locate the same targets AND pays the
+> `connectOverCDP` connect-drive-disconnect tax on every script. Same agent +
+> model + `--parse-usage` as every section (`pi --print --mode json --tools
+> bash,read,write`, `etherplay/claude-opus-4-8`); two pairings for a small spread.
+> Totals in millions of tokens (input + output + cache).
+
+| Leg | r1 | r2 |
+| --- | --- | --- |
+| `webhands-script-only` | **PASS 4/4** 0.71M | **PASS 4/4** 1.56M |
+| `playwright` (baseline) | **PASS 4/4** 1.33M | **PASS 4/4** 1.61M |
+| `webhands-skilled` (context) | **PASS 4/4** 0.66M | n/a (single run) |
+
+Raw run lines (pi's exact `--parse-usage` capture):
+
+```
+webhands-script-only  PASS  milestones 4/4   tokens: in 176 / out  4.0k / cacheRead  520.8k / cacheWrite 183.5k / total  708.4k   (r1)
+webhands-script-only  PASS  milestones 4/4   tokens: in 338 / out  7.2k / cacheRead 1428.1k / cacheWrite 121.2k / total 1556.9k   (r2)
+playwright            PASS  milestones 4/4   tokens: in 306 / out  8.5k / cacheRead 1143.4k / cacheWrite 180.2k / total 1332.4k   (r1)
+playwright            PASS  milestones 4/4   tokens: in 348 / out  8.3k / cacheRead 1454.9k / cacheWrite 142.8k / total 1606.3k   (r2)
+webhands-skilled      PASS  milestones 4/4   tokens: in 164 / out  2.4k / cacheRead  579.9k / cacheWrite  75.0k / total  657.5k   (ctx)
+```
+
+**What the tier-3 messy-DOM read shows (the explore-read edge, isolated):**
+
+- **BOTH toolkits PASS on capability: the DOM is hard to SCRIPT, not hard to
+  DRIVE.** Every leg reached the SELECTION end state with the nonce-seeded
+  correct code, because both agents did the SAME read-explore-act
+  loop: read the on-page instruction (`data-section`/`data-code`), open the named
+  section, WAIT for the late-injected rows, then click the row whose code matched.
+  That confirms the fixture is PLAYWRIGHT-FAIR - a Playwright agent that reads at
+  run time can solve it exactly as a webhands agent can; what neither can do is
+  one-shot a blind script (the levers defeat that by construction, proven in the
+  self-test). This is the right shape for the tier: it does not RIG a webhands
+  win, it isolates where the cost difference comes from.
+- **The gap NARROWED-toward-webhands on tokens, and the CAUSE is the explore
+  read.** The webhands script-only leg came in CHEAPER on the matched first
+  pairing (0.71M vs Playwright's 1.33M, ~1.9x in webhands' favour) and within
+  variance on the second (1.56M vs 1.61M). The honest read across the spread is a
+  NARROW-to-TIE that leans webhands, NOT a blowout: script-only ran 0.71 to 1.56M,
+  Playwright 1.33 to 1.61M (overlapping ranges, webhands' floor clearly lower).
+  And the cheapest config overall is `webhands-skilled` at 0.66M (the fair-shake
+  number a real deployment with the skill synced would see).
+- **WHERE webhands' explore reads were cheaper than Playwright's DOM
+  serialisation (the specific edge this eval isolates).** The two legs write the
+  SAME automation against the SAME shared browser, so the difference is the
+  SURFACE, not the logic. The webhands agent's read was a single
+  `npx webhands script ./flow.js` that returned the instruction
+  (`data-section`/`data-code`) as a small serializable value - it never wrote
+  `connectOverCDP`, never managed a browser handle, never had to serialise the
+  page to find its bearings. The Playwright agent, by contrast, spent a
+  measurable chunk of its turns on the CONNECTION-LIFECYCLE tax the served webhands
+  page amortises away: it had to write `chromium.connectOverCDP(...)`, take the
+  existing context/page, AND (recorded both runs) discover that THIS Playwright
+  1.61 CDP `Browser` exposes no `disconnect()` method, so it had to reason out how
+  to let `node` exit without the forbidden `browser.close()` (it settled on
+  `process.exit(0)`). That connect-drive-exit boilerplate, plus a `.cjs`
+  module-resolution detour, is exactly the cost webhands' warm, already-connected
+  served page removes - and it is precisely the messier/lifecycle-heavy edge the
+  fair-baseline re-run above predicted webhands would widen on. So the explore
+  read WAS cheaper here, in the connection/boilerplate dimension, even though the
+  in-page locate-by-text step itself was the same for both.
+- **Honest caveats.** TWO pairings on a LOCAL fixture (bounded realism, real
+  single-run variance: script-only r2 at 1.56M vs r1 0.71M shows the spread is
+  wide, so do not over-read the leaner first number). The Playwright leg needed
+  the `playwright` package made importable in the eval package's `node_modules`
+  for the agent to drive at all (the fresh-worktree environment artifact the
+  earlier sections also hit, see
+  `work/notes/observations/evals-npx-webhands-not-on-path-in-fresh-worktree.md`);
+  the FIRST Playwright attempt FAILed 1/4 purely because `import 'playwright'`
+  could not resolve from `/tmp`, NOT a capability gap - it read the page fine but
+  burned its turns on module resolution. Once `playwright` resolved, the baseline
+  completed every time, so the recorded rows are the FAIR reading (both legs
+  finishing the same flow). The webhands-skilled context leg is a single run, not
+  a spread.
+
 ## How to read it: does webhands deliver?
 
 On these **simple, scriptable sandbox flows, both toolkits reach the goal**, and
