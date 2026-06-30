@@ -5,7 +5,8 @@ import type {Driver} from '@webhands/core';
  * binary). It binds ONE `incur` command per verb (`goto`, `snapshot`, `click`,
  * `type`, `eval`, `wait`, `cookies`) plus `setup-profile`/`launch`/`attach`,
  * each with a zod `args`/`options`/`output` schema, returns the structured
- * TOON/JSON envelope with `cta` next-verb hints, and maps `core`'s typed
+ * TOON/JSON envelope (lean by default; the per-result `cta` next-verb hints are
+ * opt-in via `--cta`/`--hints` or `WEBHANDS_CTA`), and maps `core`'s typed
  * missing-binary / missing-profile errors to an actionable fix command.
  *
  * Because it is built on `incur`, the same binary is ALSO an MCP server
@@ -18,6 +19,7 @@ import type {Driver} from '@webhands/core';
 export {
 	createCli,
 	CLI_NAME,
+	CTA_ENV_VAR,
 	DEFAULT_PROFILE,
 	type CliDeps,
 	type LaunchPolicy,

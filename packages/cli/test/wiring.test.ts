@@ -160,15 +160,18 @@ async function run(
 	extra: {
 		serveSession?: ServeSession;
 		readScriptStdin?: () => Promise<string | undefined>;
+		/** Override the env the CLI reads (e.g. to pin `WEBHANDS_CTA`). */
+		env?: Record<string, string | undefined>;
 	} = {},
 ): Promise<{stdout: string; code: number}> {
 	// Default the `script` stdin reader to "no pipe" so a `script` command in a
 	// test never blocks on the runner's own stdin (a test opts into a piped
 	// source by passing its own reader).
+	const {env, ...cliExtra} = extra;
 	const cli = createCli({
 		sessionProvider: provider,
 		readScriptStdin: async () => undefined,
-		...extra,
+		...cliExtra,
 	});
 	let stdout = '';
 	let code = 0;
@@ -179,7 +182,7 @@ async function run(
 		exit: (c) => {
 			code = c;
 		},
-		env: {},
+		env: env ?? {},
 	});
 	return {stdout, code};
 }
@@ -191,6 +194,8 @@ async function runEnvelope(
 	extra: {
 		serveSession?: ServeSession;
 		readScriptStdin?: () => Promise<string | undefined>;
+		/** Override the env the CLI reads (e.g. to pin `WEBHANDS_CTA`). */
+		env?: Record<string, string | undefined>;
 	} = {},
 ): Promise<{
 	ok: boolean;
@@ -798,20 +803,44 @@ describe('incur CLI wiring', () => {
 		});
 	});
 
-	describe('cta next-verb hints (story 13)', () => {
-		it('suggests `snapshot` after `goto`', async () => {
+	describe('cta next-verb hints: suppressed by default, opt-in via --cta/--hints/env (story 13, default-off)', () => {
+		// DEFAULT-OFF: the per-result CTA "Suggested command" block is human
+		// onboarding scaffolding an agent never reads, so the lean default omits it
+		// entirely (the overhead cut). It is re-enabled per call with --cta/--hints
+		// or pinned with WEBHANDS_CTA=1.
+		it('omits the cta block BY DEFAULT after `goto` (no opt-in)', async () => {
 			const {provider} = stubProvider();
 			const env = await runEnvelope(provider, [
 				'goto',
 				'https://example.test/',
 			]);
+			expect(env.meta.cta).toBeUndefined();
+		});
+
+		it('omits the cta block BY DEFAULT after `snapshot` and `launch` too', async () => {
+			const {provider} = stubProvider();
+			expect(
+				(await runEnvelope(provider, ['snapshot'])).meta.cta,
+			).toBeUndefined();
+			expect(
+				(await runEnvelope(provider, ['launch'])).meta.cta,
+			).toBeUndefined();
+		});
+
+		it('`--cta` RE-ENABLES the cta and suggests `snapshot` after `goto`', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'goto',
+				'https://example.test/',
+				'--cta',
+			]);
 			const commands = (env.meta.cta?.commands ?? []).map((c) => c.command);
 			expect(commands).toContain(`${CLI_NAME} snapshot`);
 		});
 
-		it('suggests the act verbs (click/type/eval) after `snapshot`', async () => {
+		it('`--hints` (alias of --cta) RE-ENABLES the act-verb cta after `snapshot`', async () => {
 			const {provider} = stubProvider();
-			const env = await runEnvelope(provider, ['snapshot']);
+			const env = await runEnvelope(provider, ['snapshot', '--hints']);
 			const commands = (env.meta.cta?.commands ?? []).map((c) => c.command);
 			expect(commands).toEqual(
 				expect.arrayContaining([
@@ -822,13 +851,40 @@ describe('incur CLI wiring', () => {
 			);
 		});
 
-		it('suggests `goto`+`snapshot` after `launch`', async () => {
+		it('`--cta` RE-ENABLES the `goto`+`snapshot` cta after `launch`', async () => {
 			const {provider} = stubProvider();
-			const env = await runEnvelope(provider, ['launch']);
+			const env = await runEnvelope(provider, ['launch', '--cta']);
 			const commands = (env.meta.cta?.commands ?? []).map((c) => c.command);
 			expect(commands).toEqual(
 				expect.arrayContaining([`${CLI_NAME} goto`, `${CLI_NAME} snapshot`]),
 			);
+		});
+
+		it('WEBHANDS_CTA=1 in the env RE-ENABLES the cta without a per-call flag', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(
+				provider,
+				['goto', 'https://example.test/'],
+				{env: {WEBHANDS_CTA: '1'}},
+			);
+			const commands = (env.meta.cta?.commands ?? []).map((c) => c.command);
+			expect(commands).toContain(`${CLI_NAME} snapshot`);
+		});
+
+		it('WEBHANDS_CTA=0 leaves the cta OFF (env truthiness, not mere presence)', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(
+				provider,
+				['goto', 'https://example.test/'],
+				{env: {WEBHANDS_CTA: '0'}},
+			);
+			expect(env.meta.cta).toBeUndefined();
+		});
+
+		it('the flag BEATS the env: `--cta` wins even when WEBHANDS_CTA is unset', async () => {
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, ['snapshot', '--cta'], {env: {}});
+			expect(env.meta.cta?.commands?.length ?? 0).toBeGreaterThan(0);
 		});
 
 		it('`launch` defaults stealth off and omits systemBrowser', async () => {
@@ -1350,7 +1406,7 @@ describe('incur CLI wiring', () => {
 			};
 		}
 
-		it('does not resolve until the user closes the window, then reports success + the launch cta', async () => {
+		it('does not resolve until the user closes the window, then reports success + (with --cta) the launch cta', async () => {
 			const {session, closeIt} = heldSession();
 			const location = {
 				homeRoot: '/tmp/iso',
@@ -1365,13 +1421,18 @@ describe('incur CLI wiring', () => {
 			let stdout = '';
 			let done = false;
 			const serving = cli
-				.serve(['setup-profile', '--full-output', '--format', 'json'], {
-					stdout: (s) => {
-						stdout += s;
+				// --cta opts the human back into the next-step breadcrumb (suppressed
+				// by default); the setup-profile -> launch chain is what we assert.
+				.serve(
+					['setup-profile', '--cta', '--full-output', '--format', 'json'],
+					{
+						stdout: (s) => {
+							stdout += s;
+						},
+						exit: () => {},
+						env: {},
 					},
-					exit: () => {},
-					env: {},
-				})
+				)
 				.then(() => {
 					done = true;
 				});

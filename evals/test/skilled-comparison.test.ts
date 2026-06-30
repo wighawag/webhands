@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {
 	ShellAdapter,
 	WebhandsSkilledAdapter,
+	WebhandsColdCtaAdapter,
 	type AgentUsage,
 	type LaunchResult,
 } from '../src/agent-under-test.js';
@@ -12,6 +13,7 @@ import {
 	VERB_SURFACE_REFERENCE,
 	WEBHANDS_PREAMBLE,
 	WEBHANDS_SKILL_REFERENCE,
+	WEBHANDS_SCRIPT_FORWARD_REFERENCE,
 	WEBHANDS_SKILLED_PREAMBLE,
 	type ProtocolPreamble,
 } from '../src/no-priming.js';
@@ -199,6 +201,123 @@ describe('webhands-skilled in-context comparison plumbing (deterministic, no liv
 			expect(result.status).toBe('reported-done');
 			// A distinctive phrase from the inlined skill made it to the agent.
 			expect(result.output).toContain('token-cheap accessibility-tree');
+		});
+	});
+
+	describe('WebhandsColdCtaAdapter (the pre-flip CTA-on cold baseline)', () => {
+		it('is named `webhands-cold-cta` (distinct from the cold `shell`)', () => {
+			const coldCta = new WebhandsColdCtaAdapter({agentCmd: 'true'});
+			const cold = new ShellAdapter({agentCmd: 'true'});
+			expect(coldCta.adapter).toBe('webhands-cold-cta');
+			expect(cold.adapter).toBe('shell');
+		});
+
+		it('drives the SAME cold preamble as the default adapter (only the env differs)', async () => {
+			// `cat` echoes the wrapped goal: cold-cta must hand the agent the SAME
+			// cold reference as the default ShellAdapter (the bare --llms-full
+			// pointer), NOT the inlined skill. A distinctive cold-only phrase proves
+			// it (the skilled reference does not carry it).
+			const coldCta = new WebhandsColdCtaAdapter({agentCmd: 'cat'});
+			const result = await coldCta.launch({
+				entry: fakeEntry(),
+				webhands: {command: 'true', args: []},
+				home: '/tmp/fake-home',
+				timeoutMs: 30_000,
+			});
+			expect(result.status).toBe('reported-done');
+			expect(result.output).toContain('Discover its full verb surface');
+			// It is NOT the inlined skill (that is the skilled adapter's job).
+			expect(result.output).not.toContain('token-cheap accessibility-tree');
+		});
+
+		it('pins WEBHANDS_CTA=1 in the spawned agent env (re-enables the default-off CTA)', async () => {
+			// The agent process inherits WEBHANDS_CTA=1, so its own `npx webhands
+			// <verb>` calls re-enable the (now default-off) CTA hints WITHOUT a
+			// per-call flag. `printenv` prints the value to stdout, which the adapter
+			// captures as the agent's output.
+			const coldCta = new WebhandsColdCtaAdapter({
+				agentCmd: 'printenv WEBHANDS_CTA',
+			});
+			const result = await coldCta.launch({
+				entry: fakeEntry(),
+				webhands: {command: 'true', args: []},
+				home: '/tmp/fake-home',
+				timeoutMs: 30_000,
+			});
+			expect(result.output.trim()).toBe('1');
+		});
+
+		it('the default cold adapter does NOT set WEBHANDS_CTA (lean by default)', async () => {
+			// printenv exits non-zero when the var is unset, so the adapter reports a
+			// crash with empty output: the cold leg leaves the CTA at its default-off.
+			const cold = new ShellAdapter({agentCmd: 'printenv WEBHANDS_CTA'});
+			const result = await cold.launch({
+				entry: fakeEntry(),
+				webhands: {command: 'true', args: []},
+				home: '/tmp/fake-home',
+				timeoutMs: 30_000,
+			});
+			expect(result.output.trim()).toBe('');
+		});
+	});
+
+	describe('the inlined references stay no-priming-clean AND obviate runtime --help/--llms-full', () => {
+		it('both skilled references pass the no-priming guard (no selector, no URL)', () => {
+			expect(() =>
+				assertSkilledReferenceUnprimed(WEBHANDS_SKILL_REFERENCE),
+			).not.toThrow();
+			expect(() =>
+				assertSkilledReferenceUnprimed(WEBHANDS_SCRIPT_FORWARD_REFERENCE),
+			).not.toThrow();
+		});
+
+		it('state plainly the agent need NOT run --help/--llms-full at runtime', () => {
+			for (const ref of [
+				WEBHANDS_SKILL_REFERENCE,
+				WEBHANDS_SCRIPT_FORWARD_REFERENCE,
+			]) {
+				expect(ref).toMatch(/you do NOT need/i);
+				expect(ref).toMatch(/--llms-full/);
+			}
+		});
+
+		it('are a COMPLETE per-verb reference incl. the page.-prefixed locator form', () => {
+			for (const ref of [
+				WEBHANDS_SKILL_REFERENCE,
+				WEBHANDS_SCRIPT_FORWARD_REFERENCE,
+			]) {
+				// The locator-grammar footgun is called out (must prefix with page.).
+				expect(ref).toMatch(/prefixed with `page\.`/);
+				// Every verb is named, so a skilled agent never has to discover one.
+				for (const verb of [
+					'serve',
+					'setup-profile',
+					'attach',
+					'goto',
+					'wait',
+					'snapshot',
+					'eval',
+					'script',
+					'click',
+					'type',
+					'press',
+					'hover',
+					'select',
+					'scroll',
+					'drag',
+					'mouse',
+					'query',
+					'count',
+					'exists',
+					'is-visible',
+					'get-attribute',
+					'screenshot',
+					'cookies',
+					'stop',
+				]) {
+					expect(ref).toContain(`\`${verb}`);
+				}
+			}
 		});
 	});
 

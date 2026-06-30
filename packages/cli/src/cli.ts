@@ -246,6 +246,92 @@ const actionOutput = z.object({
 	verb: z.string().describe('The verb that ran.'),
 });
 
+// --- cta opt-in (flag + env override) -------------------------------------
+
+/**
+ * The name of the env var that forces the per-result CTA hints back ON without a
+ * per-call flag. Exported so the eval harness (which invokes `npx webhands
+ * <verb>` ITSELF and cannot pass `--cta` per call) can pin a CTA-on baseline leg
+ * by setting it in the agent's env. Precedence is `--cta`/`--hints` flag > this
+ * env > the built-in default (OFF).
+ */
+export const CTA_ENV_VAR = 'WEBHANDS_CTA';
+
+/**
+ * The OUTPUT-LAYER opt-in for the per-result CTA "Suggested command" hints. The
+ * CTA is human onboarding scaffolding (next-verb breadcrumbs); an agent or
+ * program driving the surface does not read it, so it is suppressed BY DEFAULT
+ * (lean output) and a human re-enables it interactively with `--cta` (alias
+ * `--hints`). NOT an opt-out `--no-cta`: the lean output is the default; the
+ * breadcrumb is opt-in. Both flags are OPTIONAL booleans (no `.default`), so an
+ * absent flag reads `undefined` and lets the env / built-in default decide
+ * (precedence flag > env > off); a present `--cta`/`--hints` always wins.
+ */
+const ctaOptions = z.object({
+	cta: z
+		.boolean()
+		.optional()
+		.describe(
+			'Re-enable the per-result "Suggested command" next-verb hints (human ' +
+				'onboarding breadcrumbs). Suppressed by default for lean output; set ' +
+				`${CTA_ENV_VAR}=1 to pin them on without this flag.`,
+		),
+	hints: z
+		.boolean()
+		.optional()
+		.describe('Alias of --cta: re-enable the per-result next-verb hints.'),
+});
+
+/** The env fragment exposing {@link CTA_ENV_VAR} to a command's `c.env`. */
+const ctaEnv = z.object({
+	[CTA_ENV_VAR]: z
+		.boolean()
+		.optional()
+		.describe(
+			'Force the per-result CTA next-verb hints ON (the --cta flag still wins). ' +
+				'Lets a user pin their preferred default once, and the eval harness pin ' +
+				'a CTA-on baseline leg without passing a per-call flag.',
+		),
+});
+
+/**
+ * Resolve whether to attach the per-result CTA hints for this run, honouring the
+ * precedence `--cta`/`--hints` flag > {@link CTA_ENV_VAR} env > built-in default
+ * (OFF). An explicit flag (true OR false) always wins; absent, the env decides;
+ * absent both, the hints stay off.
+ */
+function ctaEnabled(c: {
+	options: {cta?: boolean; hints?: boolean};
+	env: {[CTA_ENV_VAR]?: boolean};
+}): boolean {
+	if (c.options.cta !== undefined) return c.options.cta;
+	if (c.options.hints !== undefined) return c.options.hints;
+	return c.env[CTA_ENV_VAR] === true;
+}
+
+/**
+ * Build the `c.ok` meta for a verb: attach the CTA `commands` block ONLY when
+ * {@link ctaEnabled} (opt-in via `--cta`/`--hints` or {@link CTA_ENV_VAR}); the
+ * default returns an empty meta so no CTA bytes ride along. One source of truth
+ * so every verb suppresses/re-enables the CTA the same way.
+ */
+function ctaMeta(
+	c: {
+		options: {cta?: boolean; hints?: boolean};
+		env: {[CTA_ENV_VAR]?: boolean};
+	},
+	commands: CtaCommand[],
+): {cta?: {commands: CtaCommand[]}} {
+	return ctaEnabled(c) ? {cta: {commands}} : {};
+}
+
+/** One entry in a CTA `commands` block (a suggested next verb + why). */
+interface CtaCommand {
+	readonly command: string;
+	readonly description: string;
+	readonly options?: Record<string, unknown>;
+}
+
 // --- cta wording (one source of truth) ------------------------------------
 
 /**
@@ -254,7 +340,8 @@ const actionOutput = z.object({
  * The chain mirrors how a human reads then acts on a page: after navigating or
  * waiting you SNAPSHOT to see the page; after a snapshot you CLICK/TYPE/EVAL;
  * after acting you snapshot again to observe the effect. Kept in one map so the
- * suggested chain is consistent across commands.
+ * suggested chain is consistent across commands. Suppressed by default and
+ * attached only when the human opts in (see {@link ctaMeta}).
  */
 function nextSnapshot() {
 	return {
@@ -345,11 +432,13 @@ export function createCli(deps: CliDeps = {}) {
 		description:
 			'Open the dedicated profile HEADED so you log in / clear a challenge ONCE; ' +
 			'later launch --headless reuses the saved session.',
+		env: ctaEnv,
 		options: z.object({
 			profile: z
 				.string()
 				.default(DEFAULT_PROFILE)
 				.describe('Name of the dedicated profile to set up.'),
+			...ctaOptions.shape,
 		}),
 		output: z.object({
 			profile: z.string().describe('The profile that was set up.'),
@@ -372,18 +461,14 @@ export function createCli(deps: CliDeps = {}) {
 				await session.waitForClose();
 				return c.ok(
 					{profile: location.profile, profileDir: location.profileDir},
-					{
-						cta: {
-							commands: [
-								{
-									command: 'launch',
-									options: {profile: location.profile},
-									description:
-										'Launch this profile headless now that it is set up.',
-								},
-							],
+					ctaMeta(c, [
+						{
+							command: 'launch',
+							options: {profile: location.profile},
+							description:
+								'Launch this profile headless now that it is set up.',
 						},
-					},
+					]),
 				);
 			} catch (cause) {
 				return fail(c, cause, binary);
@@ -394,6 +479,7 @@ export function createCli(deps: CliDeps = {}) {
 	cli.command('launch', {
 		description:
 			'Launch a browser the controller spawns (headed or headless) against the dedicated profile.',
+		env: ctaEnv,
 		options: z.object({
 			profile: z
 				.string()
@@ -404,6 +490,7 @@ export function createCli(deps: CliDeps = {}) {
 				.default(false)
 				.describe('Show the browser window (default: headless).'),
 			...stealthOptions.shape,
+			...ctaOptions.shape,
 		}),
 		output: z.object({
 			mode: z.literal('launch'),
@@ -439,17 +526,13 @@ export function createCli(deps: CliDeps = {}) {
 									: {}),
 								...(policy.proxy !== undefined ? {proxy: policy.proxy} : {}),
 							},
-							{
-								cta: {
-									commands: [
-										{
-											command: 'goto',
-											description: 'Navigate the launched page to a URL.',
-										},
-										nextSnapshot(),
-									],
+							ctaMeta(c, [
+								{
+									command: 'goto',
+									description: 'Navigate the launched page to a URL.',
 								},
-							},
+								nextSnapshot(),
+							]),
 						),
 				);
 			} catch (cause) {
@@ -465,12 +548,14 @@ export function createCli(deps: CliDeps = {}) {
 			'Start the long-lived session server: launch (or attach) the ONE browser ' +
 			'and keep it alive so later verb invocations drive the SAME live page. ' +
 			'Runs until stopped (Ctrl-C or `stop`).',
+		env: ctaEnv,
 		options: connectionOptions.extend({
 			headed: z
 				.boolean()
 				.default(false)
 				.describe('Show the browser window (default: headless).'),
 			...stealthOptions.shape,
+			...ctaOptions.shape,
 		}),
 		output: z.object({
 			ok: z.literal(true),
@@ -526,21 +611,17 @@ export function createCli(deps: CliDeps = {}) {
 							? {cdpEndpoint: server.endpoint.cdpEndpoint}
 							: {}),
 					},
-					{
-						cta: {
-							commands: [
-								{
-									command: 'goto',
-									description:
-										'Navigate the served live page (from a separate invocation).',
-								},
-								{
-									command: 'stop',
-									description: 'Tear the served session down.',
-								},
-							],
+					ctaMeta(c, [
+						{
+							command: 'goto',
+							description:
+								'Navigate the served live page (from a separate invocation).',
 						},
-					},
+						{
+							command: 'stop',
+							description: 'Tear the served session down.',
+						},
+					]),
 				);
 			} catch (cause) {
 				return fail(c, cause, binary);
@@ -594,12 +675,14 @@ export function createCli(deps: CliDeps = {}) {
 	cli.command('attach', {
 		description:
 			'Attach to a browser you already started with remote debugging (Chromium-only), reusing live tabs.',
+		env: ctaEnv,
 		options: z.object({
 			endpoint: z
 				.string()
 				.describe(
 					'Remote-debugging endpoint of the running browser (e.g. http://127.0.0.1:9222).',
 				),
+			...ctaOptions.shape,
 		}),
 		output: z.object({
 			mode: z.literal('attach'),
@@ -613,17 +696,13 @@ export function createCli(deps: CliDeps = {}) {
 					async () =>
 						c.ok(
 							{mode: 'attach' as const, endpoint: c.options.endpoint},
-							{
-								cta: {
-									commands: [
-										{
-											command: 'goto',
-											description: 'Navigate the attached page to a URL.',
-										},
-										nextSnapshot(),
-									],
+							ctaMeta(c, [
+								{
+									command: 'goto',
+									description: 'Navigate the attached page to a URL.',
 								},
-							},
+								nextSnapshot(),
+							]),
 						),
 				);
 			} catch (cause) {
@@ -637,7 +716,8 @@ export function createCli(deps: CliDeps = {}) {
 	cli.command('goto', {
 		description: 'Navigate the active page to a URL and let it settle.',
 		args: z.object({url: z.string().describe('The URL to navigate to.')}),
-		options: connectionOptions,
+		env: ctaEnv,
+		options: connectionOptions.extend(ctaOptions.shape),
 		output: z.object({
 			ok: z.literal(true),
 			verb: z.literal('goto'),
@@ -649,7 +729,7 @@ export function createCli(deps: CliDeps = {}) {
 					await s.page.navigate(c.args.url);
 					return c.ok(
 						{ok: true as const, verb: 'goto' as const, url: c.args.url},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -661,7 +741,9 @@ export function createCli(deps: CliDeps = {}) {
 	cli.command('snapshot', {
 		description:
 			'Return a token-cheap structured view of the page (accessibility tree + text, or --full raw DOM).',
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			full: z
 				.boolean()
 				.default(false)
@@ -680,7 +762,7 @@ export function createCli(deps: CliDeps = {}) {
 			try {
 				return await withSession(provider, targetFrom(c.options), async (s) => {
 					const snap = await s.page.snapshot({full: c.options.full});
-					return c.ok(snap, {cta: {commands: nextAct()}});
+					return c.ok(snap, ctaMeta(c, nextAct()));
 				});
 			} catch (cause) {
 				return fail(c, cause, binary);
@@ -699,7 +781,9 @@ export function createCli(deps: CliDeps = {}) {
 						'With --by-ref, a durable `ref` from `query --with-refs` instead.',
 				),
 		}),
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			'by-ref': z
 				.boolean()
 				.default(false)
@@ -719,7 +803,7 @@ export function createCli(deps: CliDeps = {}) {
 					);
 					return c.ok(
 						{ok: true as const, verb: 'click' as const},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -740,7 +824,9 @@ export function createCli(deps: CliDeps = {}) {
 				),
 			text: z.string().describe('The text to type into the element.'),
 		}),
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			'by-ref': z
 				.boolean()
 				.default(false)
@@ -761,7 +847,7 @@ export function createCli(deps: CliDeps = {}) {
 					);
 					return c.ok(
 						{ok: true as const, verb: 'type' as const},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -783,7 +869,9 @@ export function createCli(deps: CliDeps = {}) {
 		// The ONE `--frame` flag on the surface (R1): `eval` runs page-world JS and
 		// cannot carry a `frameLocator(...)` the way locator-taking verbs do, so it
 		// gets an explicit SAME-ORIGIN frame selector. Omitted == top-document eval.
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			frame: z
 				.string()
 				.optional()
@@ -811,7 +899,7 @@ export function createCli(deps: CliDeps = {}) {
 					);
 					return c.ok(
 						{ok: true as const, verb: 'eval' as const, result},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -839,7 +927,9 @@ export function createCli(deps: CliDeps = {}) {
 						'(e.g. async (page) => { ... }). Omit when using --file or stdin.',
 				),
 		}),
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			file: z
 				.string()
 				.optional()
@@ -874,7 +964,7 @@ export function createCli(deps: CliDeps = {}) {
 					const result = await s.page.script(source);
 					return c.ok(
 						{ok: true as const, verb: 'script' as const, result},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -902,7 +992,9 @@ export function createCli(deps: CliDeps = {}) {
 						"Frame scope rides in the string, e.g. frameLocator('#f').locator('#x').",
 				),
 		}),
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			attr: z
 				.array(z.string())
 				.default([])
@@ -985,7 +1077,7 @@ export function createCli(deps: CliDeps = {}) {
 					});
 					return c.ok(
 						{ok: true as const, verb: 'query' as const, rows},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1000,7 +1092,8 @@ export function createCli(deps: CliDeps = {}) {
 		args: z.object({
 			locator: z.string().describe('A raw Playwright locator expression.'),
 		}),
-		options: connectionOptions,
+		env: ctaEnv,
+		options: connectionOptions.extend(ctaOptions.shape),
 		output: z.object({
 			ok: z.literal(true),
 			verb: z.literal('count'),
@@ -1012,7 +1105,7 @@ export function createCli(deps: CliDeps = {}) {
 					const count = await s.page.count(locator(c.args.locator));
 					return c.ok(
 						{ok: true as const, verb: 'count' as const, count},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1027,7 +1120,8 @@ export function createCli(deps: CliDeps = {}) {
 		args: z.object({
 			locator: z.string().describe('A raw Playwright locator expression.'),
 		}),
-		options: connectionOptions,
+		env: ctaEnv,
+		options: connectionOptions.extend(ctaOptions.shape),
 		output: z.object({
 			ok: z.literal(true),
 			verb: z.literal('exists'),
@@ -1039,7 +1133,7 @@ export function createCli(deps: CliDeps = {}) {
 					const exists = await s.page.exists(locator(c.args.locator));
 					return c.ok(
 						{ok: true as const, verb: 'exists' as const, exists},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1055,7 +1149,8 @@ export function createCli(deps: CliDeps = {}) {
 		args: z.object({
 			locator: z.string().describe('A raw Playwright locator expression.'),
 		}),
-		options: connectionOptions,
+		env: ctaEnv,
+		options: connectionOptions.extend(ctaOptions.shape),
 		output: z.object({
 			ok: z.literal(true),
 			verb: z.literal('isVisible'),
@@ -1067,7 +1162,7 @@ export function createCli(deps: CliDeps = {}) {
 					const visible = await s.page.isVisible(locator(c.args.locator));
 					return c.ok(
 						{ok: true as const, verb: 'isVisible' as const, visible},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1082,7 +1177,9 @@ export function createCli(deps: CliDeps = {}) {
 		args: z.object({
 			locator: z.string().describe('A raw Playwright locator expression.'),
 		}),
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			name: z
 				.string()
 				.describe('The DOM attribute name to read (e.g. href, data-sitekey).'),
@@ -1110,7 +1207,7 @@ export function createCli(deps: CliDeps = {}) {
 							name: c.options.name,
 							value,
 						},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1138,7 +1235,9 @@ export function createCli(deps: CliDeps = {}) {
 						'a) or Modifier+Key (Control+A, Shift+Tab).',
 				),
 		}),
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			locator: z
 				.string()
 				.optional()
@@ -1158,7 +1257,7 @@ export function createCli(deps: CliDeps = {}) {
 					await s.page.press(c.args.key, target);
 					return c.ok(
 						{ok: true as const, verb: 'press' as const},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1174,7 +1273,8 @@ export function createCli(deps: CliDeps = {}) {
 		args: z.object({
 			locator: z.string().describe('A raw Playwright locator expression.'),
 		}),
-		options: connectionOptions,
+		env: ctaEnv,
+		options: connectionOptions.extend(ctaOptions.shape),
 		output: actionOutput.extend({verb: z.literal('hover')}),
 		async run(c) {
 			try {
@@ -1182,7 +1282,7 @@ export function createCli(deps: CliDeps = {}) {
 					await s.page.hover(locator(c.args.locator));
 					return c.ok(
 						{ok: true as const, verb: 'hover' as const},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1200,7 +1300,9 @@ export function createCli(deps: CliDeps = {}) {
 				.string()
 				.describe('A raw Playwright locator expression for the <select>.'),
 		}),
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			value: z
 				.string()
 				.optional()
@@ -1231,7 +1333,7 @@ export function createCli(deps: CliDeps = {}) {
 							verb: 'select' as const,
 							by: 'value' in choice ? ('value' as const) : ('label' as const),
 						},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1244,7 +1346,9 @@ export function createCli(deps: CliDeps = {}) {
 		description:
 			'Scroll the page, either --to a Playwright locator (bring it into view) ' +
 			'or --by a dx,dy pixel delta (exactly one).',
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			to: z
 				.string()
 				.optional()
@@ -1281,7 +1385,7 @@ export function createCli(deps: CliDeps = {}) {
 							verb: 'scroll' as const,
 							form: 'to' in target ? ('to' as const) : ('by' as const),
 						},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1302,7 +1406,8 @@ export function createCli(deps: CliDeps = {}) {
 				.string()
 				.describe('A raw Playwright locator expression for the drop target.'),
 		}),
-		options: connectionOptions,
+		env: ctaEnv,
+		options: connectionOptions.extend(ctaOptions.shape),
 		output: actionOutput.extend({verb: z.literal('drag')}),
 		async run(c) {
 			try {
@@ -1310,7 +1415,7 @@ export function createCli(deps: CliDeps = {}) {
 					await s.page.drag(locator(c.args.source), locator(c.args.target));
 					return c.ok(
 						{ok: true as const, verb: 'drag' as const},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1333,7 +1438,9 @@ export function createCli(deps: CliDeps = {}) {
 			'OS screen coordinates): click / move / down / up at --x,--y. A pixel in a ' +
 			'VIEWPORT screenshot maps directly to these coordinates (the look-then-click ' +
 			'loop); a FULL-PAGE screenshot does NOT.',
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			action: z
 				.enum(['click', 'move', 'down', 'up'])
 				.default('click')
@@ -1369,7 +1476,7 @@ export function createCli(deps: CliDeps = {}) {
 							x: c.options.x,
 							y: c.options.y,
 						},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1384,7 +1491,9 @@ export function createCli(deps: CliDeps = {}) {
 			'--scope viewport (default, coordinate-matched to mouse) | full (whole page, ' +
 			'NOT coordinate-matched) | element (clipped to --locator, REQUIRED for element). ' +
 			'--out overrides the path (validated to stay under the managed dir).',
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			scope: z
 				.enum(['viewport', 'full', 'element'])
 				.default('viewport')
@@ -1437,7 +1546,7 @@ export function createCli(deps: CliDeps = {}) {
 							width: shot.width,
 							height: shot.height,
 						},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {
@@ -1449,7 +1558,9 @@ export function createCli(deps: CliDeps = {}) {
 	cli.command('wait', {
 		description:
 			'Pace actions by waiting for a timeout, a locator to appear, or the next navigation.',
+		env: ctaEnv,
 		options: connectionOptions.extend({
+			...ctaOptions.shape,
 			ms: z.coerce
 				.number()
 				.optional()
@@ -1481,7 +1592,7 @@ export function createCli(deps: CliDeps = {}) {
 					await s.page.wait(condition);
 					return c.ok(
 						{ok: true as const, verb: 'wait' as const, kind: condition.kind},
-						{cta: {commands: [nextSnapshot()]}},
+						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
 			} catch (cause) {

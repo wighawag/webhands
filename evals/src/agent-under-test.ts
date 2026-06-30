@@ -1,5 +1,6 @@
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
+import {CTA_ENV_VAR} from 'webhands';
 import type {EvalEntry} from './eval-contract.js';
 import {
 	buildAgentInput,
@@ -169,6 +170,16 @@ export class ShellAdapter implements AgentUnderTest {
 	 */
 	private readonly parseUsage: boolean;
 
+	/**
+	 * Extra env this ADAPTER KIND pins into the spawned agent process, on top of
+	 * the per-run `input.env`. The `cold-cta` kind uses it to set `WEBHANDS_CTA=1`
+	 * so the agent's own `npx webhands <verb>` calls re-enable the (default-off)
+	 * CTA hints, reproducing the pre-flip surface the original four-way scoreboard
+	 * measured, without the agent having to pass `--cta` per call. Empty for every
+	 * other kind. Lower precedence than `input.env` (a run-level override wins).
+	 */
+	private readonly agentEnv: NodeJS.ProcessEnv;
+
 	constructor(opts: {
 		agentCmd: string;
 		model?: string;
@@ -177,12 +188,15 @@ export class ShellAdapter implements AgentUnderTest {
 		adapter?: string;
 		/** The protocol preamble (default {@link WEBHANDS_PREAMBLE}). */
 		preamble?: ProtocolPreamble;
+		/** Extra env this kind pins into the spawned agent (see {@link agentEnv}). */
+		agentEnv?: NodeJS.ProcessEnv;
 	}) {
 		this.agentCmd = opts.agentCmd;
 		this.model = opts.model;
 		this.parseUsage = opts.parseUsage ?? false;
 		this.preamble = opts.preamble ?? WEBHANDS_PREAMBLE;
 		this.adapter = opts.adapter ?? 'shell';
+		this.agentEnv = opts.agentEnv ?? {};
 	}
 
 	async launch(input: LaunchInput): Promise<LaunchResult> {
@@ -193,6 +207,9 @@ export class ShellAdapter implements AgentUnderTest {
 		const command = substituteModel(this.agentCmd, this.model);
 		const env: NodeJS.ProcessEnv = {
 			...process.env,
+			// Kind-level env (e.g. `cold-cta`'s WEBHANDS_CTA=1) sits BELOW the
+			// per-run `input.env`, so a run-level override still wins.
+			...this.agentEnv,
 			...input.env,
 			// The agent drives webhands against the harness's isolated home, the
 			// SAME session the harness reads for its verdict.
@@ -350,6 +367,35 @@ export class WebhandsScriptForwardAdapter extends ShellAdapter {
 			...opts,
 			adapter: 'webhands-script-forward',
 			preamble: WEBHANDS_SCRIPT_FORWARD_PREAMBLE,
+		});
+	}
+}
+
+/**
+ * The WEBHANDS-COLD-CTA baseline adapter (task
+ * `cut-per-run-context-overhead-cta-and-discovery`): the SAME cold config as the
+ * default {@link ShellAdapter} (same {@link WEBHANDS_PREAMBLE}: no skill, only
+ * the `--llms-full` pointer), but it pins `WEBHANDS_CTA=1` in the agent's env so
+ * the agent's `npx webhands <verb>` calls re-enable the (now default-off)
+ * per-result CTA hints. This reproduces the pre-flip webhands surface the
+ * ORIGINAL four-way scoreboard measured (CTAs were ON then), so that baseline
+ * stays live + reproducible after the CTA default was flipped to OFF. The delta
+ * `cold-cta - cold` cleanly ISOLATES what the CTA blocks cost. The COLD config
+ * DEFINITION is otherwise unchanged: only the tool's default CTA verbosity
+ * differs between the two legs, so the comparison is unbiased.
+ */
+export class WebhandsColdCtaAdapter extends ShellAdapter {
+	constructor(opts: {agentCmd: string; model?: string; parseUsage?: boolean}) {
+		super({
+			...opts,
+			adapter: 'webhands-cold-cta',
+			// SAME cold preamble as the default ShellAdapter (no skill, only the
+			// --llms-full pointer); the ONLY difference is the pinned env below.
+			preamble: WEBHANDS_PREAMBLE,
+			// Force the default-off CTA hints back ON for THIS leg, via the env the
+			// CLI honours (precedence: --cta flag > WEBHANDS_CTA env > off). The agent
+			// invokes webhands itself, so a per-call flag is not an option; the env is.
+			agentEnv: {[CTA_ENV_VAR]: '1'},
 		});
 	}
 }
