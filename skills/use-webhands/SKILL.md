@@ -5,21 +5,25 @@ description: >-
   apps the human already has a session for. Use when a task needs live, rendered,
   or authenticated web content that plain HTTP fetch/search cannot get: prices and
   results behind XHR/JS, pages behind a login, or a multi-step flow on a site the
-  user is signed into. This skill is the WORKFLOW + JUDGMENT layer; the
-  auto-generated `webhands-*` skills (one per verb) are the per-flag reference.
+  user is signed into. This skill is the COMPLETE reference: the workflow +
+  judgment layer AND a per-verb reference (what each verb does + its must-know
+  arg forms), so a skilled agent drives directly without running
+  `webhands --help`/`--llms-full` at runtime.
 ---
 
 # use-webhands
 
+Invoke every command as `npx webhands <verb>` (the first run fetches the package).
 `webhands` owns ONE long-lived browser (a `serve` process) bound to a dedicated
-profile; every other verb (`goto`, `snapshot`, `click`, `type`, `eval`, `script`,
-`wait`, `cookies`) is a thin client that drives that SAME live page and exits. You
-compose verbs across separate invocations.
+profile; every other verb is a thin client that drives that SAME live page and
+exits. You compose verbs across separate invocations.
 
-This skill exists because the generated per-verb skills tell you each command's
-flags but not how to RUN the pipe end to end, where it breaks, and what you must
-NOT do. Read this first; reach for `webhands <verb> --help` (or the
-`webhands-<verb>` skill) for exact flags.
+This skill is the COMPLETE reference: it tells you how to RUN the pipe end to end,
+WHAT EACH VERB DOES + its must-know argument forms (the [Verb reference](#verb-reference)
+below), where it breaks, and what you must NOT do. **You do NOT need to run
+`webhands <verb> --help` or `webhands --llms-full` at runtime** to drive the
+surface; this skill covers it. (Those discovery dumps re-pull ~4KB into context
+every run; reach for them only for an obscure flag this skill omits.)
 
 ## When to use vs not
 
@@ -163,26 +167,86 @@ instead of several verb turns.
 - **`cookies` moves a live session.** Export/import only to back up or relocate
   the user's own session; never exfiltrate it.
 
-## Quick reference
+## Verb reference
 
-| Verb | Use for |
-|---|---|
-| `setup-profile` | one-time HEADED login / challenge-clear; persists state |
-| `serve` | start & HOLD the one browser (headless default, `--headed` to show) |
-| `goto <url>` | navigate the live page |
-| `wait --ms N` / `--navigation` / `--locator` | pace XHR / settle |
-| `snapshot` | token-cheap a11y+text view (`--token-limit`, `--full`) |
-| `eval '<expr>'` | run JS, return serializable result (`--format json`) |
-| `script '<js>'` / `--file <path>` | batch a sub-flow: run a driver-context Playwright function on the live page, return a serializable result |
-| `click <locator>` / `type <locator>` | act via a raw Playwright locator |
-| `cookies` | export/import the active session |
-| `stop` | tear the session down (always do this) |
+This is the FULL verb surface; drive directly from it. You do NOT need
+`--help`/`--llms-full` at runtime. Every verb takes the connection flags
+(`--profile <name>`, or `--endpoint <url>` for an attached browser) and emits a
+structured envelope; add `--format json` for machine output. The default output
+is LEAN (no "Suggested command" hints); a human exploring can re-enable the
+next-step breadcrumbs with `--cta` (alias `--hints`), or pin them with
+`WEBHANDS_CTA=1`.
 
-`attach` is the alternative to `launch`/`serve`-launch: connect to a Chromium the
-USER already started with remote debugging, reusing live tabs (Chromium-only).
+**Locator grammar (read this once).** Verbs that take a LOCATOR want a raw
+Playwright locator EXPRESSION as a string, and it MUST be prefixed with `page.`
+(e.g. a `page.`-prefixed `locator(...)` / role / test-id / text query). A BARE
+locator throws ("not defined", or a bare `#id` parses as a JS private field), so
+always write the `page.`-prefixed form. Frame scope rides INSIDE the locator
+string (a `page.`-prefixed frame-locator hop), except `eval` which takes a
+separate `--frame <css>` flag.
 
-Per-flag detail: `webhands <verb> --help`, `webhands --llms-full`, or the
-generated `webhands-<verb>` skills.
+Lifecycle + mode:
+
+- `setup-profile [--profile <name>]` — one-time HEADED login / challenge-clear;
+  HOLDS the window open until you close it, then persists the profile state.
+- `serve [--headed] [--profile <name>] [--endpoint <url>] [--stealth] [--use-system-browser <ch>] [--proxy <socks-url>] [--no-viewport]`
+  — start & HOLD the one browser (headless default). The session it holds is what
+  every later verb drives. Blocks; background it (see above).
+- `attach --endpoint <url>` — alternative to a `serve`-launch: connect to a
+  Chromium the USER already started with remote debugging, reusing live tabs
+  (Chromium-only).
+- `stop` — tear the session down (always do this when finished, unless told to
+  leave it open).
+
+Navigate + pace + read:
+
+- `goto <url>` — navigate the live page to a URL and let it settle.
+- `wait (--ms <n> | --locator <loc> | --navigation)` — pace XHR / settle (exactly
+  one form).
+- `snapshot [--full] [--token-limit <n>]` — token-cheap accessibility-tree + text
+  view (your default for "what is on the page"); `--full` for raw DOM.
+- `eval <expr> [--frame <css>]` — run a page-world JS EXPRESSION, return its
+  serializable result. `--frame` evaluates inside a same-origin child frame.
+- `script (<js> | --file <path> | <stdin>)` — run a DRIVER-CONTEXT function of the
+  FULL live Playwright `page` to batch a whole locate/act/wait/read sub-flow in
+  ONE call; return a serializable value. Exactly one source.
+
+Act:
+
+- `click <locator> [--by-ref]` — click the element a `page.`-prefixed locator
+  addresses (or a durable `ref` from `query --with-refs` with `--by-ref`).
+- `type <locator> <text> [--by-ref]` — type text into the addressed input.
+- `press <key> [--locator <loc>]` — press a key/chord (e.g. Enter, Control+A) at a
+  locator or, with none, the focused element.
+- `hover <locator>` — hover to reveal on-hover menus/controls.
+- `select <locator> (--value <v> | --label <l>)` — choose an option in a native
+  `<select>` (exactly one of value/label).
+- `scroll (--to <locator> | --by <dx,dy>)` — scroll a locator into view or by a
+  pixel delta (exactly one).
+- `drag <source> <target>` — drag one locator's element onto another's.
+- `mouse --x <n> --y <n> [--action click|move|down|up] [--button left|right|middle]`
+  — coordinate mouse input at VIEWPORT CSS-pixels (a viewport-screenshot pixel
+  maps directly to these coordinates).
+
+Read structured data:
+
+- `query <locator> [--attr <a>]… [--prop <p>]… [--pw visible|bbox]… [--limit <n>] [--with-refs]`
+  — one row per match carrying the requested DOM attributes / live JS properties /
+  Playwright extras. `--with-refs` also mints a durable `ref` per row for
+  `click`/`type --by-ref`. The list flags are REPEATABLE (not comma-joined).
+- `count <locator>` — how many elements match.
+- `exists <locator>` — whether any element matches.
+- `is-visible <locator>` — whether the first match is actionability-grade visible.
+- `get-attribute <locator> --name <attr>` — read one DOM attribute off the first
+  match (null if absent).
+
+Capture + session:
+
+- `screenshot [--scope viewport|full|element] [--locator <loc>] [--out <path>]` —
+  capture a PNG to a FILE and return its PATH (never bytes); `--scope element`
+  needs `--locator`.
+- `cookies export <file>` / `cookies import <file>` — move/back up/seed the active
+  session cookies.
 
 ## Minimal worked example (headed, reading live prices)
 

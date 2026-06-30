@@ -54,9 +54,18 @@ Three things a new user should know up front:
   "you look like a bot" page on sites like Kayak. The fix is to run `--headed` and
   clear the challenge yourself once, not to defeat it.
 
-For the full agent playbook (workflow, gotchas, guardrails) install the bundled
-skill: `npx webhands skills add` then look for `use-webhands`. Per-verb flag
-reference: `npx webhands <verb> --help` or `npx webhands --llms-full`.
+For the full agent playbook (workflow, gotchas, guardrails) AND a complete
+per-verb reference, install the bundled skill: `npx webhands skills add` then look
+for `use-webhands`. A skilled agent drives the whole surface from that skill and
+does NOT need to re-dump `--help`/`--llms-full` at runtime; those discovery dumps
+(`npx webhands <verb> --help`, `npx webhands --llms-full`) stay available for
+human exploration or an obscure flag.
+
+**Output is lean by default.** Every verb prints just its structured result; the
+old per-result "Suggested command" next-step breadcrumbs are suppressed (an agent
+never reads them, so they were pure token overhead). Exploring by hand and want
+the breadcrumbs back? Add `--cta` (alias `--hints`) to any verb, or set
+`WEBHANDS_CTA=1` to pin them on for your shell.
 
 ## How it works (the pipe)
 

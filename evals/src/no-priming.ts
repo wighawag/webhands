@@ -105,10 +105,13 @@ export const WEBHANDS_PREAMBLE: ProtocolPreamble = {
  * site URL, so this property cannot silently rot.
  */
 export const WEBHANDS_SKILL_REFERENCE =
-	'Your only tool is the `webhands` CLI: it owns ONE long-lived headless ' +
-	'browser (a `serve` process bound to a profile) and every other verb is a ' +
-	'thin client that drives that SAME live page and exits, so you compose verbs ' +
-	'across separate invocations. The core flow:\n' +
+	'Your only tool is the `webhands` CLI (invoke every command as ' +
+	'`npx webhands <verb>`): it owns ONE long-lived headless browser (a `serve` ' +
+	'process bound to a profile) and every other verb is a thin client that ' +
+	'drives that SAME live page and exits, so you compose verbs across separate ' +
+	'invocations. This reference is COMPLETE: drive directly from it, you do NOT ' +
+	'need to run `npx webhands <verb> --help` or `npx webhands --llms-full` at ' +
+	'runtime. The core flow:\n' +
 	'1. Start and HOLD the session: `serve` blocks its shell, so from automation ' +
 	'start it backgrounded and poll its log for the endpoint, e.g. ' +
 	'`nohup npx webhands serve > /tmp/webhands-serve.log 2>&1 &` then ' +
@@ -135,19 +138,41 @@ export const WEBHANDS_SKILL_REFERENCE =
 	'a Playwright user writes a script by hand. It takes JS evaluating to an ' +
 	'async function of the FULL live Playwright page \u2014 ' +
 	'`async (page) => { ...use the standard Playwright page API (fill, click, ' +
-	'select, the locator/getByRole helpers, auto-waiting) to do the whole ' +
+	'select, the role/test-id/text locator helpers, auto-waiting) to do the whole ' +
 	'flow...; return a serializable value }` \u2014 passed inline as ' +
 	'`npx webhands script "<that function>"` or via `script --file flow.js`, and ' +
 	"returns the function's serializable result. It gets real locators + " +
 	'actions + auto-waiting; a thrown script returns a clean error.\n' +
-	'Verb quick reference: `serve` start & hold the one browser (headless ' +
-	'default, `--headed` to show); `goto <url>` navigate; `wait` pace/settle; ' +
-	'`snapshot` token-cheap a11y+text view; `eval <expr>` run a page-world JS ' +
-	'expression; `script` run a DRIVER-CONTEXT function of the full Playwright ' +
-	'page to batch a whole sub-flow in ONE call; `click`/`type` act via a ' +
-	'Playwright locator; `cookies` export/import the active session; `stop` tear ' +
-	'the session down. For exact flags reach for `npx webhands <verb> --help` or ' +
-	'`npx webhands --llms-full`. ' +
+	'LOCATOR GRAMMAR (the discrete act/read verbs): a locator argument is a raw ' +
+	'Playwright locator EXPRESSION as a string and MUST be prefixed with `page.` ' +
+	'(a `page.`-prefixed element/role/text/test-id query). A bare locator throws ' +
+	'("not defined", or a bare id parses as a JS private field), so always write ' +
+	'the `page.`-prefixed form. Frame scope rides INSIDE the locator string (a ' +
+	'`page.`-prefixed frame hop), except `eval` which takes a separate `--frame ' +
+	'<css>` flag.\n' +
+	'FULL VERB REFERENCE (every verb also takes `--profile <name>` or `--endpoint ' +
+	'<url>`; add `--format json` for machine output): `serve` start & hold the ' +
+	'one browser (headless default, `--headed` to show); `setup-profile` one-time ' +
+	'HEADED login/challenge-clear that persists the profile; `attach --endpoint ' +
+	'<url>` reuse a Chromium you already started with remote debugging; `goto ' +
+	'<url>` navigate; `wait` pace/settle (`--ms <n>` | `--locator <loc>` | ' +
+	'`--navigation`, exactly one); `snapshot` token-cheap a11y+text view ' +
+	'(`--full`, `--token-limit <n>`); `eval <expr>` run a page-world JS ' +
+	'expression (`--frame <css>` for a same-origin child frame); `script` run a ' +
+	'DRIVER-CONTEXT function of the full Playwright page to batch a whole sub-flow ' +
+	'in ONE call (inline | `--file <path>` | stdin); `click <loc>` / `type <loc> ' +
+	'<text>` act via a `page.`-prefixed locator (`--by-ref` to use a durable ref ' +
+	'from `query --with-refs`); `press <key>` press a key/chord (`--locator ' +
+	'<loc>` or the focused element); `hover <loc>` reveal on-hover controls; ' +
+	'`select <loc>` choose a native dropdown option (`--value <v>` | `--label ' +
+	'<l>`); `scroll` (`--to <loc>` | `--by <dx,dy>`); `drag <source> <target>`; ' +
+	'`mouse --x <n> --y <n>` viewport-pixel mouse input (`--action`, `--button`); ' +
+	'`query <loc>` read structured data per match (`--attr`/`--prop`/`--pw` are ' +
+	'REPEATABLE, `--with-refs` mints durable refs); `count`/`exists`/`is-visible` ' +
+	'/`get-attribute <loc> --name <attr>` tiny reads; `screenshot` capture a PNG ' +
+	'to a FILE path (`--scope viewport|full|element`, `--locator`, `--out`); ' +
+	'`cookies export <file>`/`cookies import <file>` move the session; `stop` ' +
+	'tear the session down. ' +
 	'Use only those verbs to drive the browser; do not assume any site-specific ' +
 	'selectors, steps, or URLs beyond the one named in the goal.';
 
@@ -159,29 +184,51 @@ export const WEBHANDS_SKILL_REFERENCE =
  * FORWARD (vs merely listing it) changes the agent's behaviour + token cost.
  */
 export const WEBHANDS_SCRIPT_FORWARD_REFERENCE =
-	'Your only tool is the `webhands` CLI: it owns ONE long-lived headless ' +
-	'browser (a `serve` process bound to a profile) and every other verb is a ' +
-	'thin client that drives that SAME live page and exits.\n' +
+	'Your only tool is the `webhands` CLI (invoke every command as ' +
+	'`npx webhands <verb>`): it owns ONE long-lived headless browser (a `serve` ' +
+	'process bound to a profile) and every other verb is a thin client that ' +
+	'drives that SAME live page and exits. This reference is COMPLETE: drive ' +
+	'directly from it, you do NOT need `npx webhands <verb> --help` or ' +
+	'`npx webhands --llms-full` at runtime.\n' +
 	'PREFERRED PATH \u2014 batch the flow with one `script`: webhands hands you the ' +
 	'FULL live Playwright `page`, so once you know the steps, do the whole ' +
 	'sub-flow in ONE call instead of one verb per turn. `script` takes JS ' +
 	'evaluating to an async function of the page and returns its serializable ' +
 	'result \u2014 `async (page) => { ...navigate, then use the standard ' +
-	'Playwright page API (fill, click, select, the locator/getByRole helpers, ' +
-	'auto-waiting) to run the whole flow...; return a serializable value }` \u2014 ' +
-	'passed inline as `npx webhands script "<that function>"` or via ' +
-	'`script --file flow.js`. It gets real locators + actions + auto-waiting; a ' +
-	'thrown script returns a clean error. Prefer this for any multi-step flow ' +
+	'Playwright page API (fill, click, select, the role/test-id/text locator ' +
+	'helpers, auto-waiting) to run the whole flow...; return a serializable ' +
+	'value }` \u2014 passed inline as `npx webhands script "<that function>"` or ' +
+	'via `script --file flow.js`. It gets real locators + actions + auto-waiting; ' +
+	'a thrown script returns a clean error. Prefer this for any multi-step flow ' +
 	'you can plan.\n' +
 	'Start and HOLD the session first (`serve` blocks, so background it: ' +
 	'`nohup npx webhands serve > /tmp/webhands-serve.log 2>&1 &` then ' +
 	'`sleep 12 && cat /tmp/webhands-serve.log`, expect ok:true + an endpoint). ' +
 	'When you need to LOOK before acting, read cheaply with `snapshot` ' +
 	'(token-cheap a11y+text) or `eval`/`script` a small read; pace background ' +
-	'XHR with `wait --ms 6000-9000`. The discrete verbs (`goto`, `click`, ' +
-	'`type`, `eval`, `snapshot`, `wait`, `cookies`, `stop`) are all still ' +
-	'available for single steps and exploration; reach for `npx webhands ' +
-	'<verb> --help` or `--llms-full` for exact flags. ' +
+	'XHR with `wait --ms 6000-9000`.\n' +
+	'LOCATOR GRAMMAR (for the discrete act/read verbs below): a locator argument ' +
+	'is a raw Playwright locator EXPRESSION as a string and MUST be prefixed with ' +
+	'`page.`; a bare locator throws, so always write the `page.`-prefixed form. ' +
+	'Frame scope rides INSIDE the locator string, except `eval` which takes a ' +
+	'separate `--frame <css>` flag.\n' +
+	'FULL VERB REFERENCE (also available for single steps + exploration; every ' +
+	'verb takes `--profile <name>`/`--endpoint <url>`, add `--format json` for ' +
+	'machine output): `serve` start & hold the browser (`--headed` to show); ' +
+	'`setup-profile` one-time HEADED login that persists the profile; `attach ' +
+	'--endpoint <url>` reuse a Chromium started with remote debugging; `goto ' +
+	'<url>` navigate; `wait` pace/settle (`--ms`|`--locator`|`--navigation`); ' +
+	'`snapshot` token-cheap a11y+text view (`--full`, `--token-limit`); `eval ' +
+	'<expr>` page-world JS (`--frame <css>`); `script` driver-context batch (inline' +
+	'|`--file`|stdin); `click <loc>`/`type <loc> <text>` act via a `page.`-' +
+	'prefixed locator (`--by-ref`); `press <key>` (`--locator`); `hover <loc>`; ' +
+	'`select <loc>` (`--value`|`--label`); `scroll` (`--to`|`--by <dx,dy>`); ' +
+	'`drag <source> <target>`; `mouse --x <n> --y <n>` viewport-pixel input ' +
+	'(`--action`,`--button`); `query <loc>` structured per-match read (repeatable ' +
+	'`--attr`/`--prop`/`--pw`, `--with-refs`); `count`/`exists`/`is-visible`/' +
+	'`get-attribute <loc> --name <attr>`; `screenshot` PNG to a FILE path ' +
+	'(`--scope`,`--locator`,`--out`); `cookies export`/`import <file>`; `stop` ' +
+	'tear the session down. ' +
 	'Use only those verbs to drive the browser; do not assume any site-specific ' +
 	'selectors, steps, or URLs beyond the one named in the goal.';
 

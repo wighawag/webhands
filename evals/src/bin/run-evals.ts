@@ -3,6 +3,7 @@ import {
 	ShellAdapter,
 	WebhandsSkilledAdapter,
 	WebhandsScriptForwardAdapter,
+	WebhandsColdCtaAdapter,
 	type AgentUnderTest,
 } from '../agent-under-test.js';
 import {
@@ -78,13 +79,19 @@ Options:
   --agent-kind <kind>  Which agent config to launch: \`webhands\` (default, the
                        COLD config: the agent drives the published webhands verb
                        surface and discovers it at runtime via \`--llms-full\`),
-                       \`webhands-skilled\` (the SAME verb surface, but the
+                       \`webhands-cold-cta\` (the SAME cold config but with
+                       \`WEBHANDS_CTA=1\` pinned in the agent env so the
+                       now-default-OFF per-result CTA hints are forced back ON,
+                       reproducing the pre-flip surface the original four-way
+                       scoreboard measured; \`cold-cta - cold\` isolates the CTA
+                       cost), \`webhands-skilled\` (the SAME verb surface, but the
                        preamble INLINES the use-webhands skill so the agent
                        starts knowing the surface), or \`playwright\` (the
                        BASELINE: the agent drives its OWN raw Playwright, never
                        webhands). Only the agent's toolkit + protocol preamble
-                       differ; the eval goal and the harness's end-state
-                       assertion are identical across all three.
+                       (and, for cold-cta, the pinned CTA env) differ; the eval
+                       goal and the harness's end-state assertion are identical
+                       across all of them.
   --compare            Run the SAME eval under the cold webhands + Playwright-only
                        configs and print a side-by-side comparison of outcome +
                        milestones + tokens (the "does webhands deliver?"
@@ -146,12 +153,14 @@ The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
 type AgentKind =
 	| 'webhands'
+	| 'webhands-cold-cta'
 	| 'webhands-skilled'
 	| 'webhands-script-forward'
 	| 'playwright';
 
 const AGENT_KINDS: readonly AgentKind[] = [
 	'webhands',
+	'webhands-cold-cta',
 	'webhands-skilled',
 	'webhands-script-forward',
 	'playwright',
@@ -287,6 +296,8 @@ function buildAgent(
 			return new WebhandsSkilledAdapter(opts);
 		case 'webhands-script-forward':
 			return new WebhandsScriptForwardAdapter(opts);
+		case 'webhands-cold-cta':
+			return new WebhandsColdCtaAdapter(opts);
 		case 'webhands':
 			return new ShellAdapter(opts);
 	}
