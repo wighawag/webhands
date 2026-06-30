@@ -1,7 +1,11 @@
 ---
 title: A DYNAMIC, non-one-shot-scriptable eval (the goal resolves only from live page state) to measure the verb surface's look->decide->act value
 slug: eval-dynamic-non-scriptable-mid-run-goal-shift
-blockedBy: []
+blockedBy:
+  [
+    cut-per-run-context-overhead-cta-and-discovery,
+    snapshot-ref-actionable-unify-with-by-ref,
+  ]
 covers: []
 ---
 
@@ -85,7 +89,17 @@ Non-gating, under `evals/` (outside `packages/*`), no new webhands verb.
 
 ## Blocked by
 
-- None. Builds on the eval-harness foundation, the nonce machinery
+- `cut-per-run-context-overhead-cta-and-discovery` and
+  `snapshot-ref-actionable-unify-with-by-ref`: this eval's WHOLE POINT is to
+  measure the verb surface's look->decide->act value, so it must run against the
+  IMPROVED surface (CTA off by default + a complete skill, and actionable snapshot
+  refs). Building it before those land would record numbers that are immediately
+  stale (the overhead fix shifts every token total; the snapshot-ref fix changes
+  the read->act cost this eval specifically stresses). Serialise it LAST so its
+  recorded run reflects webhands at its genuine best. (This is a measurement-
+  ordering dependency, not a code one: the eval only USES the existing
+  `--compare`/`--agent-kind` machinery + adds a new `*.eval.ts`.)
+- Otherwise builds on the eval-harness foundation, the nonce machinery
   (`evals/src/nonce.ts`), and the shared-CDP comparison
   (`tasks/done/eval-baseline-shared-driving-surface-over-cdp.md`).
 

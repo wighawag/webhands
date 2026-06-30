@@ -1,7 +1,7 @@
 ---
 title: Make `snapshot`'s `[ref=eN]` directly actionable (close the read->act gap between the snapshot ref and the `--by-ref` handle)
 slug: snapshot-ref-actionable-unify-with-by-ref
-blockedBy: []
+blockedBy: [cut-per-run-context-overhead-cta-and-discovery]
 covers: []
 ---
 
@@ -102,7 +102,12 @@ to MEASURE the win afterwards (a cold-vs-fixed `--compare` should cut the
 
 ## Blocked by
 
-- None. Builds on `snapshot` (`ariaSnapshot`), the durable-ref work
+- `cut-per-run-context-overhead-cta-and-discovery`: that task REWRITES
+  `skills/use-webhands/SKILL.md` into a complete per-verb reference; this task adds
+  a read->act note to the SAME skill. Serialise so this note lands INTO that new
+  structure instead of colliding with / being lost in the rewrite. (Build the
+  overhead task first; then add the snapshot read->act guidance here.)
+- Otherwise builds on `snapshot` (`ariaSnapshot`), the durable-ref work
   (`tasks/done/query-durable-ref-handle.md`), and `resolveLocator`.
 
 ## Prompt
