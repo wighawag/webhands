@@ -21,10 +21,15 @@ import {saucedemoDiscoveryEval} from '../catalogue/saucedemo-discovery.eval.js';
 import {buildParabankTransferEval} from '../catalogue/parabank-transfer.eval.js';
 import {magentoCheckoutEval} from '../catalogue/magento-checkout.eval.js';
 import {buildCartThresholdCheckoutEval} from '../catalogue/cart-threshold-checkout.eval.js';
+import {buildMessyDomExploreEval} from '../catalogue/messy-dom-explore.eval.js';
 import {
 	startDynamicFixtureServer,
 	type DynamicFixtureServer,
 } from '../dynamic-fixture.js';
+import {
+	startMessyDomFixtureServer,
+	type MessyDomFixtureServer,
+} from '../messy-dom-fixture.js';
 
 /**
  * The real-site catalogue: `*.eval.ts` entries this runner can launch by id (one
@@ -57,6 +62,19 @@ const CATALOGUE: Readonly<Record<string, () => EvalEntry>> = {
  * vs a fixed site).
  */
 const DYNAMIC_FIXTURE_EVAL_ID = 'cart-threshold-checkout';
+
+/**
+ * The id of the MESSY-DOM, explore-then-act TIER-3 eval (task
+ * `eval-tier3-local-messy-dom-explore-then-act`). Like
+ * {@link DYNAMIC_FIXTURE_EVAL_ID} it targets a LOCAL nonce-seeded fixture the
+ * runner must SERVE for the duration of the run (not a fixed public URL), so it
+ * is handled by {@link runOne}'s fixture-server lifecycle. It stays under the
+ * SAME `--compare`/`--agent-kind` machinery (no engine change): only WHERE the
+ * entry URL comes from differs (a per-run local server vs a fixed site). It
+ * replaces the head-to-head gap left by the hard-down live `magento-checkout`
+ * tier-3 (finding `work/notes/findings/magento-demo-tier3-stability.md`).
+ */
+const MESSY_DOM_FIXTURE_EVAL_ID = 'messy-dom-explore';
 
 /**
  * The harness's OWN runner command (task: "The harness has its OWN runner
@@ -185,6 +203,21 @@ Registered real-site evals:
                         the stop point: both toolkits must read-decide-act in a
                         loop. The runner starts/stops the fixture server itself;
                         no engine change.
+  messy-dom-explore     Tier-3 MESSY-DOM (explore-then-act): on a LOCAL
+                        nonce-seeded fixture the runner serves per run, read the
+                        page's instruction to find which section to open and which
+                        entry to select, open that section, wait for its entries
+                        to load, and select the right one (end state: the result
+                        marker carries the nonce-seeded correct code). The targets
+                        have NO stable id/testid/role and nonce-random class
+                        names, the correct target is identified only by run-
+                        revealed nonce CONTENT, the entries are behind a reveal
+                        step and arrive late, so a blind one-shot script cannot
+                        encode it: both toolkits must EXPLORE (read) then act.
+                        Both legs face the IDENTICAL DOM (Playwright-fair). The
+                        runner starts/stops the fixture server itself; no engine
+                        change. Replaces the head-to-head gap left by the
+                        hard-down live magento-checkout tier-3.
 
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
@@ -374,9 +407,11 @@ function asWebhandsCommand(raw: string | undefined): WebhandsCommand {
 async function loadEval(id: string): Promise<EvalEntry> {
 	const builder = CATALOGUE[id];
 	if (builder === undefined) {
-		const known = [...Object.keys(CATALOGUE), DYNAMIC_FIXTURE_EVAL_ID].join(
-			', ',
-		);
+		const known = [
+			...Object.keys(CATALOGUE),
+			DYNAMIC_FIXTURE_EVAL_ID,
+			MESSY_DOM_FIXTURE_EVAL_ID,
+		].join(', ');
 		throw new Error(
 			`unknown eval id '${id}'. Known real-site evals: ${known}. ` +
 				'(The local-fixture self-test is run separately via `self-test`.)',
@@ -403,6 +438,9 @@ async function runOne(
 	// lifecycle; the harness engine, contract, and `runEval` are unchanged.)
 	if (evalId === DYNAMIC_FIXTURE_EVAL_ID) {
 		return await runDynamicFixtureEval(agent, args);
+	}
+	if (evalId === MESSY_DOM_FIXTURE_EVAL_ID) {
+		return await runMessyDomFixtureEval(agent, args);
 	}
 	const entry = await loadEval(evalId);
 	return await runEval({
@@ -432,6 +470,37 @@ async function runDynamicFixtureEval(
 			`${fixture.url}/`,
 			fixture.model,
 		);
+		return await runEval({
+			entry,
+			webhands: asWebhandsCommand(args.webhands),
+			agent,
+			...(args.maxAttempts !== undefined
+				? {maxAttempts: args.maxAttempts}
+				: {}),
+			...(args.headed ? {serve: {headed: true}} : {}),
+		});
+	} finally {
+		await fixture.close();
+	}
+}
+
+/**
+ * Run the MESSY-DOM explore eval: start a fresh per-run local server serving the
+ * nonce-seeded messy page, build the eval against its ephemeral URL, run it under
+ * the SAME {@link runEval} machinery as every other eval, and ALWAYS stop the
+ * server afterward. Mirrors {@link runDynamicFixtureEval} exactly: each call mints
+ * a FRESH nonce-seeded page (so a cached script from a prior run is useless), and
+ * every leg of a `--compare`/`--compare3` gets its own independent messy page.
+ * Runner-only lifecycle; the harness engine, contract, and `runEval` are
+ * unchanged (no engine change, no new webhands verb).
+ */
+async function runMessyDomFixtureEval(
+	agent: AgentUnderTest,
+	args: Args,
+): Promise<EvalRunResult> {
+	const fixture: MessyDomFixtureServer = await startMessyDomFixtureServer();
+	try {
+		const entry = buildMessyDomExploreEval(`${fixture.url}/`, fixture.model);
 		return await runEval({
 			entry,
 			webhands: asWebhandsCommand(args.webhands),
