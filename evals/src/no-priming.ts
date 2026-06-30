@@ -233,6 +233,65 @@ export const WEBHANDS_SCRIPT_FORWARD_REFERENCE =
 	'selectors, steps, or URLs beyond the one named in the goal.';
 
 /**
+ * The SCRIPT-ONLY skilled reference: the truest head-to-head with the
+ * raw-Playwright baseline. Where {@link WEBHANDS_SCRIPT_FORWARD_REFERENCE} merely
+ * LEADS with `script` (the discrete act/read verbs still listed as a fallback),
+ * this reference makes `script` the EXCLUSIVE driving path: the agent drives the
+ * WHOLE flow as a SEQUENCE of file-only `script` runs, reading the live page
+ * INSIDE each script (the Playwright `page` API) and returning a serializable
+ * value, then writing the NEXT script from what it read. There is no
+ * verb-at-a-time `click`/`type`/`snapshot` working path: a read-decide-loop is a
+ * sequence of `script` files, each one model turn.
+ *
+ * WHY: `script` hands the agent the FULL live Playwright `page`, so a script-only
+ * webhands agent and a raw-Playwright agent write the SAME automation against the
+ * SAME shared browser; the ONLY difference is webhands SERVES the browser (and
+ * need not re-launch its own). This isolates the SURFACE from the
+ * chattiness/discovery confounds the other kinds carry, so the script-only leg is
+ * the cleanest "is the webhands surface itself competitive with raw Playwright?"
+ * reading. Used by the `webhands-script-only` agent kind.
+ *
+ * It stays NO-PRIMING-CLEAN exactly like the script-forward reference: the same
+ * GENERIC `async (page) => {...}` example shape (no selector-shaped fragment) and
+ * NO site URL, so {@link assertSkilledReferenceUnprimed} passes.
+ */
+export const WEBHANDS_SCRIPT_ONLY_REFERENCE =
+	'Your only tool is the `webhands` CLI, and you drive the browser EXCLUSIVELY ' +
+	'through ONE verb: `script`. webhands owns ONE long-lived headless browser (a ' +
+	'`serve` process bound to a profile); `script` runs a function you write ' +
+	'against that SAME live page, the way a raw-Playwright user writes a script by ' +
+	'hand. Do NOT use the discrete `click`/`type`/`snapshot`/`goto` verbs at all; ' +
+	'do everything inside `script` functions. This reference is COMPLETE: drive ' +
+	'directly from it, you do NOT need `npx webhands <verb> --help` or ' +
+	'`npx webhands --llms-full` at runtime.\n' +
+	'THE ONE DRIVING VERB \u2014 `script`: it takes JS evaluating to an async ' +
+	'function of the FULL live Playwright `page` and returns its serializable ' +
+	'result \u2014 `async (page) => { ...navigate, then use the standard ' +
+	'Playwright page API (fill, click, select, the role/test-id/text locator ' +
+	'helpers, auto-waiting) to act, AND read whatever you need off the live page ' +
+	'(textContent, counts, values); return a serializable value (what you read, or ' +
+	'a done flag) }` \u2014 supplied as a FILE PATH: write that function to a file, ' +
+	'then `npx webhands script ./flow.js`, and read the serializable result it ' +
+	'prints. It gets real locators + actions + auto-waiting; a thrown script ' +
+	'returns a clean error.\n' +
+	'READ-DECIDE-LOOP AS A SEQUENCE OF SCRIPTS: when the next action depends on ' +
+	'live page state you cannot know up front, do NOT try to one-shot it. Write a ' +
+	'script that ACTS then READS and RETURNS what it saw; read that returned value; ' +
+	'DECIDE; then write the NEXT `./flow.js` based on it and run it again. Each ' +
+	'`script` run is ONE model turn, so a look\u2192decide\u2192act loop is just a ' +
+	'short sequence of these file-only runs. Keep your reads inside the script ' +
+	'(return a small serializable value), not as separate verbs.\n' +
+	'Start and HOLD the session first (`serve` blocks, so background it: ' +
+	'`nohup npx webhands serve > /tmp/webhands-serve.log 2>&1 &` then ' +
+	'`sleep 12 && cat /tmp/webhands-serve.log`, expect ok:true + an endpoint). ' +
+	'Pace background XHR from INSIDE the script (await the page settling / a ' +
+	'locator) rather than with a separate wait verb. Matching should stay LOOSE ' +
+	'and text-based (site DOM/class names change), and expect to iterate once or ' +
+	'twice.\n' +
+	'Use only `script` to drive the browser; do not assume any site-specific ' +
+	'selectors, steps, or URLs beyond the one named in the goal.';
+
+/**
  * The WEBHANDS-SKILLED protocol preamble: the SAME webhands verb surface and the
  * SAME leave-open rule as {@link WEBHANDS_PREAMBLE}, but its toolkit reference is
  * the inlined {@link WEBHANDS_SKILL_REFERENCE} so the agent starts KNOWING the
@@ -256,6 +315,21 @@ export const WEBHANDS_SKILLED_PREAMBLE: ProtocolPreamble = {
 export const WEBHANDS_SCRIPT_FORWARD_PREAMBLE: ProtocolPreamble = {
 	toolkit: 'webhands-script-forward',
 	toolkitReference: WEBHANDS_SCRIPT_FORWARD_REFERENCE,
+	leaveOpenRule: WEBHANDS_LEAVE_OPEN_RULE,
+};
+
+/**
+ * The SCRIPT-ONLY skilled preamble: full skill knowledge, but the agent drives
+ * the browser EXCLUSIVELY through file-only `script` runs (no discrete
+ * `click`/`type`/`snapshot` working path), so a script-only webhands agent and a
+ * raw-Playwright agent write the SAME automation against the SAME shared browser.
+ * This is the truest head-to-head with the Playwright baseline: it isolates the
+ * SURFACE from the chattiness/discovery confounds, so it is the cleanest "is the
+ * webhands surface itself competitive?" reading.
+ */
+export const WEBHANDS_SCRIPT_ONLY_PREAMBLE: ProtocolPreamble = {
+	toolkit: 'webhands-script-only',
+	toolkitReference: WEBHANDS_SCRIPT_ONLY_REFERENCE,
 	leaveOpenRule: WEBHANDS_LEAVE_OPEN_RULE,
 };
 
@@ -417,7 +491,8 @@ export function buildAgentInput(
 	// assertNoPriming on the goal).
 	if (
 		preamble.toolkit === WEBHANDS_SKILLED_PREAMBLE.toolkit ||
-		preamble.toolkit === WEBHANDS_SCRIPT_FORWARD_PREAMBLE.toolkit
+		preamble.toolkit === WEBHANDS_SCRIPT_FORWARD_PREAMBLE.toolkit ||
+		preamble.toolkit === WEBHANDS_SCRIPT_ONLY_PREAMBLE.toolkit
 	) {
 		assertSkilledReferenceUnprimed(preamble.toolkitReference);
 	}

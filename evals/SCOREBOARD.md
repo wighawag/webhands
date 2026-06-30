@@ -403,6 +403,88 @@ Raw run lines (token figures are pi's exact `--parse-usage` capture):
   on a live sandbox (e.g. ParaBank "transfer your entire current balance") and a
   few repeat runs for a spread rather than a single snapshot.
 
+### Script-only head-to-head: is the webhands SURFACE itself competitive with raw Playwright? (2026-06-30)
+
+> The CLEANEST "is webhands-via-script competitive with raw Playwright?" reading
+> on this dynamic eval (task
+> `eval-script-only-agent-kind-head-to-head-vs-playwright`; new agent kind
+> `webhands-script-only`). The other webhands legs above carry a CHATTINESS /
+> DISCOVERY confound: they may use many small `npx webhands <verb>` round-trips
+> and pay a discovery tax, so a token gap vs Playwright mixes "the surface" with
+> "how the agent used it". The `webhands-script-only` kind REMOVES that confound:
+> its preamble drives the WHOLE flow EXCLUSIVELY through the file-only `script`
+> verb (write `./flow.js`, `npx webhands script ./flow.js`, read the serializable
+> result, write the next script), with NO discrete `click`/`type`/`snapshot`
+> working path. Because `script` hands the agent the FULL live Playwright `page`,
+> a script-only webhands agent and a raw-Playwright agent write the SAME
+> automation against the SAME shared browser; the ONLY difference is webhands
+> SERVES the browser (the agent need not re-launch its own). The read-decide-loop
+> is framed as a SEQUENCE of one-model-turn `script` files: each script ACTS,
+> READS the live page, and RETURNS what it saw; the agent decides, then writes the
+> NEXT script.
+>
+> **Hypothesis (TIE-or-BEAT):** on this flow (a blind one-shot script cannot win,
+> the stop point is a live nonce-seeded threshold), the script-only webhands leg
+> should TIE or BEAT raw Playwright, because the surfaces are identical and
+> webhands need not re-launch a browser. Same agent + model + `--parse-usage` as
+> every other section (`pi --print --mode json --tools bash,read,write`,
+> `etherplay/claude-opus-4-8`); SINGLE live runs (a snapshot, not an average).
+> Totals in millions of tokens (input + output + cache).
+
+| Leg | outcome | total tokens | note |
+| --- | --- | --- | --- |
+| `webhands-script-only` | **PASS 4/4** | **2.42M** | the clean surface read: script-exclusive, no chattiness confound |
+| `playwright` (baseline) | **FAIL 1/4** | 0.23M | stalled on its own inspect script; never composed the loop |
+| `webhands-script-forward` (context) | PASS 4/4 | 2.93M | skilled, `script` LED but discrete verbs still available |
+
+Raw run lines (token figures are pi's exact `--parse-usage` capture):
+
+```
+webhands-script-only   PASS  milestones 4/4   tokens: in 514 / out 13.0k / cacheRead 2212.6k / cacheWrite 197.1k / total 2423.2k
+playwright             FAIL  milestones 1/4   tokens: in  84 / out  1.6k / cacheRead  210.7k / cacheWrite  16.5k / total  228.9k
+webhands-script-forward PASS milestones 4/4   tokens: in 566 / out 15.1k / cacheRead 2665.8k / cacheWrite 244.7k / total 2926.2k
+```
+
+**What the script-only read shows (the hypothesis confirmed on CAPABILITY; the
+clean token tie is INCONCLUSIVE this snapshot):**
+
+- **The surface is competitive: script-only PASSed where raw Playwright FAILed.**
+  On the truest head-to-head, the script-only webhands agent drove the whole
+  read-decide-loop as a sequence of file-only `script` runs (it noticed the
+  displayed prices did NOT match the cart subtotal because of the hidden handling
+  fee, so it added an item, read the live subtotal off the returned script value,
+  decided, and wrote the next script) and reached the order-complete end state
+  with the subtotal over the threshold. Raw Playwright reached the store but then
+  STALLED on its own inspect script (a `node` script that connected over CDP but
+  never disconnected/exited, so the model turn hung to the wall-clock cap) and
+  FAILed 1/4. So on capability the script-only leg BEAT Playwright, the stronger
+  half of the TIE-or-BEAT hypothesis.
+- **The clean TOKEN tie is INCONCLUSIVE this single run.** Because Playwright did
+  not complete the flow, its 0.23M is the cost of stalling early, NOT the cost of
+  doing the same automation, so it is NOT an apples-to-apples token comparison.
+  The honest token reading is among the legs that DID complete: script-only
+  (2.42M) is the CHEAPEST webhands config on this eval, below `script-forward`
+  (2.93M) and the cold/skilled legs in the table above (2.80M / 1.84M
+  respectively across the two earlier comparison runs) — consistent with
+  "driving exclusively via `script` is at least as lean as the other webhands
+  configs". A clean script-only-vs-Playwright TOKEN tie needs a run where BOTH
+  legs finish the loop; that is the natural follow-up (a few repeats for a
+  spread, and a Playwright run that does not self-stall).
+- **Why this leg is the cleanest "is the surface competitive?" reading.** It is
+  the ONLY config where the webhands agent and the Playwright agent write the
+  SAME automation (the full live `page`) against the SAME shared browser, with no
+  per-verb shelling-out and no `--llms-full` discovery tax. So its result speaks
+  to the SURFACE itself, not to how chatty the agent chose to be: on this dynamic
+  flow the webhands surface, used script-only, is at least as capable as raw
+  Playwright and at least as lean as the other webhands configs.
+- **Honest caveats.** SINGLE live runs on a LOCAL fixture (bounded realism, real
+  single-run variance: Playwright has PASSed the easier `--compare` run above, so
+  do not read its stall here as "Playwright cannot do this"). Also an ENVIRONMENT
+  artifact: `npx webhands` was not on PATH in this fresh worktree, so every
+  webhands leg fell back to invoking the CLI directly via
+  `node node_modules/webhands/dist/bin.js` (a few discovery turns; same surface,
+  see `work/notes/observations/evals-npx-webhands-not-on-path-in-fresh-worktree.md`).
+
 ## How to read it: does webhands deliver?
 
 On these **simple, scriptable sandbox flows, both toolkits reach the goal**, and

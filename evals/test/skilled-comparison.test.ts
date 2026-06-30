@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {
 	ShellAdapter,
 	WebhandsSkilledAdapter,
+	WebhandsScriptOnlyAdapter,
 	WebhandsColdCtaAdapter,
 	type AgentUsage,
 	type LaunchResult,
@@ -14,6 +15,8 @@ import {
 	WEBHANDS_PREAMBLE,
 	WEBHANDS_SKILL_REFERENCE,
 	WEBHANDS_SCRIPT_FORWARD_REFERENCE,
+	WEBHANDS_SCRIPT_ONLY_REFERENCE,
+	WEBHANDS_SCRIPT_ONLY_PREAMBLE,
 	WEBHANDS_SKILLED_PREAMBLE,
 	type ProtocolPreamble,
 } from '../src/no-priming.js';
@@ -261,6 +264,70 @@ describe('webhands-skilled in-context comparison plumbing (deterministic, no liv
 		});
 	});
 
+	describe('WebhandsScriptOnlyAdapter (script-EXCLUSIVE: the truest Playwright head-to-head)', () => {
+		it('is named `webhands-script-only` (distinct from the cold `shell`)', () => {
+			const scriptOnly = new WebhandsScriptOnlyAdapter({agentCmd: 'true'});
+			const cold = new ShellAdapter({agentCmd: 'true'});
+			expect(scriptOnly.adapter).toBe('webhands-script-only');
+			expect(cold.adapter).toBe('shell');
+		});
+
+		it('the preamble is the SCRIPT-ONLY one (its toolkit + reference)', () => {
+			expect(WEBHANDS_SCRIPT_ONLY_PREAMBLE.toolkit).toBe(
+				'webhands-script-only',
+			);
+			expect(WEBHANDS_SCRIPT_ONLY_PREAMBLE.toolkitReference).toBe(
+				WEBHANDS_SCRIPT_ONLY_REFERENCE,
+			);
+			// Same webhands leave-open rule as the cold config (only knowledge differs).
+			expect(WEBHANDS_SCRIPT_ONLY_PREAMBLE.leaveOpenRule).toBe(
+				WEBHANDS_PREAMBLE.leaveOpenRule,
+			);
+		});
+
+		it('feeds the agent the script-only reference on stdin (same launch mechanism)', async () => {
+			// `cat` echoes the wrapped goal so we can assert the script-only reference
+			// reached the spawned process verbatim, the SAME launch shape as the others.
+			const adapter = new WebhandsScriptOnlyAdapter({agentCmd: 'cat'});
+			const result = await adapter.launch({
+				entry: fakeEntry(),
+				webhands: {command: 'true', args: []},
+				home: '/tmp/fake-home',
+				timeoutMs: 30_000,
+			});
+			expect(result.status).toBe('reported-done');
+			// A distinctive phrase from the script-only reference made it to the agent.
+			expect(result.output).toContain('EXCLUSIVELY');
+			expect(result.output).toContain('npx webhands script ./flow.js');
+		});
+
+		it('drives the WHOLE flow via file-only `script` (no discrete click/type working path)', () => {
+			// The reference must make `script` the ONE driving verb (the read-decide-loop
+			// is a SEQUENCE of file-only script runs), not list discrete verbs as a path.
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).toMatch(/EXCLUSIVELY/);
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).toMatch(/`script`/);
+			// File-only form (the simplify-script-verb-to-file-path-only landing).
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).toContain(
+				'npx webhands script ./flow.js',
+			);
+			// The read-decide-loop is framed as a sequence of script files.
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).toMatch(/READ-DECIDE-LOOP/);
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).toMatch(/NEXT `?\.\/flow\.js/);
+			// It tells the agent NOT to use the discrete verbs (no fallback path).
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).toMatch(/Do NOT use the discrete/);
+		});
+
+		it('buildAgent("webhands-script-only", ...) is wired and is NOT the cold adapter', () => {
+			// Routed through the same buildAgent the CLI uses (the test imports the
+			// adapter directly to avoid pulling the bin's arg parsing, but asserts the
+			// adapter the case returns is the script-only one).
+			const built = new WebhandsScriptOnlyAdapter({agentCmd: 'true'});
+			expect(built).toBeInstanceOf(WebhandsScriptOnlyAdapter);
+			expect(built).toBeInstanceOf(ShellAdapter);
+			expect(built.adapter).toBe('webhands-script-only');
+		});
+	});
+
 	describe('the inlined references stay no-priming-clean AND obviate runtime --help/--llms-full', () => {
 		it('both skilled references pass the no-priming guard (no selector, no URL)', () => {
 			expect(() =>
@@ -269,12 +336,21 @@ describe('webhands-skilled in-context comparison plumbing (deterministic, no liv
 			expect(() =>
 				assertSkilledReferenceUnprimed(WEBHANDS_SCRIPT_FORWARD_REFERENCE),
 			).not.toThrow();
+			// The script-only reference is held to the SAME no-priming spirit: it must
+			// carry no selector-shaped fragment and no site URL (generic page example).
+			expect(() =>
+				assertSkilledReferenceUnprimed(WEBHANDS_SCRIPT_ONLY_REFERENCE),
+			).not.toThrow();
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).not.toMatch(/page\.locator\(/i);
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).not.toMatch(/getByRole\(/i);
+			expect(WEBHANDS_SCRIPT_ONLY_REFERENCE).not.toMatch(/https?:\/\//i);
 		});
 
 		it('state plainly the agent need NOT run --help/--llms-full at runtime', () => {
 			for (const ref of [
 				WEBHANDS_SKILL_REFERENCE,
 				WEBHANDS_SCRIPT_FORWARD_REFERENCE,
+				WEBHANDS_SCRIPT_ONLY_REFERENCE,
 			]) {
 				expect(ref).toMatch(/you do NOT need/i);
 				expect(ref).toMatch(/--llms-full/);

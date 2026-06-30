@@ -9,6 +9,7 @@ import {
 	WEBHANDS_PREAMBLE,
 	WEBHANDS_SKILLED_PREAMBLE,
 	WEBHANDS_SCRIPT_FORWARD_PREAMBLE,
+	WEBHANDS_SCRIPT_ONLY_PREAMBLE,
 	type ProtocolPreamble,
 } from './no-priming.js';
 import type {WebhandsCommand} from './verb-client.js';
@@ -367,6 +368,25 @@ export class WebhandsScriptForwardAdapter extends ShellAdapter {
 			...opts,
 			adapter: 'webhands-script-forward',
 			preamble: WEBHANDS_SCRIPT_FORWARD_PREAMBLE,
+		});
+	}
+}
+
+/**
+ * The WEBHANDS-SCRIPT-ONLY adapter: same skilled launch shape, but its preamble
+ * makes the file-only `script` verb the EXCLUSIVE driving path (no discrete
+ * `click`/`type`/`snapshot` working path). A script-only webhands agent and a
+ * raw-Playwright agent then write the SAME automation against the SAME shared
+ * browser, so this is the truest head-to-head with the Playwright baseline: it
+ * isolates the SURFACE from the chattiness/discovery confounds, the cleanest "is
+ * the webhands surface itself competitive?" reading.
+ */
+export class WebhandsScriptOnlyAdapter extends ShellAdapter {
+	constructor(opts: {agentCmd: string; model?: string; parseUsage?: boolean}) {
+		super({
+			...opts,
+			adapter: 'webhands-script-only',
+			preamble: WEBHANDS_SCRIPT_ONLY_PREAMBLE,
 		});
 	}
 }

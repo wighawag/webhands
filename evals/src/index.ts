@@ -35,6 +35,7 @@ export {
 	PlaywrightAdapter,
 	WebhandsSkilledAdapter,
 	WebhandsScriptForwardAdapter,
+	WebhandsScriptOnlyAdapter,
 	UsageAccumulator,
 	extractUsage,
 	substituteModel,
@@ -58,6 +59,7 @@ export {
 	WEBHANDS_PREAMBLE,
 	WEBHANDS_SKILLED_PREAMBLE,
 	WEBHANDS_SCRIPT_FORWARD_PREAMBLE,
+	WEBHANDS_SCRIPT_ONLY_PREAMBLE,
 	PLAYWRIGHT_PREAMBLE,
 } from './no-priming.js';
 export {
