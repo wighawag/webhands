@@ -189,6 +189,95 @@ comparison: parabank-transfer (same goal + assertion, 3 toolkits)
   composable surface, and the harder/messier/anti-bot tiers (where the surface is
   designed to win) are what future runs measure.
 
+## The five-way read after the overhead cut: CTA default-off + a complete per-verb skill (2026-06-30)
+
+> After `cut-per-run-context-overhead-cta-and-discovery` landed (PR #24): the
+> per-result `cta` block is now SUPPRESSED by default (re-enable with
+> `--cta`/`--hints` or `WEBHANDS_CTA=1`), and the inlined `use-webhands` skill is a
+> COMPLETE per-verb reference, so a skilled agent drives WITHOUT re-dumping
+> `--help`/`--llms-full` at runtime. This run measures all FIVE configs, adding the
+> new **`webhands-cold-cta`** kind (the SAME cold preamble + `WEBHANDS_CTA=1` pinned
+> in the agent env) that reproduces the pre-flip CTA-on surface, so `cold-cta`
+> stays comparable to the 2026-06-29 four-way `cold` row and `cold-cta - cold`
+> isolates the CTA cost.
+>
+> Same agent + model as the other sections (`pi --print --mode json --tools
+> bash,read,write`, `etherplay/claude-opus-4-8`, `--parse-usage`); SINGLE live runs
+> (a snapshot, not an average, run-to-run variance on `total` is large, especially
+> on the long ParaBank flow). Totals in millions of tokens (input + output +
+> cache). **Do NOT cross-compare absolute numbers across the 2026-06-29 surface
+> change except via `cold-cta`** (the only row measuring the pre-flip surface).
+
+| Eval | Tier | cold (CTA-off) | cold-cta (CTA-on) | skilled | script-forward | playwright |
+| --- | --- | --- | --- | --- | --- | --- |
+| `saucedemo-core-flow` | 1 | PASS 8.19M | PASS 7.08M | PASS 2.86M | **PASS 2.27M** | PASS 0.51M |
+| `saucedemo-discovery` | 1 | PASS 9.09M | PASS 9.75M | PASS 5.94M | **PASS 1.18M** | PASS 0.91M |
+| `parabank-transfer` | 2 | PASS 8.10M | PASS 15.94M | PASS 1.60M | **PASS 1.49M** | **FAIL** 0.22M |
+
+Raw run lines (token figures are pi's exact `--parse-usage` capture):
+
+```
+saucedemo-core-flow (shell/cold)            PASS  tokens: in 844 / out 14.5k / cacheRead 7709.6k / cacheWrite 465.7k / total 8190.6k
+saucedemo-core-flow (webhands-cold-cta)     PASS  tokens: in 742 / out 13.8k / cacheRead 6729.7k / cacheWrite 334.5k / total 7078.7k
+saucedemo-core-flow (webhands-skilled)      PASS  tokens: in 564 / out 12.8k / cacheRead 2725.1k / cacheWrite 118.0k / total 2856.4k
+saucedemo-core-flow (webhands-script-fwd)   PASS  tokens: in 480 / out 10.8k / cacheRead 2135.6k / cacheWrite 123.8k / total 2270.6k
+saucedemo-core-flow (playwright)            PASS  tokens: in 170 / out  4.5k / cacheRead  400.3k / cacheWrite 105.4k / total  510.3k
+
+saucedemo-discovery (shell/cold)            PASS  tokens: in 946 / out 20.5k / cacheRead 8681.5k / cacheWrite 387.9k / total 9090.9k
+saucedemo-discovery (webhands-cold-cta)     PASS  tokens: in 954 / out 20.3k / cacheRead 9370.5k / cacheWrite 355.2k / total 9746.9k
+saucedemo-discovery (webhands-skilled)      PASS  tokens: in 870 / out 18.1k / cacheRead 5647.5k / cacheWrite 276.6k / total 5943.1k
+saucedemo-discovery (webhands-script-fwd)   PASS  tokens: in 300 / out  6.2k / cacheRead 1094.7k / cacheWrite  81.8k / total 1183.0k
+saucedemo-discovery (playwright)            PASS  tokens: in 274 / out  8.2k / cacheRead  788.1k / cacheWrite 114.6k / total  911.2k
+
+parabank-transfer (shell/cold)              PASS  tokens: in 744 / out 15.0k / cacheRead 7605.5k / cacheWrite 474.8k / total 8096.0k
+parabank-transfer (webhands-cold-cta)       PASS  tokens: in 980 / out 18.8k / cacheRead 15382.8k/ cacheWrite 532.4k / total 15935.1k
+parabank-transfer (webhands-skilled)        PASS  tokens: in 312 / out  6.1k / cacheRead 1446.5k / cacheWrite 149.2k / total 1602.1k
+parabank-transfer (webhands-script-fwd)     PASS  tokens: in 286 / out  5.9k / cacheRead 1230.7k / cacheWrite 256.0k / total 1492.8k
+parabank-transfer (playwright)              FAIL  tokens: in  82 / out  1.6k / cacheRead  141.8k / cacheWrite  79.6k / total  223.1k
+```
+
+### What the five-way read shows (and the byte-level confirmation)
+
+- **The overhead cut is unambiguous at the BYTE level, not just the noisy token
+  total.** A pass over this run's agent transcripts
+  (`~/.pi/agent/sessions/--tmp-...-evals--`, measuring `toolResult` bytes pulled
+  into context) shows the regime split cleanly: the **skilled / script-forward**
+  legs pull **0 `--llms-full` re-dumps and 0 CTA blocks**, dropping result bytes
+  from ~40-71KB (cold) to **4-18KB**. The complete per-verb skill genuinely
+  obviates the runtime `--help`/`--llms-full` re-dump (the ~4.4KB+ payload the task
+  targeted), and the default-off CTA removes the per-result `cta` bytes. The
+  ordering `cold/cold-cta >> skilled > script-forward` holds in BOTH the byte
+  measure and the token total.
+- **`cold-cta` reproduces the pre-flip baseline (the control works).** The
+  `cold-cta` rows sit in the same order of magnitude as the 2026-06-29 four-way
+  `cold` rows (core 7.08M vs 9.28M; discovery 9.75M vs 8.90M; parabank 15.94M vs
+  8.95M), and crucially `cold-cta` carries the CTA blocks (transcripts: 10-20 CTA
+  results per run) while the new `cold` (CTA-off) carries far fewer/none. The CTA
+  env override + the `cold-cta` kind work as designed: the old surface stays live
+  and re-runnable. (Single-run variance is large on the long ParaBank flow, where
+  the `cold-cta` agent hit the `page.`-prefixed locator grammar, fell back to
+  `script`, and looped, inflating that one cell, the documented friction the
+  `snapshot-ref` task next addresses, not a measurement error.)
+- **`cold-cta - cold` isolates the CTA cost, but it is DWARFED by run variance.**
+  The CTA block is ~5% of result bytes; on these flows the run-to-run LLM variance
+  on `total` is far larger, so the `cold-cta - cold` delta is not a clean dollar
+  figure here (core: cold-cta is even slightly LOWER this run). The CTA's real cost
+  shows up structurally in the byte count (CTA results present in cold/cold-cta,
+  absent in skilled/script-forward), not as a stable token delta on a single run.
+  The value of suppressing it is removing pure-overhead bytes an agent never reads,
+  consistently, not a headline per-run saving.
+- **The capability story is unchanged and still the bigger one.** All three
+  webhands configs PASS `parabank-transfer`; raw **Playwright FAILs** it again
+  (exactly as 2026-06-29). On the easy flows Playwright is still cheapest in raw
+  tokens, but it is not strictly better: on the stateful flow it did not reach the
+  goal. webhands-at-its-best (script-forward) is within a small factor on the easy
+  flows AND more capable on the harder one.
+
+> FOLLOW-UP measured here is the overhead-cut re-measure for task #24. The
+> `snapshot-ref-actionable` re-measure (cutting the `eval`-fallback round-trips the
+> ParaBank `cold-cta` leg above stumbled into) is its own follow-up, and the
+> dynamic-eval run lands in its own `## Dynamic (non-scriptable) read` section.
+
 ## How to read it: does webhands deliver?
 
 On these **simple, scriptable sandbox flows, both toolkits reach the goal**, and
