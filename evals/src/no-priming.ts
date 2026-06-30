@@ -372,14 +372,31 @@ export const PLAYWRIGHT_PREAMBLE: ProtocolPreamble = {
 		'`context.pages()[0]`), and drive THAT page (`goto` the entry URL, ' +
 		'locate/click/type, etc.). Do NOT launch your own browser ' +
 		'(`chromium.launch()` / `launchPersistentContext`); you must drive the ' +
-		'shared one so the result can be verified. Do NOT use webhands or any other ' +
+		'shared one so the result can be verified. ' +
+		'EVERY script you run must let its `node` process EXIT: a live ' +
+		'`connectOverCDP` connection keeps the Node event loop alive, so at the ' +
+		'END of each script call `await browser.disconnect()` (this ends YOUR ' +
+		'client connection so the process exits) and do NOT call ' +
+		'`browser.close()` (which would tear down the SHARED browser the harness ' +
+		'must still read). If a script does not `disconnect()`, `node` will HANG ' +
+		'to the time limit and the run will fail. ' +
+		"When navigating, prefer `goto(url, {waitUntil: 'domcontentloaded'})` " +
+		'plus an explicit locator/`waitForSelector` wait for the element you need; ' +
+		"do NOT use `waitUntil: 'networkidle'` on app pages, which may never " +
+		'settle and will also hang the script. ' +
+		'Do NOT use webhands or any other ' +
 		'browser-automation toolkit. Do not assume any site-specific selectors, ' +
 		'steps, or URLs beyond the one named in the goal.',
 	leaveOpenRule:
-		'When you have finished, STOP and leave the browser open on the final ' +
-		'page so the result can be verified. Do NOT call `browser.close()`, ' +
-		'`context.close()`, or `page.close()`, and do not reset the page. ' +
-		'(Disconnecting from the shared browser is fine; closing it is not.)',
+		'When you have finished, STOP and leave the SHARED browser open on the ' +
+		'final page so the result can be verified. Two DIFFERENT things. (1) Do ' +
+		'NOT CLOSE the shared browser: never call `browser.close()`, ' +
+		'`context.close()`, or `page.close()`, and do not reset the page; closing ' +
+		'it would destroy the session the harness verifies. (2) DO DISCONNECT ' +
+		'your own client at the end of every script: `await browser.disconnect()` ' +
+		'ends YOUR CDP connection (so your `node` process exits) WITHOUT closing ' +
+		'the shared browser, which keeps running for the harness. Disconnecting is ' +
+		'REQUIRED so each script exits; closing is forbidden.',
 };
 
 /** A locator/selector-shaped fragment a goal-prompt must NOT carry. */

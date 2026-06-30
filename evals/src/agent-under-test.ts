@@ -224,16 +224,45 @@ export class ShellAdapter implements AgentUnderTest {
 				: {}),
 		};
 		return await new Promise<LaunchResult>((resolve) => {
+			// `detached: true` makes the bash child a PROCESS-GROUP LEADER (its pgid ==
+			// its pid), so the agent and EVERY descendant it spawns (e.g. an inner
+			// `node explore.js` driving the shared browser over CDP) share one group.
+			// Without this, a timeout `child.kill('SIGTERM')` signals ONLY the direct
+			// bash pid, leaving a hung grandchild `node` alive to keep eating the
+			// wall-clock / orphaned (the self-stall finding
+			// `playwright-baseline-self-stalls-on-connectovercdp-lifecycle-dynamic-eval`).
+			// Grouped, we can signal the WHOLE tree with `process.kill(-pid, ...)`.
 			const child = spawn('bash', ['-c', command], {
 				env,
 				stdio: ['pipe', 'pipe', 'pipe'],
+				detached: true,
 			});
 			let out = '';
 			let err = '';
 			let timedOut = false;
+			// Group-kill the child's ENTIRE process tree (negative pid == the process
+			// group led by the detached bash child), escalating SIGTERM -> SIGKILL so a
+			// grandchild that ignores/can't-handle SIGTERM (a hung `node` on a live CDP
+			// connection) is still reaped instead of orphaned.
+			let killGroupEscalation: ReturnType<typeof setTimeout> | undefined;
+			const killGroup = (signal: NodeJS.Signals): void => {
+				if (child.pid === undefined) {
+					child.kill(signal);
+					return;
+				}
+				try {
+					process.kill(-child.pid, signal);
+				} catch {
+					// The group is already gone (race with `close`); nothing to reap.
+				}
+			};
 			const timer = setTimeout(() => {
 				timedOut = true;
-				child.kill('SIGTERM');
+				killGroup('SIGTERM');
+				// If SIGTERM did not bring the group down promptly (a wedged grandchild),
+				// escalate to an unignorable SIGKILL on the whole group.
+				killGroupEscalation = setTimeout(() => killGroup('SIGKILL'), 2000);
+				killGroupEscalation.unref?.();
 			}, input.timeoutMs);
 			// TEE + LIVE PRETTY-PRINT: capture the agent's stdout for the (untrusted)
 			// self-report AND stream a human-readable view to the terminal as it
@@ -267,6 +296,8 @@ export class ShellAdapter implements AgentUnderTest {
 			};
 			child.on('error', (e) => {
 				clearTimeout(timer);
+				if (killGroupEscalation !== undefined)
+					clearTimeout(killGroupEscalation);
 				resolve({
 					status: 'crashed',
 					output: out.trim(),
@@ -276,6 +307,8 @@ export class ShellAdapter implements AgentUnderTest {
 			});
 			child.on('close', (code) => {
 				clearTimeout(timer);
+				if (killGroupEscalation !== undefined)
+					clearTimeout(killGroupEscalation);
 				const output = out.trim();
 				if (timedOut) {
 					resolve({
