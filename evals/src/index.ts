@@ -87,4 +87,16 @@ export {
 export {buildSelfTestEval} from './catalogue/self-test-fixture.eval.js';
 export {buildParabankTransferEval} from './catalogue/parabank-transfer.eval.js';
 export {magentoCheckoutEval} from './catalogue/magento-checkout.eval.js';
+export {buildCartThresholdCheckoutEval} from './catalogue/cart-threshold-checkout.eval.js';
+export {
+	resolveFixtureModel,
+	renderFixtureHtml,
+	computeExpectedPlan,
+	lineTotal,
+	startDynamicFixtureServer,
+	type FixtureItem,
+	type DynamicFixtureModel,
+	type ExpectedPlan,
+	type DynamicFixtureServer,
+} from './dynamic-fixture.js';
 export {mintNonce, nonceTransferAmount, nonceUsername} from './nonce.js';

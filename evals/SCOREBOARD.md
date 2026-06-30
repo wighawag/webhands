@@ -309,6 +309,100 @@ parabank-transfer (playwright)              FAIL  tokens: in  82 / out  1.6k / c
 > surface it. (Single-run variance is real, so do not over-read the small
 > per-cell shifts vs the five-way table above.)
 
+## Dynamic (non-scriptable) read: mid-run termination on a live value (2026-06-30)
+
+> The FIRST eval a write-once-run-once BLIND script cannot win (task
+> `eval-dynamic-non-scriptable-mid-run-goal-shift`; idea
+> `work/notes/ideas/dynamic-evals-that-cannot-be-one-shot-scripted.md`). Every
+> other row above is STATICALLY SCRIPTABLE: the whole flow can be planned up front
+> and run blind in one script, which is exactly why raw Playwright is cheapest on
+> them (it writes one script and runs it). This eval removes that advantage by
+> design: the correct actions resolve ONLY from live, varying page state, so BOTH
+> toolkits must observe-then-act.
+>
+> **Target + levers (the decision):** a small randomised LOCAL fixture
+> (`evals/src/dynamic-fixture.ts`), HOST-deterministic (every value is a pure
+> function of the per-run nonce, so the harness + the self-test can re-derive the
+> correct end state) yet AGENT-unpredictable (only revealed on the page at run
+> time). Chosen over a live sandbox for determinism + immunity to third-party
+> flake (weighed against a live store's realism). Three levers combine so a single
+> blind script provably cannot encode the flow, AND a single read-all-upfront
+> script still gets the wrong answer:
+>
+> - **mid-run termination on a live value**: "add items until the shown subtotal
+>   exceeds the shown free-shipping threshold, then check out" — the threshold is
+>   nonce-randomised and only on the page, so no fixed script encodes the stop;
+> - **runtime-revealed varying target**: prices + their order are nonce-seeded, so
+>   which/how many items clear the threshold varies per run;
+> - **subtotal not precomputable from the cards**: a per-item handling fee is added
+>   in the cart ONLY, so even reading every card price up front cannot compute the
+>   running subtotal — the agent must add, READ the live cart subtotal, then
+>   decide.
+>
+> **Spike result (recorded):** over 3000 nonces, NO fixed "add the K cheapest
+> cards" choice clears every run (add-2 fails 99%, add-3 63%, add-4 9% and
+> overshoots), while the harness's read-loop reference plan clears 100% and the
+> minimal clearing cart varies from 2 to 6 items — so a single blind script
+> genuinely cannot one-shot it (self-test:
+> `evals/test/dynamic-cart-eval.test.ts`).
+>
+> **Hypothesis (from the idea note):** on this eval the Playwright-vs-webhands
+> token gap should NARROW or FLIP (both must loop; webhands' cheap structured
+> reads no longer lose to one blind script). Same agent + model as every other
+> section (`pi --print --mode json --tools bash,read,write`,
+> `etherplay/claude-opus-4-8`, `--parse-usage`); SINGLE live runs (a snapshot, not
+> an average). Totals in millions of tokens (input + output + cache).
+
+| Run | cold | skilled | playwright | webhands ÷ baseline |
+| --- | --- | --- | --- | --- |
+| `--compare` (cold vs Playwright) | **PASS 2.80M** | n/a | **PASS 1.40M** | ~2.0x (NARROWED) |
+| `--compare3` (cold vs skilled vs Playwright) | **PASS 3.19M** | **PASS 1.84M** | **FAIL** 0.33M | n/a (FLIPPED on capability) |
+
+Raw run lines (token figures are pi's exact `--parse-usage` capture):
+
+```
+--compare (cold webhands vs Playwright-only):
+  shell            PASS  milestones 4/4   tokens: in 440 / out 9.5k / cacheRead 2515.5k / cacheWrite 279.0k / total 2804.5k
+  playwright       PASS  milestones 4/4   tokens: in 328 / out 8.6k / cacheRead 1187.3k / cacheWrite 205.4k / total 1401.6k
+
+--compare3 (cold vs skilled vs Playwright-only):
+  shell            PASS  milestones 4/4   tokens: in 444 / out 11.3k / cacheRead 2937.8k / cacheWrite 242.0k / total 3191.5k
+  webhands-skilled PASS  milestones 4/4   tokens: in 386 / out  7.8k / cacheRead 1673.8k / cacheWrite 157.0k / total 1839.0k
+  playwright       FAIL  milestones 1/4   tokens: in 112 / out  1.9k / cacheRead  298.4k / cacheWrite  30.2k / total  330.7k
+```
+
+### What the dynamic read shows (the hypothesis confirmed BOTH ways)
+
+- **The gap NARROWED, exactly as predicted.** In the `--compare` run both toolkits
+  PASSed and the webhands÷baseline ratio fell to **~2.0x**, versus the ~4-8x on
+  the static scriptable flows (and the up-to-~30x the cold benchmark implied). The
+  CAUSE is the eval's whole point: Playwright could no longer write one blind
+  script and run it. Its own agent transcript says so — it noticed the displayed
+  prices did NOT match the subtotal (the hidden handling fee), so it had to read
+  the live `#cart-subtotal` after EACH click and decide whether to continue. That
+  read-act-read loop is precisely the cost the static flows let it skip, and it is
+  what closes the gap.
+- **And it FLIPPED on capability.** In the `--compare3` run raw **Playwright
+  FAILed** (1/4 milestones: it reached the store but never composed the loop to
+  clear the threshold), while BOTH webhands configs PASSed (skilled cheapest at
+  1.84M). On the interactive flow the "write one script" shape broke down, the
+  clean "webhands delivers on interactive flows" result the idea note predicted.
+  (Single-run variance is real: the same Playwright baseline PASSed the easier
+  `--compare` run; the point is that its structural advantage is GONE here, so its
+  outcome is no longer reliably better.)
+- **webhands at its best (skilled) is the headline.** The skilled leg (the
+  fair-shake config a real deployment with the skill synced would see) PASSed at
+  1.84M, the cheapest webhands number on this eval, and PASSed where Playwright
+  FAILed. This is the eval the harder tiers were building toward: it measures the
+  verb surface's look->decide->act value, and on it webhands is both competitive
+  on tokens AND more reliable on outcome.
+- **Honest caveat.** This is a LOCAL fixture, not a live store, so the realism is
+  bounded; it is a deterministic SPIKE proving the concept (a blind script cannot
+  win, the end state is host-checkable, the gap narrows/flips), not a
+  production-traffic benchmark. The natural follow-ups are a second dynamic eval
+  on a live sandbox (e.g. ParaBank "transfer your entire current balance") and a
+  few repeat runs for a spread rather than a single snapshot.
+
 ## How to read it: does webhands deliver?
 
 On these **simple, scriptable sandbox flows, both toolkits reach the goal**, and
@@ -367,6 +461,21 @@ For the THREE-way read (cold vs skilled vs Playwright), swap `--compare` for
 ```sh
 pnpm --filter @webhands/evals run-eval \
   --eval saucedemo-discovery \
+  --compare3 \
+  --parse-usage \
+  --webhands "node packages/cli/dist/bin.js" \
+  --agent-cmd      "pi --print --mode json --tools bash,read,write --model <model>" \
+  --playwright-cmd "bash -c 'cd <dir-where-playwright-resolves> && exec pi --print --mode json --tools bash,read,write --model <model>'"
+```
+
+The DYNAMIC (non-scriptable) eval runs under the SAME machinery; just swap the
+`--eval` id. The runner serves the randomised LOCAL fixture itself for the run
+(no live site, no extra setup), so the same `--compare`/`--compare3` invocation
+works:
+
+```sh
+pnpm --filter @webhands/evals run-eval \
+  --eval cart-threshold-checkout \
   --compare3 \
   --parse-usage \
   --webhands "node packages/cli/dist/bin.js" \

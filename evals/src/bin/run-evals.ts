@@ -19,6 +19,11 @@ import {saucedemoCoreFlowEval} from '../catalogue/saucedemo-core-flow.eval.js';
 import {saucedemoDiscoveryEval} from '../catalogue/saucedemo-discovery.eval.js';
 import {buildParabankTransferEval} from '../catalogue/parabank-transfer.eval.js';
 import {magentoCheckoutEval} from '../catalogue/magento-checkout.eval.js';
+import {buildCartThresholdCheckoutEval} from '../catalogue/cart-threshold-checkout.eval.js';
+import {
+	startDynamicFixtureServer,
+	type DynamicFixtureServer,
+} from '../dynamic-fixture.js';
 
 /**
  * The real-site catalogue: `*.eval.ts` entries this runner can launch by id (one
@@ -39,6 +44,18 @@ const CATALOGUE: Readonly<Record<string, () => EvalEntry>> = {
 	// Tier-3 Magento (Luma): a STATIC, no-account guest flow on a messy real DOM.
 	[magentoCheckoutEval.id]: () => magentoCheckoutEval,
 };
+
+/**
+ * The id of the DYNAMIC, non-one-shot-scriptable eval (task
+ * `eval-dynamic-non-scriptable-mid-run-goal-shift`). Unlike the {@link CATALOGUE}
+ * real-site entries (fixed public URLs), it targets a LOCAL randomised fixture
+ * the runner must SERVE for the duration of the run, so it is handled by
+ * {@link runOne}'s fixture-server lifecycle rather than the URL-only catalogue.
+ * It stays under the SAME `--compare`/`--agent-kind` machinery (no engine
+ * change): only WHERE the entry URL comes from differs (a per-run local server
+ * vs a fixed site).
+ */
+const DYNAMIC_FIXTURE_EVAL_ID = 'cart-threshold-checkout';
 
 /**
  * The harness's OWN runner command (task: "The harness has its OWN runner
@@ -148,6 +165,17 @@ Registered real-site evals:
                         reached with the item in the cart). The messy-real DOM
                         regression catcher; a down/Cloudflare-blocked Magento
                         reports INCONCLUSIVE, never a capability fail.
+  cart-threshold-checkout
+                        DYNAMIC (non-one-shot-scriptable): on a LOCAL randomised
+                        fixture the runner serves per run, add items to the cart
+                        until the shown subtotal exceeds the shown free-shipping
+                        threshold, then check out (end state: the order completed
+                        AND its final subtotal exceeds the threshold). The
+                        threshold, prices, order, and a cart-only handling fee are
+                        all nonce-seeded, so a single BLIND script cannot encode
+                        the stop point: both toolkits must read-decide-act in a
+                        loop. The runner starts/stops the fixture server itself;
+                        no engine change.
 
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 
@@ -333,7 +361,9 @@ function asWebhandsCommand(raw: string | undefined): WebhandsCommand {
 async function loadEval(id: string): Promise<EvalEntry> {
 	const builder = CATALOGUE[id];
 	if (builder === undefined) {
-		const known = Object.keys(CATALOGUE).join(', ') || '(none)';
+		const known = [...Object.keys(CATALOGUE), DYNAMIC_FIXTURE_EVAL_ID].join(
+			', ',
+		);
 		throw new Error(
 			`unknown eval id '${id}'. Known real-site evals: ${known}. ` +
 				'(The local-fixture self-test is run separately via `self-test`.)',
@@ -354,6 +384,13 @@ async function runOne(
 	agent: AgentUnderTest,
 	args: Args,
 ): Promise<EvalRunResult> {
+	// The DYNAMIC fixture eval needs a per-run LOCAL server serving its nonce-
+	// randomised page; start it, build the entry against its ephemeral URL, run
+	// under the SAME machinery, and always tear the server down. (Runner-only
+	// lifecycle; the harness engine, contract, and `runEval` are unchanged.)
+	if (evalId === DYNAMIC_FIXTURE_EVAL_ID) {
+		return await runDynamicFixtureEval(agent, args);
+	}
 	const entry = await loadEval(evalId);
 	return await runEval({
 		entry,
@@ -362,6 +399,38 @@ async function runOne(
 		...(args.maxAttempts !== undefined ? {maxAttempts: args.maxAttempts} : {}),
 		...(args.headed ? {serve: {headed: true}} : {}),
 	});
+}
+
+/**
+ * Run the DYNAMIC fixture eval: start a fresh per-run local server serving the
+ * nonce-randomised page, build the eval against its ephemeral URL, run it under
+ * the SAME {@link runEval} machinery as every other eval, and ALWAYS stop the
+ * server afterward. Each call mints a FRESH nonce-seeded page (like ParaBank's
+ * per-run identity), so a cached script from a prior run is useless, and every
+ * leg of a `--compare`/`--compare3` gets its own independent randomised page.
+ */
+async function runDynamicFixtureEval(
+	agent: AgentUnderTest,
+	args: Args,
+): Promise<EvalRunResult> {
+	const fixture: DynamicFixtureServer = await startDynamicFixtureServer();
+	try {
+		const entry = buildCartThresholdCheckoutEval(
+			`${fixture.url}/`,
+			fixture.model,
+		);
+		return await runEval({
+			entry,
+			webhands: asWebhandsCommand(args.webhands),
+			agent,
+			...(args.maxAttempts !== undefined
+				? {maxAttempts: args.maxAttempts}
+				: {}),
+			...(args.headed ? {serve: {headed: true}} : {}),
+		});
+	} finally {
+		await fixture.close();
+	}
 }
 
 async function main(): Promise<void> {
