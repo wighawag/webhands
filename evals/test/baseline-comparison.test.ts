@@ -1,8 +1,12 @@
 import {describe, expect, it} from 'vitest';
+import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {
 	PlaywrightAdapter,
 	ShellAdapter,
 	type AgentUsage,
+	type LaunchInput,
 	type LaunchResult,
 } from '../src/agent-under-test.js';
 import {
@@ -138,11 +142,40 @@ describe('Playwright-only baseline comparison plumbing (deterministic, no live s
 			);
 			expect(WEBHANDS_PREAMBLE.leaveOpenRule).toMatch(/webhands stop/i);
 			expect(PLAYWRIGHT_PREAMBLE.leaveOpenRule).toMatch(
-				/leave the browser open/i,
+				/leave the (shared )?browser open/i,
 			);
 			expect(PLAYWRIGHT_PREAMBLE.leaveOpenRule).toMatch(/browser\.close/i);
 			// ...NOT in the GOAL itself (the no-priming rule still binds the goal).
 			expect(entry.goalPrompt).not.toMatch(/leave the browser open/i);
+		});
+
+		it('the Playwright-only preamble DISTINGUISHES "do not CLOSE the shared browser" from "DO disconnect your client so the script exits" (the self-stall fix)', () => {
+			const {toolkitReference, leaveOpenRule} = PLAYWRIGHT_PREAMBLE;
+			const input = buildAgentInput(fakeEntry(), PLAYWRIGHT_PREAMBLE);
+			// The leave-open rule names BOTH halves: never CLOSE, but DO disconnect.
+			expect(leaveOpenRule).toMatch(/browser\.disconnect\(\)/i);
+			expect(leaveOpenRule).toMatch(/browser\.close\(\)/i);
+			// The reference itself tells the agent each script's `node` must EXIT via
+			// disconnect (so a live connectOverCDP connection does not hang the loop).
+			expect(toolkitReference).toMatch(/browser\.disconnect\(\)/i);
+			expect(toolkitReference).toMatch(/exit/i);
+			// Both surface in the composed agent input the harness actually sends.
+			expect(input).toMatch(/disconnect/i);
+		});
+
+		it('the Playwright-only preamble prefers domcontentloaded + a locator wait over networkidle (which may never settle)', () => {
+			const {toolkitReference} = PLAYWRIGHT_PREAMBLE;
+			expect(toolkitReference).toMatch(/domcontentloaded/i);
+			// It steers AWAY from networkidle (named only to forbid it).
+			expect(toolkitReference).toMatch(/do NOT use[^.]*networkidle/i);
+		});
+
+		it('the disconnect-to-exit steer stays site-agnostic: no selector shape, no http(s) URL', () => {
+			const {toolkitReference, leaveOpenRule} = PLAYWRIGHT_PREAMBLE;
+			for (const text of [toolkitReference, leaveOpenRule]) {
+				expect(text).not.toMatch(/https?:\/\//);
+				expect(text).not.toMatch(/page\.locator\(|getByRole\(|data-testid/i);
+			}
 		});
 
 		it('the goal stays identical across configs; buildAgentInput still runs the no-priming guard', () => {
@@ -258,5 +291,55 @@ describe('Playwright-only baseline comparison plumbing (deterministic, no live s
 			// A FAIL leg still lines up on the same field shape as the PASS leg.
 			expect(out).toContain('FAIL');
 		});
+	});
+
+	describe('timeout teardown GROUP-kills a hung child tree (the self-stall reaper)', () => {
+		/** A minimal LaunchInput for a teardown test (no webhands, short wall-clock). */
+		function teardownInput(command: string, timeoutMs: number): LaunchInput {
+			return {
+				entry: fakeEntry(),
+				webhands: {command: 'true', args: []},
+				home: tmpdir(),
+				timeoutMs,
+			};
+		}
+
+		function isAlive(pid: number): boolean {
+			try {
+				process.kill(pid, 0);
+				return true;
+			} catch {
+				return false;
+			}
+		}
+
+		it('reaps a backgrounded GRANDCHILD `node` that outlives the wall-clock (not just the direct bash child)', async () => {
+			// The exact self-stall shape: the agent (bash) backgrounds an inner `node`
+			// that HANGS forever (a live CDP connection that never disconnects), then
+			// bash itself waits. Without a GROUP kill, a timeout SIGTERM to the bash
+			// pid leaves the grandchild `node` orphaned/alive. We record the
+			// grandchild's pid and assert it is DEAD after teardown.
+			const dir = mkdtempSync(join(tmpdir(), 'webhands-teardown-'));
+			const pidFile = join(dir, 'grandchild.pid');
+			try {
+				// node writes its own pid, then hangs on an unresolved promise forever.
+				const hang = `node -e "require('fs').writeFileSync(process.env.PIDFILE, String(process.pid)); setInterval(()=>{}, 1e9)"`;
+				// Background the node grandchild, then bash waits on it (so bash itself
+				// is also alive at timeout: a non-group kill would only catch bash).
+				const command = `export PIDFILE='${pidFile}'; ${hang} & wait`;
+				// The teardown is in the shared ShellAdapter.launch the PlaywrightAdapter
+				// inherits, so a plain ShellAdapter exercises the exact same reaper.
+				const shell = new ShellAdapter({agentCmd: command});
+				const result = await shell.launch(teardownInput(command, 600));
+				expect(result.status).toBe('timed-out');
+				const grandchildPid = Number(readFileSync(pidFile, 'utf8').trim());
+				expect(Number.isInteger(grandchildPid)).toBe(true);
+				// Give the SIGTERM->SIGKILL escalation a beat to land on the group.
+				await new Promise((r) => setTimeout(r, 2500));
+				expect(isAlive(grandchildPid)).toBe(false);
+			} finally {
+				rmSync(dir, {recursive: true, force: true});
+			}
+		}, 15000);
 	});
 });

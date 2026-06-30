@@ -485,6 +485,79 @@ clean token tie is INCONCLUSIVE this snapshot):**
   `node node_modules/webhands/dist/bin.js` (a few discovery turns; same surface,
   see `work/notes/observations/evals-npx-webhands-not-on-path-in-fresh-worktree.md`).
 
+#### Re-run after the Playwright-leg lifecycle fix: the clean TOKEN tie, BOTH legs finishing (2026-06-30)
+
+> Follow-up to the INCONCLUSIVE snapshot above (task
+> `playwright-baseline-fair-cdp-lifecycle-and-token-tie-rerun`). The earlier
+> Playwright `FAIL 1/4` was a SELF-INFLICTED `connectOverCDP`-lifecycle stall
+> (finding `playwright-baseline-self-stalls-on-connectovercdp-lifecycle-dynamic-eval`):
+> the agent's `node` script never let its process EXIT (a live CDP connection
+> kept the event loop alive) and reached for `waitUntil:'networkidle'`, so `node`
+> hung to the wall-clock cap before the cart loop ever ran. The fix made the
+> Playwright preamble (`PLAYWRIGHT_PREAMBLE` in `evals/src/no-priming.ts`) STEER
+> a non-hanging pattern: each script `await browser.disconnect()`s so `node`
+> exits, but NEVER `browser.close()`s the shared browser (the `leaveOpenRule` now
+> DISTINGUISHES the two), and prefers `domcontentloaded` + a locator wait over
+> `networkidle`. With that, the baseline can lose (or win) FAIRLY. Same agent +
+> model + `--parse-usage` as every section (`pi --print --mode json --tools
+> bash,read,write`, `etherplay/claude-opus-4-8`); two pairings for a small spread.
+> Totals in millions of tokens (input + output + cache).
+
+| Leg | r1 | r2 |
+| --- | --- | --- |
+| `playwright` (baseline) | **PASS 4/4** 1.64M | **PASS 4/4** 1.57M |
+| `webhands-script-only` | **PASS 4/4** 1.71M | **PASS 4/4** 2.46M |
+
+Raw run lines (pi's exact `--parse-usage` capture):
+
+```
+playwright            PASS  milestones 4/4   tokens: in 360 / out 11.1k / cacheRead 1443.4k / cacheWrite 186.3k / total 1641.1k   (r1)
+playwright            PASS  milestones 4/4   tokens: in 334 / out  9.5k / cacheRead 1433.7k / cacheWrite 125.9k / total 1569.4k   (r2)
+webhands-script-only  PASS  milestones 4/4   tokens: in 372 / out 10.7k / cacheRead 1499.6k / cacheWrite 202.8k / total 1713.5k   (r1)
+webhands-script-only  PASS  milestones 4/4   tokens: in 538 / out 15.3k / cacheRead 2342.5k / cacheWrite 103.4k / total 2461.7k   (r2)
+```
+
+**What the FAIR re-run finally says (the clean token tie, both legs finishing):**
+
+- **The lifecycle fix let Playwright COMPLETE every time (was 0/4, now 2/2
+  PASS 4/4).** The disconnect-to-exit steer worked: the agent wrote per-script
+  `node` files that ACT + READ the live page and EXIT cleanly, drove the whole
+  read-decide-loop, and reached the order-complete end state with the subtotal
+  over the live nonce-seeded threshold, leaving the SHARED browser open. So the
+  prior `FAIL 1/4` rows were confounded by the self-stall, NOT a capability gap;
+  the "Playwright FAILs the dynamic eval" reading OVERSTATED webhands' win, and
+  this re-run corrects it.
+- **The clean TOKEN tie: the surfaces are COMPETITIVE, same order of magnitude.**
+  Now that BOTH legs do the SAME automation against the SAME shared browser and
+  BOTH finish, the comparison is apples-to-apples for the first time on this
+  dynamic eval. Playwright came in 1.57 to 1.64M and script-only 1.71 to 2.46M:
+  overlapping ranges, both around 1.5 to 2.5M, with raw Playwright slightly leaner on
+  these two pairings (it round-trips one `node` script per turn with no
+  `npx webhands`/CLI discovery surface in the loop). This is a TIE within
+  single-run variance, not a webhands BEAT on tokens: the honest read is "the
+  webhands script-only surface is as CAPABLE and roughly as LEAN as raw
+  Playwright on this flow," which is the TIE half of the TIE-or-BEAT hypothesis
+  confirmed once the baseline is fair. The earlier capability BEAT (script-only
+  PASS vs Playwright FAIL) does NOT survive a fair baseline: it was the
+  self-stall.
+- **Where webhands' real structural edge still lives.** The connection-lifecycle
+  tax that sank the baseline before is exactly the boilerplate webhands' served,
+  warm, already-connected page amortizes away (the agent never writes
+  `connectOverCDP`, never manages disconnect). On THIS local, stable fixture the
+  raw-Playwright agent, once STEERED past the hang, pays that tax cheaply; the
+  edge is expected to widen on messier / less-documented / lifecycle-heavy sites
+  where the connect-drive-disconnect boilerplate is where a hand-rolled script
+  keeps tripping (the harder tiers exist to measure that).
+- **Honest caveats.** Two pairings, LOCAL fixture, real single-run variance (the
+  script-only r2 at 2.46M vs r1 at 1.71M shows the spread is wide; do not
+  over-read a single leaner number). A build-specific nuance recorded during the
+  Playwright runs: this Playwright build's CDP `Browser` object exposed no
+  `disconnect()` method, yet `connectOverCDP` did NOT keep the Node event loop
+  alive here, so the scripts EXITED cleanly anyway (the agent verified EXIT 0).
+  The preamble's INTENT (let `node` exit, never CLOSE the shared browser) is the
+  load-bearing part and held; the exact `disconnect()` call is the recommended
+  mechanism, not the only thing that makes the process exit.
+
 ## How to read it: does webhands deliver?
 
 On these **simple, scriptable sandbox flows, both toolkits reach the goal**, and
