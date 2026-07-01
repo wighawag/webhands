@@ -10,7 +10,7 @@ created: 2026-07-01
 
 Some webhands tools would be far more useful if they could see the AGENT'S OWN
 CONVERSATION, not just what happened on the page. The first concrete consumer is
-the `review` verb (see `review-crystallizes-session-into-hand`): to crystallize a
+the `distill` verb (see `distill-session-into-hand`): to distill a
 just-driven flow into a hand, the richest input is the agent's transcript (the
 real reasoning, the intent, the dead-ends avoided), not only webhands' verb trace.
 
@@ -23,7 +23,7 @@ conversation" is not one thing an agent can just do.
 The idea: make **session awareness a first-class, OPTIONAL capability of the
 harness seam**. A harness that knows where its transcript lives EXPOSES it (a
 path, or a slice) through a small, agreed shape; a harness that cannot simply does
-not, and every consumer DEGRADES GRACEFULLY. Agents (and tools like `review`) then
+not, and every consumer DEGRADES GRACEFULLY. Agents (and tools like `distill`) then
 have ONE way to ask "can I see this session?" that works where supported and
 no-ops where not, instead of each tool hard-coding one harness's file layout.
 
@@ -36,7 +36,7 @@ layer, which is already harness-delivered:
 
 - The **`use-webhands` skill** is the natural home for the OPTIONAL instruction:
   "if your harness exposes the current session/transcript, obtain its path and pass
-  the relevant slice to `review --session-file <path>` (or `--summary`)." A harness
+  the relevant slice to `distill --session-file <path>` (or `--summary`)." A harness
   that cannot surface a transcript just skips that step; the skill already
   degrades.
 - webhands core consumers accept a PLAIN input (a `--session-file` PATH, a
@@ -52,12 +52,12 @@ harness's internals.
 ## Honest scoping: optional, best-effort, privacy-sensitive
 
 - **Optional by construction.** No consumer may REQUIRE session awareness; it is
-  always an enrichment over a portable fallback (for `review`, the verb trace).
+  always an enrichment over a portable fallback (for `distill`, the verb trace).
   "Harness does not support it" is a first-class, silent, correct outcome.
 - **Privacy-sensitive.** A transcript can contain secrets, other users' data, or
   content the operator never meant a tool to ingest. Handing a session file to a
   tool is a DISCLOSURE act; the convention must make that explicit and opt-in, not
-  ambient. (Redaction concerns compound with `review`'s own trace-redaction
+  ambient. (Redaction concerns compound with `distill`'s own trace-redaction
   question.)
 - **Best-effort shape.** Transcripts differ (JSON stream vs message log vs
   provider-specific). The seam normalizes only enough for a consumer to find the
@@ -71,7 +71,7 @@ harness's internals.
   sets, a documented file location the skill reads, or a convention the agent is
   told to follow) - NOT a new webhands-core API that imports harness internals.
 - The `use-webhands` skill carries the optional "surface your session to
-  `review`" rung, written to degrade to the verb-trace/`--summary` path when the
+  `distill`" rung, written to degrade to the verb-trace/`--summary` path when the
   descriptor is absent.
 - A per-harness ADAPTER note documents, per known harness (Claude Code, Cursor,
   pi, MCP clients), whether/how a transcript is reachable - as guidance, kept OUT
@@ -97,19 +97,19 @@ harness's internals.
    short recon pass to know if the seam has real consumers now or is speculative.
 3. Privacy/consent model: how is handing a transcript to a tool made explicit and
    opt-in rather than ambient, and does redaction belong here or in the consumer
-   (`review`)?
-4. Is this worth a seam at all, or does `review`'s `--session-file <path>` +
+   (`distill`)?
+4. Is this worth a seam at all, or does `distill`'s `--session-file <path>` +
    `--summary` (the agent pastes/points at whatever it can already reach) cover
    enough that a formalized harness seam is premature? Lean: start with the
-   plain-input path in `review`; only formalize this seam once a supporting
+   plain-input path in `distill`; only formalize this seam once a supporting
    harness makes it concretely useful.
 
 ## Provenance
 
 Surfaced in conversation 2026-07-01, split off from
-`review-crystallizes-session-into-hand` at the user's request: the review verb's
+`distill-session-into-hand` at the user's request: the distill verb's
 richest input is the agent's conversation, but reading it is harness-specific, so
 "session awareness in the harness seam" is its own (more speculative) idea rather
-than a coupling baked into `review`. Kept separate so `review` can ship on the
+than a coupling baked into `distill`. Kept separate so `distill` can ship on the
 portable verb-trace/`--summary`/`--session-file` path while this seam incubates.
 Nothing built; pre-PRD.

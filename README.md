@@ -152,8 +152,8 @@ that comparison and beats it on two separate axes:
 So: **verbs are the floor (makes the flow POSSIBLE), and a hand is both the
 ceiling (a NEW capability) and the accelerator (a known flow becomes one cheap
 call).** Authoring that hand cheaply, straight from a flow the agent just drove
-successfully, is an incubating idea
-(`work/notes/ideas/review-crystallizes-session-into-hand.md`).
+successfully, is an incubating idea (a `distill` verb,
+`work/notes/ideas/distill-session-into-hand.md`).
 
 ## Scope and honesty (please read)
 

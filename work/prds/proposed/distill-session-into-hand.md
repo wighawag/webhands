@@ -1,6 +1,6 @@
 ---
-title: review, crystallize a just-driven session into a tested hand scaffold
-slug: review-crystallizes-session-into-hand
+title: distill a just-driven session into a tested hand scaffold
+slug: distill-session-into-hand
 humanOnly: true
 ---
 
@@ -42,7 +42,7 @@ when a placeholder works identically and keeps every artifact clean and shareabl
 **Other sensitive content is out of scope by nature.** Non-credential typed values
 (a search term, an address, an amount) and returned page content (a balance, an
 order detail) are UNAVOIDABLE and are ALREADY part of what the agent reads by
-definition, so `review` does not attempt to redact them: it records what drove the
+definition, so `distill` does not attempt to redact them: it records what drove the
 page. Only the credential class gets the `{ENV:NAME}` treatment, because only there
 is a placeholder both possible and worthwhile.
 
@@ -65,23 +65,24 @@ fresh and real) is lost.
 
 ## Solution
 
-Add a **`review`** verb that CRYSTALLIZES the just-driven session into a reusable
-hand SCAFFOLD, and can validate it immediately, so the flow an agent explored once
-becomes a one-call verb thereafter.
+Add a **`distill`** verb that reduces the just-driven session to a reusable hand
+SCAFFOLD (the messy explore-loop distilled down to the steps that mattered), and
+can validate it immediately, so the flow an agent explored once becomes a one-call
+verb thereafter.
 
-**What `review` produces:**
+**What `distill` produces:**
 
 - A **hand module scaffold** at a caller-named path (a `Hand` in the frozen
   ADR-0007 shape, closing over `ctx.pwPage`), pre-filled from the discovered steps
   as a strong starting point (not a guaranteed-correct module).
-- A **human-readable review markdown**: what the flow does, its steps, the
+- A **human-readable notes markdown**: what the flow does, its steps, the
   selectors used, and notable decisions/dead-ends, so a human can judge it fast.
 
-**What `review` crystallizes FROM (layered, portable backbone first):**
+**What `distill` works FROM (layered, portable backbone first):**
 
 - **Backbone: webhands' own verb trace (portable, ground-truth).** `serve`
   records every verb the agent issued this session (`goto`, `click "<locator>"`,
-  `type`, `script ./flow.js`, ...). `review` builds the scaffold from what
+  `type`, `script ./flow.js`, ...). `distill` builds the scaffold from what
   ACTUALLY drove the page. No conversation access, no harness coupling; it is what
   really ran, not a reconstruction. This is the default source. Credentials never
   enter the trace as literals: an agent types `{ENV:NAME}` placeholders (see
@@ -91,52 +92,52 @@ becomes a one-call verb thereafter.
   intent/recollection as text, capturing WHY steps happened (which the bare trace
   lacks). A reconstruction, so it enriches rather than replaces the trace.
 - **Enrichment, `--session-file <path>` (opt-in, explicit path).** When the
-  agent can reach its own transcript, it passes the file so `review` can mine the
+  agent can reach its own transcript, it passes the file so `distill` can mine the
   real reasoning. A PLAIN path webhands is HANDED (the file-path-only discipline of
   `script`); webhands never DISCOVERS where a harness stores transcripts. Producing
   that path is the separate `harness-seam-session-awareness` idea's job, optional
-  and graceful; here it is just an input `review` accepts when given.
+  and graceful; here it is just an input `distill` accepts when given.
 
 **Test it right away, adopt by hand (the trust line):**
 
-- `review` can VALIDATE the emitted scaffold by running it against the LIVE page
+- `distill` can VALIDATE the emitted scaffold by running it against the LIVE page
   through the EXISTING `script` verb and reporting pass/fail, BEFORE any adoption.
   That yields a tested scaffold, and it stays in the sandboxed page-context tier
   (writing a `.js` file + running it via `script` grants the agent no persistent
   Node authority).
-- **`review` NEVER loads the hand.** Adopting means the HUMAN names it in
+- **`distill` NEVER loads the hand.** Adopting means the HUMAN names it in
   `hands.json` (ADR-0007: loading a hand == trusting an in-process npm dependency).
-  `review` emits and tests; the human reviews the file and adopts. Auto-loading is
+  `distill` emits and tests; the human reviews the file and adopts. Auto-loading is
   the load-bearing thing this PRD refuses (it is the arbitrary-in-process-RCE
   hazard the `agent-provided-hand-via-cli-arg` idea guards).
 
-**The pipeline:** explore → `review` (emit scaffold + notes, validate via
+**The pipeline:** explore → `distill` (emit scaffold + notes, validate via
 `script`) → human reviews the file → human names it in `hands.json` → next run is
 one cheap call.
 
 This **refines ADR-0007 and ADR-0012, does not discard them.** ADR-0012's `script`
 (file-path-only, driver-context) is reused verbatim as the VALIDATION mechanism.
-ADR-0007's explicit, operator-scoped hand-loading is preserved exactly: `review`
+ADR-0007's explicit, operator-scoped hand-loading is preserved exactly: `distill`
 authors a candidate, the operator still performs the trust act. A new ADR records
 the verb-trace + the `{ENV:NAME}` substitution contract (see *Resolved decisions*).
 
 ## User Stories
 
 1. As an agent that just made a flow work after much exploration, I want one
-   `review` call to turn that session into a reusable hand scaffold, so the flow
+   `distill` call to turn that session into a reusable hand scaffold, so the flow
    is not thrown away and the next run is a single cheap call.
-2. As an agent, I want `review` to build the scaffold from webhands' OWN verb
+2. As an agent, I want `distill` to build the scaffold from webhands' OWN verb
    trace by default, so it works with no harness support and reflects what really
    drove the page (not my possibly-faulty recollection).
 3. As an agent, I want to pass a `--summary` of my intent, so the scaffold and its
    notes capture WHY steps happened, not just the mechanical step list.
 4. As an agent whose harness exposes my transcript, I want to pass it via
-   `--session-file <path>`, so `review` can mine the real reasoning; and where my
-   harness cannot, I want `review` to still produce a useful hand from the trace.
-5. As an agent, I want `review` to VALIDATE the scaffold against the live page via
+   `--session-file <path>`, so `distill` can mine the real reasoning; and where my
+   harness cannot, I want `distill` to still produce a useful hand from the trace.
+5. As an agent, I want `distill` to VALIDATE the scaffold against the live page via
    `script` and tell me pass/fail, so I hand the human a TESTED starting point,
    not a guess.
-6. As a human operator, I want `review` to EMIT a hand file + a readable review
+6. As a human operator, I want `distill` to EMIT a hand file + a readable notes
    markdown but NEVER load it, so adopting a hand stays my explicit, operator-scoped
    trust act (I name it in `hands.json`).
 7. As an agent, I want to type a credential as an `{ENV:NAME}` placeholder that
@@ -151,13 +152,13 @@ the verb-trace + the `{ENV:NAME}` substitution contract (see *Resolved decisions
 9. As an operator, I want webhands to load `.env` / `.env.local` files (via
    `ldenv`) so I can put `PASSWORD=...` in a gitignored `.env.local` and have
    `{ENV:PASSWORD}` resolve, without exporting secrets into my interactive shell.
-10. As an agent, I want to crystallize a caller-named SLICE of the session (the
+10. As an agent, I want to distill a caller-named SLICE of the session (the
     checkout sub-flow, not the earlier failed probes), so the hand encodes the
     flow that matters, not the whole noisy transcript.
 11. As a hand author, I want the emitted scaffold in the frozen `Hand`/`HandContext`
     shape (closing over `ctx.pwPage`), so it drops into the existing loading path
     with no new mechanism once I adopt it.
-12. As a maintainer, I want `review` to be ONE flagged verb (mirroring `script`'s
+12. As a maintainer, I want `distill` to be ONE flagged verb (mirroring `script`'s
     single-source simplicity), so the surface stays small.
 
 ### Autonomy notes
@@ -183,8 +184,8 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
   type-time, substituting the real value into the page while the tool-call and the
   recorded value stay the token. This lands FIRST because it is what keeps the
   verb trace (task #2) and the scaffold free of literal secrets. It is a general
-  webhands capability (useful outside `review`), but it is built here as the
-  foundation `review` depends on. Honest scope: it is HYGIENE, not a secret
+  webhands capability (useful outside `distill`), but it is built here as the
+  foundation `distill` depends on. Honest scope: it is HYGIENE, not a secret
   boundary (the value is DOM-readable; the context already trusts the agent).
   Task #1 has three parts, all shipping together:
   - **Resolution + `.env` loading via `ldenv`.** `serve` loads `.env` /
@@ -205,7 +206,7 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
     operator supplies the value via env / `.env.local`; you never need to read it.
     (Held to the no-priming spirit already enforced on the skill: generic, no site
     selectors.)
-- **One flagged verb.** `review` with `--summary <text>`, `--session-file <path>`,
+- **One flagged verb.** `distill` with `--summary <text>`, `--session-file <path>`,
   `--out <path>` (scaffold destination), `--test` (validate via `script`), and a
   SLICE selector (e.g. `--from`/`--to` over the trace, exact form a task detail).
   Not a verb family. Mirrors `script`'s single-source shape.
@@ -218,21 +219,21 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
   NOT redact non-credential typed values or page reads (out of scope by nature).
 - **Scaffold shape = frozen ADR-0007 `Hand`.** The emitted module exports a `Hand`
   closing over `ctx.pwPage`, so adoption needs no new loading mechanism.
-- **Faithful replay + annotated TODOs.** `review` writes a faithful replay of the
+- **Faithful replay + annotated TODOs.** `distill` writes a faithful replay of the
   discovered steps; turning it into a PARAMETERIZED hand (e.g. `checkout(itemId)`)
   is left as annotated TODOs informed by `--summary`/`--session-file`, not
   auto-invented.
 - **Validation reuses `script` (ADR-0012) verbatim.** No new execution surface;
   `--test` runs the scaffold as a driver-context script against the live page.
-- **HARD INVARIANT: `review` never writes `hands.json` and never `import()`s the
+- **HARD INVARIANT: `distill` never writes `hands.json` and never `import()`s the
   module.** Emit + test only. Adoption is the human's operator-scoped act.
 
 ## Testing Decisions
 
-- Behaviour, not internals: given a recorded verb trace (a fixture), `review`
-  emits a `Hand`-shaped module whose replay drives the SAME steps, and a review
+- Behaviour, not internals: given a recorded verb trace (a fixture), `distill`
+  emits a `Hand`-shaped module whose replay drives the SAME steps, and a notes
   markdown listing them.
-- The trust invariant is a TEST: `review` must not add to `hands.json` nor load
+- The trust invariant is a TEST: `distill` must not add to `hands.json` nor load
   the module (assert no config write, no `import()`), mirroring how the existing
   hand-loading tests assert explicit-declarative loading.
 - **`{ENV:NAME}` substitution (task #1) gets its own tests:** `type '#pass'
@@ -251,30 +252,30 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
 - `--test` validation: a scaffold that replays correctly reports PASS against the
   live page; a broken one reports FAIL loudly (reusing `script`'s error path).
 - Reuse the eval fixtures (`saucedemo`/`parabank`/the local dynamic + messy-DOM
-  fixtures) as realistic flows to crystallize, so the emitted hand is exercised on
+  fixtures) as realistic flows to distill, so the emitted hand is exercised on
   a real sub-flow, not a toy.
 
 ## Out of Scope
 
 - **webhands discovering the transcript location itself.** Where Claude Code /
-  Cursor / pi / an MCP client stores a session is harness-specific; `review` only
+  Cursor / pi / an MCP client stores a session is harness-specific; `distill` only
   accepts a `--session-file` PATH it is handed. Producing that path (optionally,
   gracefully) is the separate `work/notes/ideas/harness-seam-session-awareness.md`
   idea, not this PRD.
 - **Auto-loading / adopting the generated hand.** Naming a hand in `hands.json`
-  stays a human, operator-scoped act (ADR-0007). `review` emits + tests only. The
+  stays a human, operator-scoped act (ADR-0007). `distill` emits + tests only. The
   operator-gated `--hand`/`allowAgentHands` runtime-loading path is the separate
   `agent-provided-hand-via-cli-arg` idea's concern.
-- **A guaranteed-correct, ready-to-ship hand.** `review` emits a SCAFFOLD (a
+- **A guaranteed-correct, ready-to-ship hand.** `distill` emits a SCAFFOLD (a
   strong starting point from real steps); the `script` test raises confidence, the
   human still reviews. Perfect parameterization/generalization is not promised.
 - **Redacting non-credential content.** Non-`ENV` typed values (search terms,
   addresses, amounts) and returned page content (balances, order details) are
-  UNAVOIDABLE and already agent-readable by definition; `review` records what drove
+  UNAVOIDABLE and already agent-readable by definition; `distill` records what drove
   the page and does NOT attempt to scrub them. Only the credential class gets the
   `{ENV:NAME}` placeholder (see *Resolved decisions*).
 - **A hand marketplace / distribution / portability format.** Out, exactly as the
-  parent hands PRD scoped it; `review` authors a LOCAL scaffold for local adoption.
+  parent hands PRD scoped it; `distill` authors a LOCAL scaffold for local adoption.
 
 ## Further Notes
 
@@ -283,9 +284,9 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
   actionable rather than aspirational (the README/scoreboard hands framing points
   here).
 - Composition with the sibling ideas is clean and each guards a different line:
-  `review` = AUTHOR (emit + test, never load); `agent-provided-hand-via-cli-arg` =
+  `distill` = AUTHOR (emit + test, never load); `agent-provided-hand-via-cli-arg` =
   operator-gated LOAD; `harness-seam-session-awareness` = optional transcript
   SOURCE. None smuggles auto-load.
-- "Proven by reuse": `review` validates via the existing `script` verb and emits
+- "Proven by reuse": `distill` validates via the existing `script` verb and emits
   the existing `Hand` shape, so it adds an authoring convenience on top of frozen
   contracts rather than a new privilege tier.
