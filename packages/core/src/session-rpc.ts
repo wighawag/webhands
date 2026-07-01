@@ -65,6 +65,19 @@ import {verbNameOf} from './verb-trace.js';
 /** The path the session RPC is served under, below the server's base URL. */
 export const SESSION_RPC_PATH = '/session/call';
 
+/**
+ * The path the session's VERB TRACE is served under (task
+ * `distill-verb-emits-hand-scaffold`). A GET here returns the ordered
+ * {@link VerbTraceEntry} list the running session accumulated, so the
+ * thin-client `distill` verb (a SEPARATE process, like every other verb) can
+ * read the SAME session's trace it was driven with. This is a READ-ONLY fetch
+ * of the in-memory trace, NOT a verb: it is off the verb `WebHandsPage` surface
+ * (the trace is a session-server concern, not a page method), so it rides its
+ * own path beside {@link SESSION_RPC_PATH} rather than as a `SessionRpcRequest`
+ * variant. Loopback-only, exactly like the RPC path.
+ */
+export const SESSION_TRACE_PATH = '/session/trace';
+
 /** A single verb call to run against the served live page. */
 export type SessionRpcRequest =
 	| SessionRpcBuiltInRequest

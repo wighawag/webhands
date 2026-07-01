@@ -9,6 +9,7 @@ import {
 import {
 	applySessionRpc,
 	SESSION_RPC_PATH,
+	SESSION_TRACE_PATH,
 	type SessionRpcRequest,
 	type SessionRpcResponse,
 } from './session-rpc.js';
@@ -196,6 +197,13 @@ function handleRequest(
 ): void {
 	const url = req.url ?? '/';
 	const path = url.split('?')[0];
+	// GET the in-memory verb trace: the thin-client `distill` verb reads the SAME
+	// session's ordered trace over this route (task
+	// `distill-verb-emits-hand-scaffold`). Read-only; returns the entries as JSON.
+	if (req.method === 'GET' && path === SESSION_TRACE_PATH) {
+		writeJson(res, 200, {ok: true, value: trace.entries()});
+		return;
+	}
 	if (req.method !== 'POST' || path !== SESSION_RPC_PATH) {
 		writeJson(res, 404, {
 			ok: false,
