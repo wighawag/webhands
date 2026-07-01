@@ -1,6 +1,6 @@
 {
 	"name": "webhands",
-	"version": "1.0.0",
+	"version": "0.5.0",
 	"description": "A CLI (and MCP server) that drives a real, persistent browser via Playwright, letting an agent or human control any website from a genuinely logged-in browser session.",
 	"keywords": [
 		"browser",
