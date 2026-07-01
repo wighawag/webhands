@@ -2,41 +2,49 @@
 title: review, crystallize a just-driven session into a tested hand scaffold
 slug: review-crystallizes-session-into-hand
 humanOnly: true
-needsAnswers: true
 ---
 
 > Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked — they move into tasks/ADRs and this prd settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
 
-<!-- open-questions -->
-<!--
-  TRANSIENT BLOCK — stripped by the apply rung on full resolution.
-  While the spec has unresolved questions blocking autonomous tasking:
-    1. Set `needsAnswers: true` in the frontmatter above.
-    2. List the questions under the `## Open questions` heading below.
-    3. Clear the flag (and let apply strip this block) once they are answered.
-  Delete the whole fenced block — markers and all — if the prd launches fully resolved.
--->
+## Resolved decisions (were open questions)
 
-## Open questions
+The two questions that once gated tasking are DECIDED (2026-07-01), and the
+decision reshapes the solution rather than just answering it:
 
-1. **The verb-trace redaction contract (the one blocking decision).** The
-   `serve` verb trace that backs `review` will contain what the agent TYPED,
-   including credentials (a login flow types a password), and possibly returned
-   page content. Both the emitted hand scaffold and the human-readable review
-   markdown must NOT leak secrets. What is the redaction policy: redact `type`
-   values into named placeholders by default (e.g. `type <secret:0>` with the
-   scaffold referencing a `process.env` / config lookup)? Redact everything by
-   default and require an explicit opt-in to include literal values? Where is the
-   contract recorded (an ADR)? This is a security decision a human must make; it
-   gates tasking because getting it wrong writes secrets to disk.
-2. **Trace persistence + lifetime.** Does the `serve` verb trace live only in the
-   running `serve` process memory (so `review` must run in the SAME session), or
-   is it persisted to the profile dir (surviving `stop`), and if persisted, what
-   is its retention / cleanup and does that widen the secret-at-rest surface from
-   Q1? Lean: in-memory for the live session is the minimal safe default; persistence
-   is a separate, later opt-in. Confirm before tasking, since it interacts with Q1.
+1. **Credentials handled by `{ENV:NAME}` substitution, not by redacting a leaked
+   literal (DECIDED, and it is task #1).** The earlier framing ("redact typed
+   secrets out of the trace") was theater: if the agent calls `type '#pass'
+   'hunter2'`, the agent ALREADY holds the secret, so redacting the trace closes a
+   door already open. The real move is to keep the literal OUT of the tool-call and
+   the artifacts entirely: webhands resolves a `{ENV:NAME}` placeholder in `type`
+   values from its OWN process env at type-time. The agent types
+   `type '#pass' '{ENV:PASSWORD}'`; webhands substitutes the real value; the
+   tool-call, the verb trace, and the emitted scaffold all record only the
+   non-secret token `{ENV:PASSWORD}`. This is in-scope for THIS prd and is the
+   FIRST task (every other task is `blockedBy` it), because it is what makes the
+   trace safe to keep and the scaffold reusable.
+2. **Persistence is fine, BECAUSE of #1 (DECIDED).** The only real objection to
+   persisting the trace to the profile dir was secret-at-rest (a plaintext password
+   surviving `stop`). With `{ENV:NAME}` the trace never holds the credential (only
+   the token), so there is nothing sensitive to persist and the at-rest objection
+   evaporates. The two decisions are the SAME insight: `{ENV:NAME}` is what makes
+   persistence safe.
 
-<!-- /open-questions -->
+**Honest framing (why `{ENV:NAME}` is HYGIENE, not a security boundary).** Even
+with `{ENV:PASSWORD}`, the substituted value lands in the DOM and can be read back
+(and a local agent could read the env itself). So `{ENV:NAME}` does NOT create a
+secret boundary the agent cannot cross, and it is not trying to: the execution
+context is one that ALREADY TRUSTS THE AGENT (a local agent on the operator's
+machine). Its point is HYGIENE, not containment: do not gratuitously write a
+literal credential into the tool-call, the on-disk trace, and the reusable scaffold
+when a placeholder works identically and keeps every artifact clean and shareable.
+
+**Other sensitive content is out of scope by nature.** Non-credential typed values
+(a search term, an address, an amount) and returned page content (a balance, an
+order detail) are UNAVOIDABLE and are ALREADY part of what the agent reads by
+definition, so `review` does not attempt to redact them: it records what drove the
+page. Only the credential class gets the `{ENV:NAME}` treatment, because only there
+is a placeholder both possible and worthwhile.
 
 ## Problem Statement
 
@@ -75,7 +83,10 @@ becomes a one-call verb thereafter.
   records every verb the agent issued this session (`goto`, `click "<locator>"`,
   `type`, `script ./flow.js`, ...). `review` builds the scaffold from what
   ACTUALLY drove the page. No conversation access, no harness coupling; it is what
-  really ran, not a reconstruction. This is the default source.
+  really ran, not a reconstruction. This is the default source. Credentials never
+  enter the trace as literals: an agent types `{ENV:NAME}` placeholders (see
+  *Resolved decisions* #1), so the trace and the emitted scaffold carry only the
+  non-secret token, which is also what makes the scaffold reusable.
 - **Enrichment, `--summary <text>` (portable).** The agent passes its own
   intent/recollection as text, capturing WHY steps happened (which the bare trace
   lacks). A reconstruction, so it enriches rather than replaces the trace.
@@ -128,9 +139,10 @@ the verb-trace + redaction contract (Open question #1).
 6. As a human operator, I want `review` to EMIT a hand file + a readable review
    markdown but NEVER load it, so adopting a hand stays my explicit, operator-scoped
    trust act (I name it in `hands.json`).
-7. As a security-conscious operator, I want the verb trace and the emitted scaffold
-   to REDACT secrets I typed (credentials), so crystallizing a login flow does not
-   write my password to disk.
+7. As an agent, I want to type a credential as an `{ENV:NAME}` placeholder that
+   webhands resolves from its own process env at type-time, so my password never
+   appears in the tool-call, the verb trace, or the emitted scaffold (and the
+   scaffold stays reusable without embedding a secret).
 8. As an agent, I want to crystallize a caller-named SLICE of the session (the
    checkout sub-flow, not the earlier failed probes), so the hand encodes the
    flow that matters, not the whole noisy transcript.
@@ -143,28 +155,40 @@ the verb-trace + redaction contract (Open question #1).
 ### Autonomy notes
 
 - **`humanOnly: true` (DECIDED).** A human must drive the TASKING of this PRD. It
-  introduces a security-sensitive surface: a verb trace that captures typed
-  secrets, an emitted-code path adjacent to the hand trust tier, and a redaction
-  contract. A human should own the decomposition and the ADR scope, even though
-  the resulting tasks may themselves be agent-buildable. (This does NOT propagate
-  to the tasks' own gates.)
-- **`needsAnswers: true` (DISCOVERED).** The redaction contract (Open question #1)
-  and trace lifetime (#2) are unresolved SECURITY decisions that must be settled
-  before tasking; a wrong default writes secrets to disk. The auto-tasker must
-  refuse until they are answered and the flag cleared.
+  introduces a security-adjacent surface: a verb trace, an emitted-code path
+  adjacent to the hand trust tier, and the `{ENV:NAME}` substitution. A human
+  should own the decomposition, the task ordering (`{ENV:NAME}` first, everything
+  `blockedBy` it), and any ADR scope, even though the resulting tasks may
+  themselves be agent-buildable. (This does NOT propagate to the tasks' own gates.)
+- **`needsAnswers` cleared (RESOLVED).** The two once-blocking questions (the
+  credential/redaction contract and trace persistence) are DECIDED in *Resolved
+  decisions* above: `{ENV:NAME}` substitution replaces redaction, and persistence
+  is safe because of it. The prd is tasking-ready.
 
 ## Implementation Decisions
 
 Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
 
+- **`{ENV:NAME}` substitution is TASK #1; every other task is `blockedBy` it.**
+  webhands resolves an `{ENV:NAME}` placeholder in `type` values (and any other
+  value-bearing verb where a credential is typed) from its OWN process env at
+  type-time, substituting the real value into the page while the tool-call and the
+  recorded value stay the token. This lands FIRST because it is what keeps the
+  verb trace (task #2) and the scaffold free of literal secrets. It is a general
+  webhands capability (useful outside `review`), but it is built here as the
+  foundation `review` depends on. Honest scope: it is HYGIENE, not a secret
+  boundary (the value is DOM-readable; the context already trusts the agent).
 - **One flagged verb.** `review` with `--summary <text>`, `--session-file <path>`,
   `--out <path>` (scaffold destination), `--test` (validate via `script`), and a
   SLICE selector (e.g. `--from`/`--to` over the trace, exact form a task detail).
   Not a verb family. Mirrors `script`'s single-source shape.
 - **Verb trace lives in `serve`.** The controller records the session's verbs
-  (verb name, locator/args, and enough result shape to reconstruct steps). Scope
-  and redaction are Open questions #1/#2; the DEFAULT bias is in-memory for the
-  live session and redact-typed-values, pending the human decision.
+  (verb name, locator/args, and enough result shape to reconstruct steps).
+  Credentials are already `{ENV:NAME}` tokens by task #1, so the trace holds no
+  literal secret; it may therefore be in-memory for the live session OR persisted
+  to the profile dir (persistence is safe, see *Resolved decisions* #2). Default
+  bias: in-memory for the live session, persistence an additive opt-in. It does
+  NOT redact non-credential typed values or page reads (out of scope by nature).
 - **Scaffold shape = frozen ADR-0007 `Hand`.** The emitted module exports a `Hand`
   closing over `ctx.pwPage`, so adoption needs no new loading mechanism.
 - **Faithful replay + annotated TODOs.** `review` writes a faithful replay of the
@@ -184,9 +208,11 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
 - The trust invariant is a TEST: `review` must not add to `hands.json` nor load
   the module (assert no config write, no `import()`), mirroring how the existing
   hand-loading tests assert explicit-declarative loading.
-- The redaction contract (once decided) gets a test: a trace containing a typed
-  secret produces a scaffold + notes with the secret REDACTED (a placeholder), not
-  the literal.
+- **`{ENV:NAME}` substitution (task #1) gets its own tests:** `type '#pass'
+  '{ENV:PASSWORD}'` types the RESOLVED env value into the page, while the recorded
+  trace value stays the literal token `{ENV:PASSWORD}` (assert the trace never
+  contains the secret); an unset env var fails LOUD (not a silent empty type); a
+  plain value with no `{ENV:...}` is typed verbatim (backward compatible).
 - `--test` validation: a scaffold that replays correctly reports PASS against the
   live page; a broken one reports FAIL loudly (reusing `script`'s error path).
 - Reuse the eval fixtures (`saucedemo`/`parabank`/the local dynamic + messy-DOM
@@ -207,6 +233,11 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
 - **A guaranteed-correct, ready-to-ship hand.** `review` emits a SCAFFOLD (a
   strong starting point from real steps); the `script` test raises confidence, the
   human still reviews. Perfect parameterization/generalization is not promised.
+- **Redacting non-credential content.** Non-`ENV` typed values (search terms,
+  addresses, amounts) and returned page content (balances, order details) are
+  UNAVOIDABLE and already agent-readable by definition; `review` records what drove
+  the page and does NOT attempt to scrub them. Only the credential class gets the
+  `{ENV:NAME}` placeholder (see *Resolved decisions*).
 - **A hand marketplace / distribution / portability format.** Out, exactly as the
   parent hands PRD scoped it; `review` authors a LOCAL scaffold for local adoption.
 
