@@ -27,7 +27,8 @@ export type ControllerErrorCode =
 	| 'session-already-active'
 	| 'cross-origin-frame'
 	| 'screenshot-path-outside-managed-dir'
-	| 'stale-ref';
+	| 'stale-ref'
+	| 'unresolved-env-placeholder';
 
 /**
  * Base class for every identifiable `core` error. Branch on {@link code}.
@@ -359,6 +360,51 @@ export class StaleRefError extends ControllerError {
 		super(message, options);
 		this.ref = ref;
 		this.matched = matched;
+		this.verb = verb;
+	}
+}
+
+/**
+ * A value-bearing verb was handed a `{ENV:NAME}` placeholder whose environment
+ * variable is UNSET or EMPTY at type-time, so there is nothing to substitute.
+ *
+ * `{ENV:NAME}` is webhands' OWN placeholder grammar (NOT ldenv's `@@VAR` CLI
+ * syntax): a value-bearing verb (`type`) resolves the token against
+ * `process.env.NAME` in the served controller process at the moment the verb
+ * runs, so the literal secret never appears in the tool-call, the (future) verb
+ * trace, or an emitted hand scaffold. An unset/empty var is refused LOUDLY with
+ * this typed condition rather than typing a SILENT EMPTY string into the page:
+ * a silent empty would look like a successful login/type while actually sending
+ * nothing, the exact quiet-wrong-result this repo's loud-over-silent style
+ * rejects. The operator supplies the value via the real environment or a
+ * gitignored `.env.local` (loaded by ldenv at `serve` startup); the message
+ * points there so the fix is obvious.
+ *
+ * Mirrors the other typed conditions: {@link isControllerError} narrows it
+ * across a bundle boundary. NOTE it is raised in the SERVED process (where the
+ * env is loaded and substitution happens), so over the session RPC it reaches a
+ * thin-client verb as a faithful message string (the `code` tag survives only
+ * for an in-process caller), exactly like any other page-side verb throw.
+ */
+export class UnresolvedEnvPlaceholderError extends ControllerError {
+	readonly code = 'unresolved-env-placeholder';
+	/** The env var name the `{ENV:NAME}` token referenced (echoed back). */
+	readonly envName: string;
+	/** The verb that was resolving the placeholder (e.g. `type`). */
+	readonly verb: string;
+
+	constructor(
+		envName: string,
+		verb: string,
+		message: string = `${verb}: the placeholder {ENV:${envName}} could not be resolved because the environment variable ${JSON.stringify(
+			envName,
+		)} is unset or empty. Refusing to type a silent empty value. Set ${envName} in the real environment or a gitignored .env.local (webhands loads .env/.env.local/.env.<mode> at \`serve\` startup) and retry.`,
+		options?: {cause?: unknown},
+	) {
+		super(message, options);
+		// NOTE: do NOT assign `this.name` here (the base class sets Error.name to the
+		// class name); the referenced env var is `envName`.
+		this.envName = envName;
 		this.verb = verb;
 	}
 }

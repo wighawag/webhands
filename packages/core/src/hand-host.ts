@@ -29,6 +29,7 @@ import {
 	ScreenshotPathError,
 	StaleRefError,
 } from './errors.js';
+import {substituteEnvPlaceholders} from './env-substitution.js';
 import {mkdir} from 'node:fs/promises';
 import {isAbsolute, join, relative, resolve as resolvePath} from 'node:path';
 
@@ -351,13 +352,23 @@ export const interactionHand: Hand = ({pwPage, ensureOpen}) => ({
 		},
 		async type(t, text, options?: ActionOptions): Promise<void> {
 			ensureOpen();
+			// Resolve any `{ENV:NAME}` placeholder in the typed VALUE against this
+			// served process's `process.env` at type-time (the process that loaded the
+			// `.env` files, see `env-loading.ts`). A value with no placeholder is
+			// returned VERBATIM (backward compatible); an unset/empty var fails LOUD
+			// with a typed UnresolvedEnvPlaceholderError rather than a silent empty
+			// type. Substitution happens HERE, in-process, so the token crossed the RPC
+			// wire unchanged and only this process ever holds the resolved secret,
+			// keeping the tool-call and the (future) verb trace free of the literal.
+			// The LOCATOR is left untouched: only the value is credential-bearing.
+			const resolved = substituteEnvPlaceholders(text);
 			if (options?.byRef === true) {
 				const ref = normalizeRefToLocator(t);
 				await assertRefResolvesToOne(pwPage, ref, 'type');
-				await resolveLocator(pwPage, ref).fill(text);
+				await resolveLocator(pwPage, ref).fill(resolved);
 				return;
 			}
-			await resolveLocator(pwPage, t).fill(text);
+			await resolveLocator(pwPage, t).fill(resolved);
 		},
 	},
 });

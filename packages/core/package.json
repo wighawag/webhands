@@ -35,6 +35,7 @@
 		"LICENSE"
 	],
 	"dependencies": {
+		"ldenv": "^0.3.16",
 		"playwright": "1.61.1"
 	},
 	"optionalDependencies": {

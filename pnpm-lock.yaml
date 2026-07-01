@@ -70,6 +70,9 @@ importers:
 
   packages/core:
     dependencies:
+      ldenv:
+        specifier: ^0.3.16
+        version: 0.3.16
       playwright:
         specifier: 1.61.1
         version: 1.61.1
