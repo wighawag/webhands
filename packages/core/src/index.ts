@@ -127,6 +127,7 @@ export {connectRemoteSession, readSessionTrace} from './remote-session.js';
 export {
 	distillTrace,
 	sliceTrace,
+	renderReplayScript,
 	DEFAULT_HAND_VERB,
 	type DistillOptions,
 	type DistillResult,
