@@ -1,0 +1,9 @@
+---
+'@webhands/core': minor
+---
+
+Record a per-session VERB TRACE in the long-lived `serve` session: an ordered, in-memory record of the verbs that drove the live page. This is the portable, ground-truth backbone the later `distill` work turns into a hand scaffold, so it is faithful to what actually drove the page, not a reconstruction.
+
+- **Ordered accumulation at the RPC dispatch choke point.** Every verb dispatched against the served session (`applySessionRpc`, the single per-session point every verb passes through) appends one entry: the verb NAME (a hand verb by its contributed name, not the wire envelope), the WHOLE request AS IT ARRIVED (so the locator/args are exactly what the agent passed), and the verb's serializable RESULT (enough result shape to reconstruct the step). A verb that THREW is not recorded (only steps that actually drove the page). Exposed as `createVerbTrace` / `verbNameOf` and the `VerbTrace` / `MutableVerbTrace` / `VerbTraceEntry` types from `@webhands/core`.
+- **No literal secrets, for free.** The request is recorded BEFORE `{ENV:NAME}` substitution (which happens later and in-process, inside the `type` verb body), so a typed credential stays the `{ENV:PASSWORD}` TOKEN in the trace, never the resolved secret. This task adds no redaction pass: non-credential typed values and returned page content are recorded as-is (unavoidable and already agent-readable by definition).
+- **In-memory, per-session, readable in-process.** `startSessionServer` mints one trace per session and exposes a READ-ONLY view on the returned server (`RunningSessionServer.trace`) for the future `distill` verb to read from the same session. `entries()` returns a copy-safe ordered snapshot. Nothing is written to disk; the entry shape is plain serializable JSON so disk persistence can be added later without reshaping it (not built here).

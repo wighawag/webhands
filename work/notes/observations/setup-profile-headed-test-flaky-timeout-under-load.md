@@ -36,3 +36,11 @@ full-suite failures are this same load-contention flake, not a regression from
 this task's diff. Reinforces the suggested fix (generous per-test timeout or
 serialising the real-browser tests across `packages/core`); still out of scope
 here.
+
+UPDATE (2026-07-01, `serve-session-verb-trace`): the SAME two headed
+`setup-profile.test.ts` tests ("persists session state ..." and "is idempotent
+...") timed out at 5000ms on one full `pnpm test` run, then passed 5/5 in
+isolation off the exact branch tip WITH this task's diff applied. This task only
+touches the verb dispatch / session-server trace path (`applySessionRpc`,
+`session-server.ts`, new `verb-trace.ts`); `setup-profile.test.ts` references
+none of it. Same load-contention flake, not a regression from this diff.
