@@ -90,6 +90,22 @@ export interface DistillResult {
 	 * selectors used, notable decisions/dead-ends, so a human can judge it fast.
 	 */
 	readonly notes: string;
+	/**
+	 * The SAME replay in the `script` verb's driver-context shape: an
+	 * `async (page) => { ... }` source string that drives the identical sliced
+	 * steps (task `distill-test-validates-scaffold-via-script`, ADR-0012). It is
+	 * built from the SAME per-step {@link describeStep} output as {@link scaffold},
+	 * so the two CANNOT drift: the scaffold is a `Hand` closing over `ctx.pwPage`;
+	 * this is the identical body wrapped as a function OF the page, which is
+	 * exactly what the `script` mechanism runs.
+	 *
+	 * `distill --test` runs THIS via the `script` verb against the live page to
+	 * VALIDATE the emitted scaffold, WITHOUT `import()`ing the module (the HARD
+	 * INVARIANT holds: `--test` only RUNS the replay in the sandboxed
+	 * page-context tier; it never loads the module as a hand). Callers that only
+	 * emit ignore it.
+	 */
+	readonly replayScript: string;
 }
 
 /** The default verb name the emitted hand exposes (a human renames on adoption). */
@@ -142,6 +158,7 @@ export function distillTrace(
 	return {
 		scaffold: renderScaffold(handName, steps, sliced, options),
 		notes: renderNotes(handName, steps, options),
+		replayScript: renderReplayScript(steps),
 	};
 }
 
@@ -470,6 +487,33 @@ ${body}
 \t};
 }
 `;
+}
+
+/**
+ * Render the SAME replay as the `script` verb's DRIVER-CONTEXT source: an
+ * `async (page) => { ... }` function of the live Playwright `page` that drives
+ * the identical sliced steps (task `distill-test-validates-scaffold-via-script`,
+ * ADR-0012). It reuses the SAME per-step {@link DescribedStep.replay} lines the
+ * {@link renderScaffold} hand body uses, so the tested source and the emitted
+ * scaffold cannot drift: the scaffold binds `page` via `const {pwPage: page} =
+ * ctx`, this binds it as the function parameter, and both run the byte-identical
+ * step lines.
+ *
+ * `distill --test` runs THIS via `page.script(...)` (the ADR-0012 `script`
+ * mechanism) to validate the scaffold against the live page. Running it is NOT
+ * loading the module: it never `import()`s the scaffold, it re-runs the same
+ * replay in the sandboxed page-context tier (the HARD INVARIANT). An empty slice
+ * yields a no-op function of the page (a valid, trivially-passing script).
+ */
+export function renderReplayScript(steps: readonly DescribedStep[]): string {
+	const body =
+		steps.length === 0
+			? ['\t// The distilled slice was empty (no steps to replay).']
+			: steps
+					.flatMap((step) => step.replay)
+					.flatMap((line) => line.split('\n'))
+					.map((line) => `\t${line}`);
+	return `async (page) => {\n${body.join('\n')}\n}`;
 }
 
 /** The scaffold's provenance header comment (summary + slice info as context). */

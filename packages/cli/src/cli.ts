@@ -8,6 +8,7 @@ import {
 	PlaywrightAttachTransport,
 	PlaywrightLaunchTransport,
 	loadWebhandsEnv,
+	connectRemoteSession,
 	distillTrace,
 	readSessionEndpoint,
 	readSessionTrace,
@@ -1037,15 +1038,19 @@ export function createCli(deps: CliDeps = {}) {
 					'Last trace step to crystallize (0-based, inclusive). Default: the ' +
 						'last step.',
 				),
-			// Reserved for the NEXT task (distill-test-validates-scaffold-via-script):
-			// validation of the emitted scaffold via `script`. Accepted-and-ignored
-			// here so the surface is stable; validation is NOT built in this task.
+			// Validate the just-emitted scaffold against the LIVE page by RUNNING its
+			// replay through the `script` verb (ADR-0012), reporting pass/fail loud.
+			// It RUNS the replay in the sandboxed page-context tier; it NEVER writes
+			// hands.json and NEVER import()s the module (the HARD INVARIANT holds).
 			test: z
 				.boolean()
 				.default(false)
 				.describe(
-					'(Reserved) Validate the emitted scaffold against the live page via ' +
-						'`script`. Not yet implemented; accepted but ignored for now.',
+					'Validate the emitted scaffold against the LIVE page by running its ' +
+						'replay via the `script` verb (ADR-0012) and reporting PASS/FAIL. ' +
+						'It only RUNS the replay (the same code the scaffold holds) in the ' +
+						'page-context tier: it never writes hands.json and never loads the ' +
+						'module as a hand. A throwing replay reports FAIL loudly.',
 				),
 		}),
 		output: z.object({
@@ -1056,6 +1061,33 @@ export function createCli(deps: CliDeps = {}) {
 			steps: z
 				.number()
 				.describe('How many trace steps the crystallized slice covered.'),
+			test: z
+				.object({
+					passed: z
+						.boolean()
+						.describe(
+							'Whether the scaffold replay ran cleanly against the live page ' +
+								'via `script` (true = PASS, false = FAIL).',
+						),
+					result: z
+						.unknown()
+						.optional()
+						.describe(
+							'The serializable value the replay returned (present on PASS).',
+						),
+					error: z
+						.string()
+						.optional()
+						.describe(
+							'The typed failure message from the `script` error path (present ' +
+								'on FAIL); the scaffold threw and did NOT replay cleanly.',
+						),
+				})
+				.optional()
+				.describe(
+					'Present only with --test: the outcome of running the emitted ' +
+						'scaffold replay against the live page via `script`.',
+				),
 		}),
 		async run(c) {
 			try {
@@ -1090,7 +1122,7 @@ export function createCli(deps: CliDeps = {}) {
 				}
 				const entries = await readSessionTrace(endpoint.url);
 
-				const {scaffold, notes} = distillTrace(entries, {
+				const {scaffold, notes, replayScript} = distillTrace(entries, {
 					...(c.options.summary !== undefined
 						? {summary: c.options.summary}
 						: {}),
@@ -1109,6 +1141,32 @@ export function createCli(deps: CliDeps = {}) {
 				await writeFile(c.options.out, scaffold, 'utf8');
 				await writeFile(notesPath, notes, 'utf8');
 
+				// --test: VALIDATE the emitted scaffold by RUNNING its replay against
+				// the LIVE page through the `script` verb (ADR-0012), reporting pass/fail
+				// loud. HARD INVARIANT: this only RUNS the replay (the identical steps
+				// the scaffold holds, rendered as a `script`-shaped function of the page)
+				// in the sandboxed page-context tier. It NEVER writes hands.json and
+				// NEVER import()s the emitted module, so adoption stays the human's act.
+				// A throwing replay is a CLEAN typed failure (script's error path), never
+				// a silent pass: `passed: false` + the error message.
+				let test:
+					| {passed: boolean; result?: unknown; error?: string}
+					| undefined;
+				if (c.options.test) {
+					const session = connectRemoteSession(endpoint.url);
+					try {
+						const result = await session.page.script(replayScript);
+						test = {passed: true, result};
+					} catch (cause) {
+						test = {
+							passed: false,
+							error: cause instanceof Error ? cause.message : String(cause),
+						};
+					} finally {
+						await session.close();
+					}
+				}
+
 				return c.ok(
 					{
 						ok: true as const,
@@ -1116,8 +1174,22 @@ export function createCli(deps: CliDeps = {}) {
 						out: c.options.out,
 						notes: notesPath,
 						steps: entries.length,
+						...(test !== undefined ? {test} : {}),
 					},
 					ctaMeta(c, [
+						...(test !== undefined
+							? [
+									{
+										command: 'distill --test',
+										description: test.passed
+											? 'PASS: the scaffold replayed cleanly against the live ' +
+												'page via `script`.'
+											: `FAIL: the scaffold replay threw against the live page ` +
+												`(${test.error ?? 'unknown error'}). Fix the emitted ` +
+												`file before adopting it.`,
+									},
+								]
+							: []),
 						{
 							command: 'distill',
 							description:
