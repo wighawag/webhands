@@ -100,6 +100,14 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// fix is to re-run `query --with-refs` against the fresh DOM and act on
 			// the NEW ref (the agent's natural read-then-act loop).
 			return `${binary} query '<locator>' --with-refs (re-read the page to get a fresh ref, then click/type --by-ref with it)`;
+		case 'unresolved-env-placeholder':
+			// A `type` value used an {ENV:NAME} placeholder whose variable is unset or
+			// empty. The fix is to provide the value in the environment or a gitignored
+			// `.env.local` (webhands loads it at `serve` startup) and retry; we never
+			// type a silent empty. (Substitution runs in the SERVED process, so over
+			// the RPC this usually surfaces as a plain message; this case covers an
+			// in-process caller that catches the typed error directly.)
+			return `printf 'NAME=<value>\\n' >> .env.local  # then retry: ${binary} type '<locator>' '{ENV:NAME}' (webhands loads .env/.env.local at serve startup)`;
 		default: {
 			// Exhaustiveness guard: a new ControllerErrorCode must add a fix command
 			// here rather than silently fall through to a generic message.

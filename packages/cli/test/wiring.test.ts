@@ -966,6 +966,54 @@ describe('incur CLI wiring', () => {
 			}
 		});
 
+		it('advertises {ENV:NAME} substitution in the `type` tool description (agent-facing)', async () => {
+			// An unadvertised capability is an unused one: the `type` description MUST
+			// tell the agent a value may be an {ENV:NAME} placeholder and that it SHOULD
+			// use it for credentials the operator put in the environment. Read the
+			// description the agent actually sees (the MCP tool description incur derives
+			// from the same zod definition) and assert it names the placeholder + its
+			// credential use.
+			const {provider} = stubProvider();
+			const cli = createCli({sessionProvider: provider});
+			const call = (body: unknown) =>
+				cli.fetch(
+					new Request('http://local/mcp', {
+						method: 'POST',
+						headers: {
+							'content-type': 'application/json',
+							accept: 'application/json, text/event-stream',
+						},
+						body: JSON.stringify(body),
+					}),
+				);
+			await call({
+				jsonrpc: '2.0',
+				id: 1,
+				method: 'initialize',
+				params: {
+					protocolVersion: '2025-06-18',
+					capabilities: {},
+					clientInfo: {name: 't', version: '1'},
+				},
+			});
+			const listed = await call({
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'tools/list',
+				params: {},
+			});
+			const body = (await listed.json()) as {
+				result: {tools: {name: string; description?: string}[]};
+			};
+			const typeTool = body.result.tools.find((t) => t.name === 'type');
+			expect(typeTool).toBeDefined();
+			const description = typeTool?.description ?? '';
+			// Names the placeholder grammar...
+			expect(description).toContain('{ENV:NAME}');
+			// ...and its credential use (so the agent knows WHEN to reach for it).
+			expect(description.toLowerCase()).toContain('credential');
+		});
+
 		it('serves an MCP endpoint that lists the verbs as tools with schemas', async () => {
 			const {provider} = stubProvider();
 			const cli = createCli({sessionProvider: provider});

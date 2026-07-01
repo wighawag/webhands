@@ -128,6 +128,30 @@ not a new privilege and not hand loading. Use it to collapse a known sub-flow in
 one turn; keep using the discrete verbs (and the cheap `snapshot`) when you are
 still exploring the page.
 
+## Handling sensitive info (passwords, tokens)
+
+When a value you must `type` is a CREDENTIAL the operator supplied via the
+environment (a password, an API token), do NOT type the literal. Type an
+`{ENV:NAME}` placeholder and webhands substitutes the real value from its own
+process environment at type-time:
+
+```sh
+npx webhands type '#pass' '{ENV:PASSWORD}'
+```
+
+Here `PASSWORD` is an environment variable the operator set (exported in the
+shell, or put in a gitignored `.env.local` that webhands loads at `serve`
+startup). You never need to READ the secret: type the placeholder and the real
+value reaches the page while the literal stays out of your tool-call. An
+unset/empty variable fails LOUD (never a silent empty type), so a missing value
+is obvious rather than a quietly-empty field. Prefer the placeholder over a
+literal for any credential; ordinary (non-secret) values are typed as-is.
+
+This is HYGIENE, not a security wall: the value still lands in the page and is
+readable back, and you already run on the operator's machine. The point is
+simply not to write a literal credential into your tool-call when a placeholder
+works identically.
+
 ## Pacing XHR-rendered results
 
 Results often arrive after navigation via background requests. If a snapshot is

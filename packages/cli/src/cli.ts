@@ -7,6 +7,7 @@ import {
 	locator,
 	PlaywrightAttachTransport,
 	PlaywrightLaunchTransport,
+	loadWebhandsEnv,
 	readSessionEndpoint,
 	clearSessionEndpoint,
 	SessionAlreadyActiveError,
@@ -812,7 +813,13 @@ export function createCli(deps: CliDeps = {}) {
 
 	cli.command('type', {
 		description:
-			'Type text into the element addressed by a raw Playwright locator string.',
+			'Type text into the element addressed by a raw Playwright locator string. ' +
+			'A value may be an {ENV:NAME} placeholder: webhands substitutes the ' +
+			"environment variable NAME (from the operator's env or a gitignored " +
+			'.env.local) at type-time, so the literal never appears in the tool-call. ' +
+			'USE {ENV:NAME} for credentials (passwords/tokens) the operator put in the ' +
+			'environment, so you handle secrets WITHOUT reading them; an unset/empty ' +
+			'variable fails loud (never a silent empty type).',
 		args: z.object({
 			locator: z
 				.string()
@@ -821,7 +828,14 @@ export function createCli(deps: CliDeps = {}) {
 						'With --by-ref, a `ref` instead: either a `snapshot` [ref=eN] (pass the bare ' +
 						'eN or aria-ref=eN) or a durable `ref` from `query --with-refs`.',
 				),
-			text: z.string().describe('The text to type into the element.'),
+			text: z
+				.string()
+				.describe(
+					'The text to type into the element. May be an {ENV:NAME} placeholder, ' +
+						'resolved from the environment at type-time (prefer this for a ' +
+						'credential the operator supplied via env / .env.local, so the literal ' +
+						'secret never appears here); an unset/empty NAME fails loud.',
+				),
 		}),
 		env: ctaEnv,
 		options: connectionOptions.extend({
@@ -1674,6 +1688,18 @@ async function defaultServeSession(
 	home: {root?: string; env?: NodeJS.ProcessEnv},
 	launchPolicy: LaunchPolicy = {},
 ): Promise<RunningSessionServer> {
+	// Load `.env` / `.env.local` / `.env.<mode>` into THIS long-lived `serve`
+	// process's env BEFORE the browser opens (task
+	// `env-placeholder-substitution-and-dotenv-loading`). This is the process that
+	// launches the browser AND reads `process.env` for `{ENV:NAME}` substitution
+	// at type-time (ADR-0005: `serve` owns the ONE browser), so it is where the
+	// env must be loaded. ldenv reads from the operator's cwd and lets the real
+	// shell env WIN over a file (its documented priority). Done here in the
+	// DEFAULT serve seam (not in `core`'s reusable `startSessionServer`, nor the
+	// `serve` run handler) so an injected/stub `serveSession` in a wiring test
+	// never reads the developer's real cwd `.env`.
+	loadWebhandsEnv();
+
 	// The launch transport is the ONE place the stealth policy takes effect
 	// (ADR-0005: serve is the one place a browser is launched). attach reuses the
 	// user's own browser, so the policy does not apply there.

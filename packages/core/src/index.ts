@@ -29,6 +29,13 @@ export type {
 export {locator, validateSnapshotOptions} from './seam.js';
 
 export {
+	substituteEnvPlaceholders,
+	hasEnvPlaceholder,
+} from './env-substitution.js';
+
+export {loadWebhandsEnv, type LoadWebhandsEnvOptions} from './env-loading.js';
+
+export {
 	serializeCookies,
 	deserializeCookies,
 	COOKIES_EXPORT_VERSION,
@@ -86,6 +93,7 @@ export {
 	CrossOriginFrameError,
 	ScreenshotPathError,
 	StaleRefError,
+	UnresolvedEnvPlaceholderError,
 	isControllerError,
 	type ControllerErrorCode,
 } from './errors.js';
