@@ -128,6 +128,33 @@ unskilled agent and an unfair baseline, both since fixed).
 
 The harness is non-gating and never part of `pnpm test`.
 
+### Where hands change the game (above the verbs-vs-Playwright line)
+
+The scoreboard above compares the raw verb surface against raw Playwright. A
+**hand** (a pluggable capability module, see *Scope and honesty* below) sits ABOVE
+that comparison and beats it on two separate axes:
+
+- **New capability raw Playwright cannot reach at all.** A captcha-solving hand
+  (`iamhuman`) is not "cheaper Playwright": it is a capability webhands
+  deliberately does not ship (a provider key + solving logic) plugged in as one
+  verb. Raw Playwright gives an agent a page to poke; it does not give it a
+  captcha solver. So on a captcha-gated flow the honest comparison is not
+  "webhands vs Playwright on tokens," it is "reaches the goal vs does not."
+- **Token collapse on flows Playwright CAN do.** Everything the scoreboard shows
+  about narrowing the gap is about an agent driving a flow it must RE-EXPLORE each
+  run. A hand encodes that flow ONCE, so a known sub-flow (log in, run a search,
+  complete a checkout) becomes a single cheap verb call instead of an N-turn
+  explore-decide-act loop the agent re-pays every time. The scoreboard's messy-DOM
+  win already hints at this (the webhands agent wins partly by not re-deriving
+  boilerplate each run); a hand takes it to the limit by authoring the flow into
+  one call.
+
+So: **verbs are the floor (makes the flow POSSIBLE), and a hand is both the
+ceiling (a NEW capability) and the accelerator (a known flow becomes one cheap
+call).** Authoring that hand cheaply, straight from a flow the agent just drove
+successfully, is an incubating idea
+(`work/notes/ideas/review-crystallizes-session-into-hand.md`).
+
 ## Scope and honesty (please read)
 
 This is a **personal-use** tool. Its whole premise is that you drive a browser
@@ -148,13 +175,18 @@ deliberately local and single-session by design.
   cross-origin frame read. We do not solve it; we no longer stand in the way. The
   agent supplies its own key and its own logic (or uses a hand, below). webhands
   is capable, not a solver.
-- **Hands are the simpler path (still).** A *hand* is a third-party capability
+- **Hands are the ceiling AND the accelerator.** A *hand* is a capability
   module (`iamhuman` today, a future buy-on-amazon hand) that closes over the live
-  page and makes the hard thing ONE call. A dumb agent plus a hand still gets there
-  in a single call, even though a capable agent can now do the same over several
-  verb turns. The two paths coexist: the verb surface is the floor that makes the
-  unaided path POSSIBLE; a hand is the ramp that makes it EASY. (A hand is a
-  trusted in-process peer, loaded only when you name it in `hands.json`; see
+  page and makes the hard thing ONE call. It earns its keep two ways (see *Where
+  hands change the game* under the scoreboard). First, a NEW capability raw
+  Playwright cannot reach at all: a captcha-solving hand plugs in solving logic +
+  a provider key webhands itself does not ship. Second, TOKEN COLLAPSE on flows an
+  agent could otherwise drive: a known sub-flow (log in, search, checkout) is
+  authored into the hand ONCE, so it becomes a single cheap call instead of an
+  N-turn explore loop the agent re-pays every run. The verb surface is the floor
+  that makes the unaided path POSSIBLE; a hand is the ramp that makes it EASY and
+  CHEAP. (A hand is a trusted in-process peer, loaded only when you name it in
+  `hands.json`; see
   [`docs/adr/0007`](docs/adr/0007-public-hand-contract-and-explicit-declarative-loading.md).)
 - **No fingerprint-spoofing / anti-detect tricks.** It leans on being a *real*
   browser/profile/IP rather than spoofing. There is no proxy *rotation* or

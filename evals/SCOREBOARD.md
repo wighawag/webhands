@@ -740,6 +740,19 @@ Those are the cases the harder tiers exist to measure. The numbers above are the
 narrows or flips the token gap on a hard site, this scoreboard is what it is
 compared against.
 
+And there is a tier ABOVE this whole comparison the tables do not capture: a
+**hand** (a pluggable capability module). This scoreboard pits the raw verb
+surface against raw Playwright; a hand changes the game on two axes the
+agent-vs-agent rows cannot show. (1) A NEW capability raw Playwright cannot reach
+at all: a captcha-solving hand (`iamhuman`) plugs in solving logic + a provider
+key webhands does not ship, so on a captcha-gated flow the comparison is "reaches
+the goal vs does not," not a token ratio. (2) TOKEN COLLAPSE on a flow an agent
+could otherwise drive: a known sub-flow authored into a hand ONCE becomes a single
+cheap verb call instead of the N-turn explore loop these rows re-pay every run.
+Measuring hands head-to-head (a captcha tier, and a token-collapse before/after on
+a repeated flow) is future work; noted here so the scoreboard's "does webhands
+deliver?" reading stays honest about where the biggest wins live.
+
 ### Caveats / known nuances
 
 - The `milestones N/4` column is a coarse signal: intermediate-page milestones
