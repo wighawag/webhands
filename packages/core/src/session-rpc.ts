@@ -17,6 +17,8 @@ import {
 	type WaitCondition,
 } from './seam.js';
 import type {WebHandsPage} from './seam.js';
+import type {MutableVerbTrace} from './verb-trace.js';
+import {verbNameOf} from './verb-trace.js';
 
 /**
  * The wire protocol for driving the long-lived session over HTTP (ADR-0005).
@@ -202,6 +204,31 @@ export type SessionRpcResponse =
  * branded-string contract holds.
  */
 export async function applySessionRpc(
+	page: WebHandsPage,
+	request: SessionRpcRequest,
+	trace?: MutableVerbTrace,
+): Promise<unknown> {
+	// Record the verb in the session's trace (task `serve-session-verb-trace`)
+	// AFTER it runs, so only a step that actually drove the page is recorded and
+	// the entry can carry the real result. The request is recorded AS IT ARRIVED
+	// (before any `{ENV:NAME}` substitution, which happens later and in-process in
+	// the `type` verb body), so a typed credential stays the `{ENV:PASSWORD}`
+	// token in the trace, never the resolved secret. Threaded here because this is
+	// the single per-session dispatch choke point every verb passes through; the
+	// trace is optional so the browser-free RPC-dispatch unit tests and any other
+	// caller need not supply one.
+	const value = await dispatchSessionRpc(page, request);
+	trace?.record(request, value, verbNameOf(request));
+	return value;
+}
+
+/**
+ * The pure verb-to-page dispatch, split out of {@link applySessionRpc} so the
+ * trace recording wraps it in one place. Maps each {@link SessionRpcRequest}
+ * variant 1:1 to a {@link WebHandsPage} method (the single source of truth for
+ * the built-in verb surface), returning the value the wire carries back.
+ */
+async function dispatchSessionRpc(
 	page: WebHandsPage,
 	request: SessionRpcRequest,
 ): Promise<unknown> {

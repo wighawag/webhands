@@ -13,6 +13,7 @@ import {
 	type SessionRpcResponse,
 } from './session-rpc.js';
 import type {OpenTarget, Session, Transport} from './seam.js';
+import {createVerbTrace, type VerbTrace} from './verb-trace.js';
 
 /**
  * The long-lived host that keeps ONE browser session alive between separate CLI
@@ -78,6 +79,15 @@ export interface RunningSessionServer {
 	/** The endpoint advertised under the config dir for client discovery. */
 	readonly endpoint: SessionEndpoint;
 	/**
+	 * The per-session VERB TRACE (task `serve-session-verb-trace`): the ordered,
+	 * in-memory record of the verbs that drove this session's live page, read
+	 * in-process by the future `distill` verb from the SAME live session. It is a
+	 * READ-ONLY {@link VerbTrace} view (the recorder side stays with the server's
+	 * RPC dispatch), so a reader can only read the ordered steps, not append. The
+	 * trace lives only in memory for the session's lifetime; nothing persists it.
+	 */
+	readonly trace: VerbTrace;
+	/**
 	 * Tear the session down: close the browser, stop the HTTP listener, and clear
 	 * the endpoint file. Idempotent.
 	 */
@@ -109,6 +119,12 @@ export async function startSessionServer(
 	// Open the ONE live session up front: the browser launches here, once.
 	const session: Session = await transport.open(target);
 
+	// The per-session verb trace: one in-memory recorder for this session's whole
+	// lifetime (task `serve-session-verb-trace`). Every verb dispatched against
+	// this session's page appends to it (see `handleRequest`), and the read-only
+	// view is exposed on the returned server for the in-process `distill` reader.
+	const trace = createVerbTrace();
+
 	// Resolve the shared-driving-surface CDP endpoint AFTER open (the transport
 	// has its debugging port by now), if a resolver was supplied. Undefined when
 	// not requested or unavailable (e.g. an attach session).
@@ -117,7 +133,7 @@ export async function startSessionServer(
 	let server: Server;
 	try {
 		server = createServer((req, res) => {
-			handleRequest(session, req, res);
+			handleRequest(session, trace, req, res);
 		});
 		await listen(server, port, host);
 	} catch (cause) {
@@ -150,6 +166,7 @@ export async function startSessionServer(
 	let stopped = false;
 	return {
 		endpoint,
+		trace,
 		async stop() {
 			if (stopped) return;
 			stopped = true;
@@ -173,6 +190,7 @@ export function sessionAlreadyActive(): SessionAlreadyActiveError {
 /** Handle one session-RPC HTTP request against the live session's page. */
 function handleRequest(
 	session: Session,
+	trace: import('./verb-trace.js').MutableVerbTrace,
 	req: import('node:http').IncomingMessage,
 	res: import('node:http').ServerResponse,
 ): void {
@@ -196,7 +214,9 @@ function handleRequest(
 				return;
 			}
 			try {
-				const value = await applySessionRpc(session.page, request);
+				// Pass the session's trace so each verb is recorded (in order, with the
+				// request as it arrived so `{ENV:NAME}` stays a token) AFTER it runs.
+				const value = await applySessionRpc(session.page, request, trace);
 				const reply: SessionRpcResponse = {ok: true, value};
 				writeJson(res, 200, reply);
 			} catch (cause) {

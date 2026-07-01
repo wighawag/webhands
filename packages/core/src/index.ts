@@ -114,6 +114,14 @@ export {
 	type RunningSessionServer,
 } from './session-server.js';
 
+export {
+	createVerbTrace,
+	verbNameOf,
+	type VerbTrace,
+	type MutableVerbTrace,
+	type VerbTraceEntry,
+} from './verb-trace.js';
+
 export {connectRemoteSession} from './remote-session.js';
 
 export {
