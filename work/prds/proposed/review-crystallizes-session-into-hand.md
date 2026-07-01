@@ -118,7 +118,7 @@ This **refines ADR-0007 and ADR-0012, does not discard them.** ADR-0012's `scrip
 (file-path-only, driver-context) is reused verbatim as the VALIDATION mechanism.
 ADR-0007's explicit, operator-scoped hand-loading is preserved exactly: `review`
 authors a candidate, the operator still performs the trust act. A new ADR records
-the verb-trace + redaction contract (Open question #1).
+the verb-trace + the `{ENV:NAME}` substitution contract (see *Resolved decisions*).
 
 ## User Stories
 
@@ -143,13 +143,21 @@ the verb-trace + redaction contract (Open question #1).
    webhands resolves from its own process env at type-time, so my password never
    appears in the tool-call, the verb trace, or the emitted scaffold (and the
    scaffold stays reusable without embedding a secret).
-8. As an agent, I want to crystallize a caller-named SLICE of the session (the
-   checkout sub-flow, not the earlier failed probes), so the hand encodes the
-   flow that matters, not the whole noisy transcript.
-9. As a hand author, I want the emitted scaffold in the frozen `Hand`/`HandContext`
-   shape (closing over `ctx.pwPage`), so it drops into the existing loading path
-   with no new mechanism once I adopt it.
-10. As a maintainer, I want `review` to be ONE flagged verb (mirroring `script`'s
+8. As an agent, I want the SKILL and the `type` tool DESCRIPTION to TELL me that
+   `{ENV:NAME}` exists and that I should use it for passwords/tokens the operator
+   put in the environment, so I handle sensitive info WITHOUT reading it by
+   default, instead of typing the literal because I never knew the placeholder
+   existed. (An unadvertised capability is an unused one.)
+9. As an operator, I want webhands to load `.env` / `.env.local` files (via
+   `ldenv`) so I can put `PASSWORD=...` in a gitignored `.env.local` and have
+   `{ENV:PASSWORD}` resolve, without exporting secrets into my interactive shell.
+10. As an agent, I want to crystallize a caller-named SLICE of the session (the
+    checkout sub-flow, not the earlier failed probes), so the hand encodes the
+    flow that matters, not the whole noisy transcript.
+11. As a hand author, I want the emitted scaffold in the frozen `Hand`/`HandContext`
+    shape (closing over `ctx.pwPage`), so it drops into the existing loading path
+    with no new mechanism once I adopt it.
+12. As a maintainer, I want `review` to be ONE flagged verb (mirroring `script`'s
     single-source simplicity), so the surface stays small.
 
 ### Autonomy notes
@@ -178,6 +186,25 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
   webhands capability (useful outside `review`), but it is built here as the
   foundation `review` depends on. Honest scope: it is HYGIENE, not a secret
   boundary (the value is DOM-readable; the context already trusts the agent).
+  Task #1 has three parts, all shipping together:
+  - **Resolution + `.env` loading via `ldenv`.** `serve` loads `.env` /
+    `.env.local` / `.env.<mode>` files into the environment at startup using
+    `ldenv`'s importable `loadEnv()` (it wraps dotenv + dotenv-expand and already
+    honours the operator's real env at highest priority), so `{ENV:NAME}` resolves
+    against a gitignored `.env.local` and NOT only the interactive shell. An
+    UNRESOLVED `{ENV:NAME}` fails LOUD (never a silent empty type). Substitution
+    is webhands' own `{ENV:NAME}` grammar at type-time; `ldenv` is the loader
+    underneath, not the placeholder syntax.
+  - **Agent-facing DESCRIPTIONS.** The `type` verb's tool/`--help` description
+    states that a value may be `{ENV:NAME}` and that the agent SHOULD use it for
+    credentials the operator placed in the environment, so the agent handles
+    secrets without reading them BY DEFAULT rather than typing a literal for lack
+    of knowing the option exists.
+  - **The `use-webhands` SKILL.** The skill gains a short "handling sensitive
+    info" rung: prefer `type '#pass' '{ENV:PASSWORD}'` over a literal; the
+    operator supplies the value via env / `.env.local`; you never need to read it.
+    (Held to the no-priming spirit already enforced on the skill: generic, no site
+    selectors.)
 - **One flagged verb.** `review` with `--summary <text>`, `--session-file <path>`,
   `--out <path>` (scaffold destination), `--test` (validate via `script`), and a
   SLICE selector (e.g. `--from`/`--to` over the trace, exact form a task detail).
@@ -212,7 +239,15 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
   '{ENV:PASSWORD}'` types the RESOLVED env value into the page, while the recorded
   trace value stays the literal token `{ENV:PASSWORD}` (assert the trace never
   contains the secret); an unset env var fails LOUD (not a silent empty type); a
-  plain value with no `{ENV:...}` is typed verbatim (backward compatible).
+  plain value with no `{ENV:...}` is typed verbatim (backward compatible); and a
+  value defined only in a gitignored `.env.local` resolves (proving `ldenv`'s
+  file loading is wired), while the operator's real shell env still wins on a
+  conflict (`ldenv`'s documented priority).
+- **The agent-awareness deliverables are checked, not assumed:** an assertion that
+  the `type` verb description mentions `{ENV:NAME}`, and that the `use-webhands`
+  skill's sensitive-info rung is present and stays no-priming-clean (the existing
+  `assertSkilledReferenceUnprimed`-style guard). An unadvertised capability is the
+  failure mode this story exists to prevent, so its advertisement is a test.
 - `--test` validation: a scaffold that replays correctly reports PASS against the
   live page; a broken one reports FAIL loudly (reusing `script`'s error path).
 - Reuse the eval fixtures (`saucedemo`/`parabank`/the local dynamic + messy-DOM
