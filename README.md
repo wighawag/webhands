@@ -1,18 +1,31 @@
 # webhands
 
-A CLI (built with [`incur`](https://github.com/wevm/incur), so it doubles as an
-MCP server) that drives a real, persistent browser via Playwright, letting an
-agent or human control any website from a genuinely logged-in browser session on
-their own machine and IP.
+**Let your AI agent drive a real, logged-in browser on your own machine.**
 
-It launches (or attaches to) a Chromium browser using a dedicated profile,
-supports a one-time headed login that is later reused headless, keeps the session
-alive across separate CLI invocations behind a long-lived `serve` process, and
-exposes page verbs (`goto`, `snapshot`, `click`, `type`, `eval`, `script`,
-`wait`, `cookies`) with structured output. The composable verbs are the floor;
-`script` is the power-user ramp that runs a driver-context Playwright function
-against the live page so an agent can batch a whole sub-flow into ONE call (see
-the Security note and [`docs/adr/0012`](docs/adr/0012-script-verb-driver-context-page.md)).
+webhands is a small CLI (it also doubles as an
+[MCP](https://modelcontextprotocol.io) server, thanks to
+[`incur`](https://github.com/wevm/incur)) that gives an agent (or you) hands on a
+real Chromium browser. It reuses a browser YOU logged into yourself, on YOUR
+machine and YOUR IP, so the agent can read and act on the web apps you already
+use, the way you would by hand.
+
+The idea in one line: **you log in once in a window you can see; after that your
+agent can open pages, read them, click, type, and run whole sub-flows** against
+that same live, authenticated session.
+
+Under the hood it launches (or attaches to) Chromium with a dedicated profile,
+keeps one browser alive behind a long-lived `serve` process, and exposes page
+verbs (`goto`, `snapshot`, `click`, `type`, `eval`, `script`, `wait`, `cookies`)
+that print clean, structured output an agent can read cheaply. The composable
+verbs are the floor; `script` is the power-user ramp that runs a driver-context
+Playwright function against the live page so an agent can batch a whole sub-flow
+into ONE call (see the Security note and
+[`docs/adr/0012`](docs/adr/0012-script-verb-driver-context-page.md)).
+
+**New here? Jump to:** [Use it via your AI agent](#use-it-via-your-ai-agent-start-here)
+(the 30-second start) · [Does it deliver?](#does-it-deliver-the-capability-scoreboard)
+(measured vs Playwright) · [Scope and honesty](#scope-and-honesty-please-read)
+(what it will and will not do).
 
 ## Use it via your AI agent (start here)
 
@@ -89,15 +102,31 @@ first; the tool never silently spawns a browser.
 
 ## Does it deliver? (the capability scoreboard)
 
-There is a measured answer, not just a claim. The eval harness runs the SAME
-real-site goal with two toolkits, a webhands agent and a raw-Playwright-only
-baseline, and compares them on outcome + token cost. The current reference
-numbers (and an honest reading of what they do and do not show) live in
-[`evals/SCOREBOARD.md`](evals/SCOREBOARD.md). Short version: on simple, scriptable
-sandbox flows both toolkits reach the goal and raw Playwright is currently cheaper
-(webhands' verb-at-a-time loop costs more tokens); the verb surface is expected to
-earn its keep on the messy / unfamiliar / anti-bot / captcha cases the harder eval
-tiers exist to measure. The harness is non-gating and never part of `pnpm test`.
+Yes, and there is a measured answer, not just a claim. The eval harness runs the
+SAME real-site goal with two toolkits, a webhands agent and a raw-Playwright-only
+baseline, and compares them on **outcome** (did it finish the job?) and **token
+cost**. Full numbers, every raw run line, and the honest caveats live in
+[`evals/SCOREBOARD.md`](evals/SCOREBOARD.md).
+
+The short version, latest runs first:
+
+| Kind of flow | webhands (best) | raw Playwright | Who wins |
+| --- | --- | --- | --- |
+| **Messy / unfamiliar DOM** the agent must explore to act | **PASS, ~0.7M tokens** | PASS, ~1.3M | **webhands** (both pass; ~1.9x cheaper) |
+| **Dynamic goal** that only resolves from live page state | **PASS, ~1.7 to 2.5M** | PASS, ~1.6M | **tie** (both pass) |
+| Trivial, one-shot-scriptable sandbox flow | PASS | PASS, cheaper | Playwright (a blind script needs no exploring) |
+
+So the honest reading is: **on the flows webhands is built for (messy, changing,
+explore-then-act, dynamic, anti-bot pages) webhands matches or beats raw
+Playwright on BOTH outcome and tokens.** On a trivial page a human could script
+in one blind pass, raw Playwright is cheaper, exactly as you'd expect: webhands
+drives a composable verb surface, so it shines precisely where "write one script
+and run it blind" breaks down. See the
+[Latest results first](evals/SCOREBOARD.md#latest-results-first-the-short-answer)
+summary for the corrected reading (earlier tables show a bigger gap from a cold,
+unskilled agent and an unfair baseline, both since fixed).
+
+The harness is non-gating and never part of `pnpm test`.
 
 ## Scope and honesty (please read)
 

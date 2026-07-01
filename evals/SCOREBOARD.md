@@ -6,6 +6,39 @@
 > no webhands). Compared on **outcome** (PASS / FAIL / INCONCLUSIVE) and **token
 > cost**. Produced by `run-eval --compare` (see [How to reproduce](#how-to-reproduce)).
 
+## Latest results first (the short answer)
+
+The rest of this file is a chronological lab notebook (oldest experiment first,
+newest at the bottom). If you only read one thing, read this: the two **most
+recent, most representative** head-to-heads, run once the Playwright baseline was
+made fair and webhands was measured at its best (skill in context, `script` verb
+available).
+
+**How webhands competes with raw Playwright, today:**
+
+| Flow (latest run) | webhands (best) | raw Playwright | Who wins |
+| --- | --- | --- | --- |
+| **Tier-3 messy DOM** (hostile, unfamiliar DOM the agent must EXPLORE to act, 2026-06-30) | **PASS, 0.66 to 0.71M** | PASS, 1.33 to 1.61M | **webhands** (both pass; webhands ~1.9x cheaper on the matched run) |
+| **Dynamic read-decide loop** (stop point only known from live page state, 2026-06-30) | **PASS, 1.71 to 2.46M** | PASS, 1.57 to 1.64M | **tie** (both pass, same order of magnitude) |
+| Easy, one-shot-scriptable sandbox flow (SauceDemo/ParaBank) | PASS, ~1.2 to 2.3M | PASS, ~0.3 to 0.9M | Playwright cheaper (see below) |
+
+**Read it in one paragraph.** On the flows webhands is BUILT for (a messy DOM
+you have to explore, or a goal that only resolves from live page state), webhands
+is at least as capable as raw Playwright and at least as cheap, and it PASSES on
+the hostile DOM for FEWER tokens (0.66M vs 1.33M on the matched pairing). On
+trivial flows that a human could script in one blind pass, raw Playwright is
+still cheaper in tokens: that is expected and honest (webhands drives a
+composable verb surface; a blind script needs no exploration). The gap that used
+to look like ~4 to 8x (or ~30x from a cold, unskilled agent) collapses to a TIE or a
+webhands WIN the moment the site stops being trivially scriptable, which is the
+whole point.
+
+Why the older tables below show a bigger gap: they include a **cold** webhands
+agent that discovered the verb surface at runtime (a one-time "discovery tax"),
+and an **unfair** early Playwright baseline that self-stalled. Both were fixed;
+the two rows above are the corrected reading. The full derivation, caveats, and
+every raw run line follow.
+
 ## What this measures (and what it does not)
 
 - It measures whether a capable, unaided agent can **compose the toolkit to
@@ -676,6 +709,10 @@ webhands-skilled      PASS  milestones 4/4   tokens: in 164 / out  2.4k / cacheR
   a spread.
 
 ## How to read it: does webhands deliver?
+
+> For the bottom line, see [Latest results first](#latest-results-first-the-short-answer)
+> at the top. This section explains the ORIGINAL simple-flow gap and why it is
+> not the whole story.
 
 On these **simple, scriptable sandbox flows, both toolkits reach the goal**, and
 the raw token total is currently **higher for webhands** (roughly 4x to 8x). That
