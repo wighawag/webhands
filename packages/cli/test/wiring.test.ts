@@ -234,6 +234,11 @@ describe('incur CLI wiring', () => {
 			{argv: ['type'], wantArgs: true, outputKeys: ['ok', 'verb']},
 			{argv: ['eval'], wantArgs: true, outputKeys: ['ok', 'verb', 'result']},
 			{argv: ['script'], wantArgs: true, outputKeys: ['ok', 'verb', 'result']},
+			{
+				argv: ['distill'],
+				wantArgs: false,
+				outputKeys: ['ok', 'verb', 'out', 'notes', 'steps'],
+			},
 			{argv: ['query'], wantArgs: true, outputKeys: ['ok', 'verb', 'rows']},
 			{argv: ['count'], wantArgs: true, outputKeys: ['ok', 'verb', 'count']},
 			{argv: ['exists'], wantArgs: true, outputKeys: ['ok', 'verb', 'exists']},

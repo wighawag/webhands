@@ -8,8 +8,11 @@ import {
 	PlaywrightAttachTransport,
 	PlaywrightLaunchTransport,
 	loadWebhandsEnv,
+	distillTrace,
 	readSessionEndpoint,
+	readSessionTrace,
 	clearSessionEndpoint,
+	NoLiveServerError,
 	SessionAlreadyActiveError,
 	startSessionServer,
 	type Cookie,
@@ -25,7 +28,8 @@ import {
 	type Transport,
 	type WaitCondition,
 } from '@webhands/core';
-import {readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {dirname} from 'node:path';
 import {mapControllerError} from './errors.js';
 import {
 	createDefaultSessionProvider,
@@ -971,6 +975,157 @@ export function createCli(deps: CliDeps = {}) {
 						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
+
+	// --- distill: emit a hand scaffold + notes from the session (never load) ---
+	// (prd distill-session-into-hand; task distill-verb-emits-hand-scaffold.) The
+	// authoring half: reduce the just-driven session's verb trace into a reusable
+	// HAND SCAFFOLD (a frozen ADR-0007 `Hand`) plus a human-readable NOTES
+	// markdown, so a flow explored once becomes a one-call verb after a human
+	// adopts it. HARD INVARIANT: distill EMITS + (next task) TESTS only; it NEVER
+	// writes hands.json and NEVER import()s the emitted module. Mirrors `script`'s
+	// single-source simplicity (one flagged verb, not a verb family).
+	cli.command('distill', {
+		description:
+			'Reduce the just-driven session into a reusable HAND SCAFFOLD (a frozen ' +
+			'ADR-0007 Hand module) plus a human-readable NOTES markdown, from the ' +
+			"session's verb trace. Optionally enrich with --summary <text> (your " +
+			'intent) and --session-file <path> (a transcript you hand it). --from/--to ' +
+			'crystallize a SLICE (0-based, inclusive; default: the whole session). ' +
+			'Writes the module to --out and notes beside it. It EMITS and NEVER loads: ' +
+			'you adopt a hand by naming it in hands.json yourself (ADR-0007).',
+		env: ctaEnv,
+		options: connectionOptions.extend({
+			...ctaOptions.shape,
+			out: z
+				.string()
+				.describe(
+					'Path to write the hand MODULE scaffold to (a .mjs/.js file). The ' +
+						'NOTES markdown is written beside it as <out>.notes.md.',
+				),
+			summary: z
+				.string()
+				.optional()
+				.describe(
+					'Your intent / recollection (WHY the steps happened). Enriches the ' +
+						'notes + the scaffold TODOs; optional (a scaffold still comes from ' +
+						'the trace alone).',
+				),
+			'session-file': z
+				.string()
+				.optional()
+				.describe(
+					'Path to a transcript file you HAND webhands (a plain path it reads; ' +
+						'it does NOT discover where a harness stores sessions). Optional ' +
+						'enrichment mined into the notes.',
+				),
+			from: z.coerce
+				.number()
+				.optional()
+				.describe(
+					'First trace step to crystallize (0-based, inclusive). Default: the ' +
+						'first step.',
+				),
+			to: z.coerce
+				.number()
+				.optional()
+				.describe(
+					'Last trace step to crystallize (0-based, inclusive). Default: the ' +
+						'last step.',
+				),
+			// Reserved for the NEXT task (distill-test-validates-scaffold-via-script):
+			// validation of the emitted scaffold via `script`. Accepted-and-ignored
+			// here so the surface is stable; validation is NOT built in this task.
+			test: z
+				.boolean()
+				.default(false)
+				.describe(
+					'(Reserved) Validate the emitted scaffold against the live page via ' +
+						'`script`. Not yet implemented; accepted but ignored for now.',
+				),
+		}),
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('distill'),
+			out: z.string().describe('The hand module scaffold path written.'),
+			notes: z.string().describe('The notes markdown path written.'),
+			steps: z
+				.number()
+				.describe('How many trace steps the crystallized slice covered.'),
+		}),
+		async run(c) {
+			try {
+				// Read the transcript file the agent HANDED us, if any. A plain path we
+				// read (the file-path-only discipline of `script`): we never DISCOVER a
+				// transcript location (out of scope by contract). A missing/unreadable
+				// path fails loud.
+				let sessionFileText: string | undefined;
+				if (
+					c.options['session-file'] !== undefined &&
+					c.options['session-file'] !== ''
+				) {
+					try {
+						sessionFileText = await readFile(c.options['session-file'], 'utf8');
+					} catch (cause) {
+						return c.error({
+							code: 'invalid-session-file',
+							message:
+								`distill could not read the --session-file ` +
+								`${JSON.stringify(c.options['session-file'])}: ` +
+								`${cause instanceof Error ? cause.message : String(cause)}.`,
+						});
+					}
+				}
+
+				// Read the SAME live session's verb trace over the server's read-only
+				// trace route (the thin-client `distill` runs in a separate process). No
+				// live server => the same typed "run serve first" error the verbs raise.
+				const endpoint = await readSessionEndpoint(home);
+				if (endpoint === undefined) {
+					throw new NoLiveServerError();
+				}
+				const entries = await readSessionTrace(endpoint.url);
+
+				const {scaffold, notes} = distillTrace(entries, {
+					...(c.options.summary !== undefined
+						? {summary: c.options.summary}
+						: {}),
+					...(sessionFileText !== undefined
+						? {sessionFile: sessionFileText}
+						: {}),
+					...(c.options.from !== undefined ? {from: c.options.from} : {}),
+					...(c.options.to !== undefined ? {to: c.options.to} : {}),
+				});
+
+				// Write the scaffold to --out and the notes beside it. distill EMITS
+				// only: it writes these two files and NOTHING else (no hands.json, no
+				// import). Create the parent dir so a caller-named nested --out works.
+				const notesPath = `${c.options.out}.notes.md`;
+				await mkdir(dirname(c.options.out), {recursive: true});
+				await writeFile(c.options.out, scaffold, 'utf8');
+				await writeFile(notesPath, notes, 'utf8');
+
+				return c.ok(
+					{
+						ok: true as const,
+						verb: 'distill' as const,
+						out: c.options.out,
+						notes: notesPath,
+						steps: entries.length,
+					},
+					ctaMeta(c, [
+						{
+							command: 'distill',
+							description:
+								'Review the emitted file, then ADOPT it by naming it in ' +
+								'hands.json yourself (distill never loads it).',
+						},
+					]),
+				);
 			} catch (cause) {
 				return fail(c, cause, binary);
 			}

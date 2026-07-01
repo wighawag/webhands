@@ -122,10 +122,19 @@ export {
 	type VerbTraceEntry,
 } from './verb-trace.js';
 
-export {connectRemoteSession} from './remote-session.js';
+export {connectRemoteSession, readSessionTrace} from './remote-session.js';
+
+export {
+	distillTrace,
+	sliceTrace,
+	DEFAULT_HAND_VERB,
+	type DistillOptions,
+	type DistillResult,
+} from './distill.js';
 
 export {
 	SESSION_RPC_PATH,
+	SESSION_TRACE_PATH,
 	applySessionRpc,
 	makeRpcPage,
 	callHandVerb,

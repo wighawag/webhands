@@ -44,3 +44,12 @@ isolation off the exact branch tip WITH this task's diff applied. This task only
 touches the verb dispatch / session-server trace path (`applySessionRpc`,
 `session-server.ts`, new `verb-trace.ts`); `setup-profile.test.ts` references
 none of it. Same load-contention flake, not a regression from this diff.
+
+UPDATE (2026-07-01, `distill-verb-emits-hand-scaffold`): recurred again. One
+full `pnpm test` run failed `setup-profile.test.ts > "is idempotent: re-running
+against an already-set-up profile ..."` at its 5000ms timeout; the same file
+passes 5/5 in isolation off the branch tip WITH this task's diff. This task adds
+the `distill` verb (new `packages/core/src/distill.ts`, a read-only trace-fetch
+route, and the CLI `distill` command); `setup-profile.test.ts` touches none of
+it. Same load-contention flake, not a regression. The suggested fix (generous
+per-test timeout or serialising the real-browser tests) still stands.

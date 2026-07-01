@@ -2,10 +2,12 @@ import {
 	callHandVerb,
 	makeRpcPage,
 	SESSION_RPC_PATH,
+	SESSION_TRACE_PATH,
 	type SessionRpcRequest,
 	type SessionRpcResponse,
 } from './session-rpc.js';
 import type {Session} from './seam.js';
+import type {VerbTraceEntry} from './verb-trace.js';
 
 /**
  * A client-side {@link Session} that drives a session living in a SEPARATE
@@ -70,6 +72,8 @@ export function connectRemoteSession(
 		throw new Error(reply.error);
 	};
 
+	// (readSessionTrace lives below; see its own doc.)
+
 	let resolveClosed!: () => void;
 	const closedSignal = new Promise<void>((resolve) => {
 		resolveClosed = resolve;
@@ -101,4 +105,37 @@ export function connectRemoteSession(
 			return closedSignal;
 		},
 	};
+}
+
+/**
+ * Read the running session's ordered VERB TRACE over the session server's
+ * read-only trace route (task `distill-verb-emits-hand-scaffold`).
+ *
+ * The thin-client `distill` verb runs in a SEPARATE process (like every other
+ * verb) and cannot hold a JS reference to the server's in-memory trace, so it
+ * fetches the SAME session's ordered {@link VerbTraceEntry} list over HTTP,
+ * exactly as the verb proxy fetches results. This is a READ ONLY: it never
+ * drives the page and never mutates the trace; it is the client mirror of the
+ * server's {@link SESSION_TRACE_PATH} handler. A stale/unreachable advertised
+ * endpoint surfaces a plain connection Error (mirrors `connectRemoteSession`'s
+ * `send`).
+ */
+export async function readSessionTrace(
+	baseUrl: string,
+): Promise<readonly VerbTraceEntry[]> {
+	const endpoint = new URL(SESSION_TRACE_PATH, baseUrl).toString();
+	let res: Response;
+	try {
+		res = await fetch(endpoint, {method: 'GET'});
+	} catch (cause) {
+		const message = cause instanceof Error ? cause.message : String(cause);
+		throw new Error(
+			`could not reach the session server at ${baseUrl}: ${message}`,
+		);
+	}
+	const reply = (await res.json()) as SessionRpcResponse;
+	if (reply.ok) {
+		return (reply.value ?? []) as readonly VerbTraceEntry[];
+	}
+	throw new Error(reply.error);
 }
