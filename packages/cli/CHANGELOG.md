@@ -1,5 +1,99 @@
 # webhands
 
+## 1.0.0
+
+### Major Changes
+
+- 5777070: BREAKING: the `script` verb now takes its JS source EXACTLY ONE way: a FILE-PATH positional. `npx webhands script ./flow.js` is the only form; the verb reads that path and runs its contents.
+
+  - **Inline source, `--file`, and stdin are REMOVED.** The old three-source design (`script "<js>"` inline OR `script --file ./flow.js` OR `cat flow.js | script`) is gone. There is now ONE source, ONE rule: the positional argument is a PATH to a JS file.
+  - **A bare `webhands script` (no path) fails loud** (the positional is required), and a **missing/unreadable path fails loud** with a typed, non-cryptic error that names the path (the `invalid-script` error code shape is preserved).
+  - **WHY:** one source, one rule. The file-first workflow is exactly what a raw-Playwright agent already writes (a flow file, then run it), so making it the only workflow removes the redundant `--file` flag and the "three ways to do one thing" surface, and keeps the `script`-vs-Playwright comparison honest.
+  - **UNCHANGED:** the driver-context semantics (the full live Playwright `page`, real locators + actions + auto-waiting) and the ADR-0003 seam-clean, serializable RETURN. Only HOW the source is supplied changed. `eval` is untouched.
+  - The `readScriptStdin`/`readProcessStdin`/`resolveScriptSource` multi-source machinery was removed (no dead code), replaced by a single `readFile(path, 'utf8')` at the call site. ADR-0012 is amended accordingly.
+
+### Minor Changes
+
+- 293efde: Cut the per-run CONTEXT overhead an agent pays around the useful work: suppress the per-result CTA "Suggested command" hints BY DEFAULT and make the bundled `use-webhands` skill a COMPLETE per-verb reference, so a skilled agent drives the surface without re-dumping `--help`/`--llms-full` at runtime (the two biggest overhead payloads the scoreboard transcripts found).
+
+  - **CTA default-off + opt-in flag.** Every verb result used to append a `cta: {commands:[...]}` next-verb block; an agent or program never reads it, so it was pure token overhead. It is now suppressed by default (lean output). A human exploring interactively re-enables it with `--cta` (alias `--hints`) on any verb. NOT an opt-out `--no-cta`: lean is the default, the breadcrumb is opt-in. The flag and the `WEBHANDS_CTA` env appear in `--help`/`--llms-full`.
+  - **`WEBHANDS_CTA` env override.** Setting `WEBHANDS_CTA=1` forces the CTA hints back ON without a per-call flag (a user can pin their preferred default once). Precedence: `--cta`/`--hints` flag > `WEBHANDS_CTA` env > built-in default (off). Exported as `CTA_ENV_VAR` from the package.
+  - **The skill is now the full verb reference.** `skills/use-webhands/SKILL.md` (and the inlined eval skilled/script-forward preambles) describe WHAT EACH VERB DOES + its must-know argument forms, including the `page.`-prefixed locator grammar, name the canonical `npx webhands <verb>` invocation up front, and state plainly that the agent need NOT run `--help`/`--llms-full` at runtime. The inlined preambles stay no-priming-clean (`assertSkilledReferenceUnprimed`: no selector-shaped fragment, no site URL), so the per-verb examples are generic, not site selectors.
+  - **A `webhands-cold-cta` eval agent kind** (eval harness, non-gating) reproduces the pre-flip cold baseline: the SAME cold preamble plus `WEBHANDS_CTA=1` pinned in the agent env, so the original four-way scoreboard numbers stay live and reproducible and `cold-cta - cold` isolates the CTA cost.
+
+  No new verb is added.
+
+- 8ef332b: Add `distill --test`: validate the just-emitted hand scaffold by running its replay against the LIVE page through the existing `script` verb (ADR-0012), reporting pass/fail loudly. This is the validation half of the `distill-session-into-hand` prd (story 5); it reuses `script` verbatim and adds no new execution surface.
+
+  - **Reuse `script`, no new surface.** `distillTrace(...)` now also returns `replayScript`: the SAME distilled replay rendered as the `script` verb's driver-context shape (an `async (page) => { ... }` function of the live Playwright `page`). It is built from the SAME per-step replay lines as the emitted `Hand` scaffold, so the tested source and the scaffold cannot drift. Exposed as `renderReplayScript` alongside `distillTrace`.
+  - **`distill --test`.** When `--test` is passed, the verb runs `replayScript` against the served session via `page.script(...)` (the exact ADR-0012 mechanism) and reports the outcome in a new optional `test` field: `{passed: true, result}` on a clean replay (PASS) or `{passed: false, error}` on a throw (FAIL), reusing `script`'s structured-error path. A throwing scaffold is a clean, typed FAIL surfaced loudly (a `--test` cta line), never a silent pass. Omitting `--test` leaves the emit-only output shape unchanged.
+  - **HARD INVARIANT preserved.** `--test` only RUNS the replay in the sandboxed page-context tier: it never writes `hands.json` and never `import()`s the emitted module. Adopting a hand (naming it in `hands.json`) stays the operator's explicit trust act (ADR-0007). Tested: with `--test`, no `hands.json` is written anywhere and only the scaffold + notes land under `--out`.
+  - **PASS + FAIL are tested** against a real served browser on the local fixture (mirroring the `script` verb's seam test): a good scaffold replays and reports PASS; a broken step (a `select` on a non-`<select>`) throws fast and reports a typed FAIL. Shared-write isolation holds (temp `--out`, no real home/config write).
+
+- a8c2944: Add the `distill` verb: reduce a just-driven session into a reusable HAND SCAFFOLD plus a human-readable NOTES markdown, from the session's verb trace. This is the authoring half of the `distill-session-into-hand` prd (validation via `script` is a separate follow-on task). It EMITS and NEVER loads.
+
+  - **`distill` core (`@webhands/core`).** `distillTrace(entries, options)` reduces the ordered verb trace into a frozen ADR-0007 `Hand` module scaffold (a default-export factory closing over `ctx.pwPage`) that FAITHFULLY replays the discovered steps in order, plus a notes markdown listing the flow's steps / selectors / decisions. Reads/probes and escape hatches (`eval`/`script`/hand verbs) are left as annotated TODOs rather than auto-invented. A typed `{ENV:NAME}` credential stays the TOKEN in the scaffold and notes (never a resolved secret). Exposed as `distillTrace` / `sliceTrace` / `DEFAULT_HAND_VERB`.
+  - **The SLICE selector.** `--from`/`--to` crystallize a caller-named sub-flow (0-based, inclusive index range over the trace) so the hand encodes the flow that mattered, not the earlier failed probes; the default is the whole session. Out-of-range bounds clamp; an inverted range yields an empty slice.
+  - **Optional enrichments.** `--summary <text>` (the agent's intent) and `--session-file <path>` (a transcript webhands is HANDED, read as a plain path; it does NOT discover transcript locations) enrich the notes; omitting both still yields a scaffold from the trace alone.
+  - **Thin-client trace fetch.** The trace lives in the long-lived `serve` process; the `distill` verb is a thin client, so it reads the SAME session's ordered trace over a new read-only route (`SESSION_TRACE_PATH` / `readSessionTrace`), mirroring how the verb proxy fetches results. Read-only: it never drives the page.
+  - **HARD TRUST INVARIANT (tested).** `distill` writes NO `hands.json` and never `import()`s the emitted module: it writes only the scaffold to `--out` and the notes beside it as `<out>.notes.md`. Adopting a hand (naming it in `hands.json`) stays the operator's explicit trust act (ADR-0007). A `--test` flag is RESERVED for the next task (validation via `script`) and is accepted-and-ignored here.
+
+- 92590b0: Add `{ENV:NAME}` placeholder substitution for value-bearing verbs plus `.env` loading via `ldenv`, and advertise the capability to the agent. This is the foundation the `distill` work depends on: it keeps a value the agent types (and a later verb-trace / emitted hand scaffold) free of literal secrets, while the real value still reaches the page.
+
+  - **`{ENV:NAME}` substitution in `type` (webhands' OWN grammar, not ldenv's `@@VAR`).** The value-bearing `type` verb resolves an `{ENV:NAME}` token against `process.env.NAME` at type-time, in the SERVED controller process (where the env is loaded). A value with no `{ENV:...}` is typed VERBATIM (backward compatible). An UNSET or EMPTY variable fails LOUD with a typed `UnresolvedEnvPlaceholderError` (code `unresolved-env-placeholder`), never a silent empty type. Exposed as `substituteEnvPlaceholders` / `hasEnvPlaceholder` from `@webhands/core`.
+  - **`.env` loading via ldenv at `serve` startup.** The long-lived `serve` process loads `.env` / `.env.local` / `.env.<mode>` via ldenv's importable `loadEnv()` before the browser opens (the process that launches the browser and reads `process.env` for substitution), so `{ENV:PASSWORD}` resolves against a gitignored `.env.local` and not only the interactive shell. The operator's real shell env WINS over a `.env` file on a conflicting key (ldenv's documented priority). Exposed as `loadWebhandsEnv` from `@webhands/core`; `ldenv` is added as a `@webhands/core` dependency.
+  - **Agent-facing advertisement.** The `type` verb's tool / `--help` description now states a value may be `{ENV:NAME}` and that the agent should use it for credentials the operator put in the environment. The bundled `use-webhands` skill gains a "handling sensitive info" rung (prefer `type '#pass' '{ENV:PASSWORD}'` over a literal; the operator supplies the value via env / `.env.local`; you never read it), kept no-priming-clean.
+
+  Honest scope: `{ENV:NAME}` is HYGIENE, not a security boundary. The substituted value still lands in the DOM and is readable back, and a local agent can read the env itself; the point is only to avoid gratuitously writing a literal credential into the tool-call and the on-disk artifacts when a placeholder works identically.
+
+- 5ed4a0e: Make `snapshot`'s `[ref=eN]` directly actionable: an agent can read the page with `snapshot`, see a node tagged `[ref=e7]`, and `click`/`type` it directly with `--by-ref` (passing the bare `e7` or `aria-ref=e7`), so "read the page, then act on what you read" is ONE loop with no detour through `query --with-refs` or `eval`/`querySelectorAll`. This closes the highest-leverage API-surface gap the scoreboard transcripts exposed (the "two-ref collision": the snapshot ref and the durable `query` ref shared the word `ref`, but only the latter was actionable, so the agent kept falling back to `eval` to rediscover selectors).
+
+  - `@webhands/core`: the built-in interaction hand now normalizes a `{byRef: true}` target that is a snapshot ref (a bare `eN` or `aria-ref=eN`) to `page.locator('aria-ref=eN')` (Playwright's native `aria-ref=` snapshot-ref locator engine), then resolves it through the SAME single resolver and the SAME exactly-one fail-loud guard (`assertRefResolvesToOne` / typed `StaleRefError`) the durable `query` ref already uses. A durable `query` ref (already a `p.locator(...)` expression) is passed through UNCHANGED. The normalization helper (`normalizeRefToLocator`) is exported. Nothing Playwright-shaped crosses the seam: the ref arrives and stays an opaque string (ADR-0003), resolved through locator-expression addressing (ADR-0004).
+  - `webhands`: `click`/`type --by-ref` now accept a snapshot `[ref=eN]` (the bare `eN` / `aria-ref=eN`) in addition to a durable `query` ref; `--help`/`--llms-full` for `snapshot`, `click`, and `type` (and the post-snapshot CTA hints) say so. The bundled `use-webhands` skill gains a read-then-act note showing the `snapshot` -> `click eN --by-ref` loop.
+
+  HONEST durability distinction (neither ref silently does the other's job): a snapshot `aria-ref=eN` is SNAPSHOT-SCOPED, an "act on what I just saw" handle re-keyed every `ariaSnapshot`, so it correctly goes stale (loud `stale-ref`, never a wrong-element action) after a DOM change or a re-snapshot. The durable `query` ref deliberately SURVIVES list mutation. They share the same `--by-ref` flag and the same fail-loud contract, but they are different durability models. The durable `query --by-ref` path and its safety are unchanged. Recorded in a new ADR (`docs/adr/0013`), which states the relationship to ADR-0004 (this ADDS an actionable snapshot ref ALONGSIDE the locator grammar; ADR-0004's rejection of "snapshot ref-ids ONLY" as the addressing model still stands).
+
+- 10dc6c1: Add a `script` verb that runs a caller-supplied DRIVER-CONTEXT script against the one live served session, handing it the full Playwright `page` so it can locate + act + auto-wait + read a whole sub-flow in ONE call and return the serializable result. This closes the "one process per action" token cost the scoreboard exposed: a webhands agent can now batch a known sub-flow into one turn (like the Playwright baseline does) against the page it ALREADY opened, instead of shelling out one verb per action.
+
+  `script` is a new BUILT-IN `scriptHand` (the `evalHand` shape, closing over the live `HandContext.pwPage`); it does NOT change or supersede `eval`. The source is JS that evaluates to a function of the page (e.g. `async (page) => { ... }`), read from `--file <path>`, an inline argument, or stdin. Its in-process `page` API is plain Node JS (NOT an ADR-3 seam surface), but its RETURN stays seam-clean (serializable, no Playwright/CDP type), and a throwing script rejects as a clean structured error. TRUST: the SAME page-script surface as `eval` (caller JS, loopback-only), NOT the `hands.json` hand-loading / npm-dependency surface. Documented in a new ADR (`docs/adr/0012`) and the README security note.
+
+### Patch Changes
+
+- fc4883e: Let `serve` expose a Chromium CDP / remote-debugging endpoint for its launch session, so a separate Playwright client can `connectOverCDP` and drive the SAME live page the server holds (a shared driving surface). This is opt-in on the launch transport and surfaced through the existing session-endpoint discovery channel; it adds no new verb and changes nothing on the verb seam (the endpoint is a plain loopback URL string, like the attach endpoint).
+
+  - `@webhands/core`: `PlaywrightLaunchTransport` gains an opt-in `exposeCdp` construction option. When set, it launches Chromium with `--remote-debugging-port=0`, resolves the OS-assigned port from the `DevToolsActivePort` file (the same mechanism the attach transport's tests use), and exposes the resulting `http://127.0.0.1:<port>` endpoint via a new `cdpEndpoint()` accessor on the concrete transport (never on the `Transport`/`Session` seam, so ADR-0003 holds). `SessionEndpoint` gains an optional `cdpEndpoint` field, and `startSessionServer` folds a resolver's value into the advertised endpoint (and the on-disk endpoint file) so client/tool discovery can find the shared surface. The CDP port binds to loopback only, like the serve RPC endpoint.
+  - `webhands`: the `serve` command always exposes the CDP endpoint for a launch session (an `attach` session has no harness-owned debugging port, so none is advertised there) and surfaces it in the `serve` output as `cdpEndpoint`.
+
+  This makes the eval harness's Playwright-only baseline measurable: the baseline agent connects its Playwright to the harness's served browser over CDP and drives the harness's existing page, so the harness reads the page the agent actually drove and scores a genuine completion as PASS (it previously scored a false FAIL because the agent drove its own separate browser).
+
+- d451fc7: Docs: make the README friendlier to newcomers and lead the capability scoreboard with the latest results.
+
+  - **README intro rewritten for newcomers.** A one-line hook ("let your AI agent drive a real, logged-in browser on your own machine"), a plain-language "log in once, then your agent acts" framing, and a "New here? Jump to" nav pointing at the quickstart, the scoreboard, and the scope/honesty section.
+  - **README scoreboard section reframed around how webhands COMPETES with Playwright.** It now leads with a three-row "kind of flow" table (messy DOM: webhands wins; dynamic goal: tie; trivial scriptable flow: Playwright cheaper) and links to the scoreboard's new latest-first summary, instead of only saying "raw Playwright is currently cheaper".
+  - **`evals/SCOREBOARD.md` now shows the latest, most representative results FIRST.** A new "Latest results first (the short answer)" section at the top surfaces the two most recent fair head-to-heads (tier-3 messy DOM and the dynamic read-decide loop) where webhands matches or beats raw Playwright on both outcome and tokens. The detailed chronological lab notebook is unchanged below, with a pointer from the older simple-flow "how to read it" section back to the summary.
+
+  No package behavior changes.
+
+- fd189af: Docs: tell a sharper hands story across the README and the capability scoreboard.
+
+  A **hand** is now framed as sitting ABOVE the verbs-vs-Playwright comparison and winning on two distinct axes, not just "the simpler path":
+
+  - **New capability raw Playwright cannot reach at all** (e.g. a captcha-solving hand plugs in solving logic + a provider key webhands does not ship, so the comparison becomes "reaches the goal vs does not").
+  - **Token collapse on flows Playwright CAN do** (a known sub-flow authored into a hand ONCE becomes a single cheap verb call instead of an N-turn explore loop the agent re-pays every run).
+
+  Adds a "Where hands change the game" subsection under the README scoreboard section, rewrites the Scope "hands" bullet around the ceiling+accelerator framing, and adds a matching note to `evals/SCOREBOARD.md`. Points at the incubating `distill-session-into-hand` idea as the cheap hand-authoring path.
+
+  No package behavior changes.
+
+- Updated dependencies [8ef332b]
+- Updated dependencies [a8c2944]
+- Updated dependencies [92590b0]
+- Updated dependencies [fc4883e]
+- Updated dependencies [e2707ef]
+- Updated dependencies [5ed4a0e]
+- Updated dependencies [10dc6c1]
+  - @webhands/core@0.7.0
+
 ## 0.4.0
 
 ### Minor Changes
