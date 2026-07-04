@@ -14,6 +14,7 @@
     "---------------------- PUBLISH --------------------": "",
     "prepublishOnly": "pnpm format:check && pnpm build",
     "release": "pnpm prepublishOnly && git push --all && pnpm changeset publish && git push --tags",
+    "release:ci": "pnpm prepublishOnly && pnpm changeset publish",
     "changeset:status": "changeset status --since=main",
     "---------------------- FORMAT ----------------------": "",
     "format": "prettier --write .",
