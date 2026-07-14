@@ -47,7 +47,7 @@ and derives its context via `pwPage.context()`. Collapsing these into one
 lifecycle would break attach's detach-not-kill guarantee. So: shared verb host,
 per-transport session/close/closed-signal wiring.
 
-Internal-only boundary (the gate from the prd's resolved Q2):
+Internal-only boundary (the gate from the spec's resolved Q2):
 - NO change to the public seam (`Page`/`Transport`/`Session` types stay
   byte-for-byte identical).
 - The `Hand` / `HandContext` types and the host are PACKAGE-INTERNAL — NOT
@@ -79,7 +79,7 @@ Internal-only boundary (the gate from the prd's resolved Q2):
       `context.close()` kills the browser; attach: `browser.on('disconnected')` /
       `browser.close()` detaches without killing it, ADR-0002). The shared host
       does NOT collapse these.
-- [ ] Cross-browser invariant honored BY CONSTRUCTION (prd stories 7, 8): the
+- [ ] Cross-browser invariant honored BY CONSTRUCTION (spec stories 7, 8): the
       hand-host is built INSIDE the Playwright transport(s) and uses only the
       Playwright `Page`/`BrowserContext` API (no CDP/Chromium-only types), keeping
       the live `pwPage` in-process (never crossing the seam). Note: the launch
@@ -106,7 +106,7 @@ Internal-only boundary (the gate from the prd's resolved Q2):
 
 > Goal: introduce an internal hand-host primitive in `@webhands/core` and
 > refactor webhands' own verbs into built-in hands over it, with ZERO change to
-> the public seam and ZERO behavior change. This is Phase 1 of the "hands" prd
+> the public seam and ZERO behavior change. This is Phase 1 of the "hands" spec
 > (`work/specs/proposed/hands-pluggable-page-capabilities.md` → moved to
 > `work/specs/tasked/`): proof-by-self-application before any third-party hand.
 >

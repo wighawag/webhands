@@ -79,7 +79,7 @@ cacheRead) are also not yet a clean signal: the webhands agent makes many small
 `npx webhands` shell round-trips (each re-priming context => huge cacheRead),
 while the Playwright agent wrote ONE script and ran it (far fewer model
 round-trips). That is itself an interesting axis ("chatty verb calls vs
-write-a-script-once"), but it is not the apples-to-apples token compare the prd
+write-a-script-once"), but it is not the apples-to-apples token compare the spec
 north star wants until the verdict is fair.
 
 ## Fix direction (for a follow-up task, NOT done here)

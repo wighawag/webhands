@@ -4,7 +4,7 @@ slug: hands-pluggable-page-capabilities
 needsAnswers: false
 ---
 
-> Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked — they move into tasks/ADRs and this prd settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
+> Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked — they move into tasks/ADRs and this spec settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
 
 ## Problem Statement
 
@@ -52,12 +52,12 @@ This **refines ADR-0003/0004, does not discard them:** the no-CDP/Chromium-only-
 > `phase1-internal-structure-adr`, `third-party-hand-loading-and-public-api`,
 > `agent-exposed-hand-verb-over-rpc`, `iamhuman-captcha-hand-first-thirdparty`).
 > The durable WHY is recorded in `docs/adr/` (the Phase-1 internal-structure ADR
-> and the Phase-2 public-contract ADR those tasks write). This prd is now its
+> and the Phase-2 public-contract ADR those tasks write). This spec is now its
 > durable framing only.
 
 ## Out of Scope
 
-- **A broad "browser-app platform / portable standard."** The hands model ENABLES a future where third-party capabilities are a first-class ecosystem, but this PRD builds the in-process hand-host + first third-party hand, NOT a distribution model, a cross-runtime portability spec, an inter-hand permission system, or a manifest format. Named as a future direction the hands model enables, not built here.
+- **A broad "browser-app platform / portable standard."** The hands model ENABLES a future where third-party capabilities are a first-class ecosystem, but this spec builds the in-process hand-host + first third-party hand, NOT a distribution model, a cross-runtime portability spec, an inter-hand permission system, or a manifest format. Named as a future direction the hands model enables, not built here.
 - **A specific captcha implementation.** iamhuman captcha-solving is the first EXAMPLE hand and the Phase-2 proof; the captcha logic lives in iamhuman, not here.
 - **Re-introducing CDP-only coupling.** Hands stay Playwright-`Page`-based (cross-browser); CDP-`attach` remains Chromium-only exactly as today.
 - **A browser-extension transport.** A content-script transport cannot perform page-level pixel/coordinate/nested-cross-origin-frame operations (same-origin policy walls it from cross-origin child frames), so it cannot host page-level hands. The earlier `extension-transport` idea note was deleted for this reason.

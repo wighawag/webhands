@@ -15,7 +15,7 @@ remote debugging enabled, reusing the existing authenticated context —
 live, logged-in tabs on their real fingerprint and IP. Chromium-only, and
 documented as such (CDP-attach is Chromium-only — see `docs/adr/0003`). The user
 starts their own browser with `--remote-debugging-port`; there is no relaunch
-helper (a settled prd decision).
+helper (a settled spec decision).
 
 A thin vertical slice: `open` in attach mode connects to a CDP endpoint, returns a
 `Session` whose `Page` drives the existing context through the seam. Tests launch a
@@ -38,7 +38,7 @@ fixture page through the seam.
 
 ## Prompt
 
-> Goal: implement the `attach` transport (CDP, Chromium-only). Read the prd
+> Goal: implement the `attach` transport (CDP, Chromium-only). Read the spec
 > `work/specs/ready/browser-controller-cli.md` (User Story 5; Solution — attach;
 > Implementation Decisions — attach) and ADRs `0002` (why a real live session) and
 > `0003` (seam not CDP-coupled — attach is Chromium-only; keep CDP types out of the

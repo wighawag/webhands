@@ -91,7 +91,7 @@ driving constraint; the priority is agent-digestible types). Write it per
 > returning a file PATH in three scopes, and a cross-origin frame READ) so a
 > seam-only agent can handle the VISION/TILE captcha family and any visual task —
 > AND write the ADR amending ADR-0003 to admit this narrow surface. Deliverable
-> from the prd `work/specs/tasked/broaden-agent-verb-surface.md` (## Resolved
+> from the spec `work/specs/tasked/broaden-agent-verb-surface.md` (## Resolved
 > decisions R3; User Stories 17-19).
 >
 > READ FIRST: `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md`

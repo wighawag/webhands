@@ -11,7 +11,7 @@ source: 'live capability-eval run 2026-06-29: `pnpm --filter @webhands/evals run
 The first REAL-SITE behaviour the agent-capability eval harness surfaced that the
 LOCAL-FIXTURE verb tests could not: the `click` verb is NOT reliable on a real
 React-driven DOM. This is precisely the "works on a clean fixture, fails on a real
-messy DOM" regression the harness was built to catch (prd `agent-capability-eval-harness`,
+messy DOM" regression the harness was built to catch (spec `agent-capability-eval-harness`,
 User Stories 8 + 13; the missing-verb-as-FINDING convention in `docs/eval-harness.md`).
 
 ## Result (observed, not assumed)
@@ -55,7 +55,7 @@ Candidates, in rough priority, for whoever picks this up:
 - An overlay / pointer-events nuance specific to the Luma-like React build.
 
 The fix is NOT in the eval harness (it adds no verbs and changes no behaviour, per
-its charter): this is a candidate for a future **verb-surface** change/PRD against
+its charter): this is a candidate for a future **verb-surface** change/spec against
 `packages/core`'s `click` implementation. Per the missing-verb-as-FINDING
 convention, this note IS the artifact; the surface fix is a separate, reviewed
 change.

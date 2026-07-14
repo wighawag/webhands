@@ -3,7 +3,7 @@ title: 'End-to-end agent capability eval harness: prove an unaided agent can dri
 slug: agent-capability-eval-harness
 ---
 
-> Launch snapshot, records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked: they move into tasks/ADRs and this prd settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
+> Launch snapshot, records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked: they move into tasks/ADRs and this spec settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
 
 ## Resolved decisions
 
@@ -58,7 +58,7 @@ Four load-bearing properties, each a hard constraint from this codebase's conven
 
 4. **SAFE, REPEATABLE, AUTHORIZED targets.** Prefer realistic SANDBOXES built to be automated over production sites (production carries anti-bot / ToS / 2FA / real-state hazards, per ADR-0002 and the README humility note). Targets are TIERED by difficulty and each is assessed for fit and per-run state hygiene (see ## Implementation Decisions).
 
-The harness drives webhands through its existing surface (the `npx webhands <verb>` CLI path the README leads with, and/or the long-lived `serve` session, ADR-0005), against a warmed profile, honoring the stealth/proxy options that already exist (ADR-0009). It adds NO new verbs: the surface is complete for this. If running a real eval reveals a missing or messy-DOM-broken verb, that is a FINDING (and possibly a future surface PRD), captured per the work/ contract, NOT new scope here.
+The harness drives webhands through its existing surface (the `npx webhands <verb>` CLI path the README leads with, and/or the long-lived `serve` session, ADR-0005), against a warmed profile, honoring the stealth/proxy options that already exist (ADR-0009). It adds NO new verbs: the surface is complete for this. If running a real eval reveals a missing or messy-DOM-broken verb, that is a FINDING (and possibly a future surface spec), captured per the work/ contract, NOT new scope here.
 
 ## User Stories
 
@@ -74,7 +74,7 @@ The harness drives webhands through its existing surface (the `npx webhands <ver
 10. As a maintainer, I want the harness to DISTINGUISH "the agent failed" from "the site was down / rate-limited / changed", so an external-site outage is reported as INCONCLUSIVE, never as a capability regression.
 11. As a maintainer, I want per-run account/state hygiene handled per target (fresh account each run where the site allows, in-flow cleanup, or per-run-unique artifacts), so re-running an eval does not wreck state or make the assertion ambiguous.
 12. As a maintainer, I want the harness to drive webhands through its EXISTING surface (`npx webhands <verb>` CLI and/or the `serve` session, ADR-0005) against a warmed profile honoring the stealth/proxy options, so it exercises the real agent-facing path, not a private back door.
-13. As a maintainer, I want the harness to add NO new verbs; if an eval reveals a missing or messy-DOM-broken verb, I want that captured as a FINDING for a future surface PRD, so this harness stays a measurement tool, not a surface change.
+13. As a maintainer, I want the harness to add NO new verbs; if an eval reveals a missing or messy-DOM-broken verb, I want that captured as a FINDING for a future surface spec, so this harness stays a measurement tool, not a surface change.
 14. As a maintainer, I want WebArena noted as a FUTURE full self-hosted benchmark suite, out of initial scope, so the ambition is recorded without bloating v1.
 15. As a maintainer, I want the harness's non-gating-ness to be ENFORCED (a separate command/dir, demonstrably not invoked by `pnpm test`), not just documented, so it cannot silently creep into the gate later.
 16. As an agent-under-test, I want my goal handed to me as plain natural language (on stdin) and my verb access wired through one clear channel (the bash/CLI `npx webhands <verb>` path), so any agent invocable as a shell command can be pointed at an eval without bespoke glue.
@@ -82,24 +82,24 @@ The harness drives webhands through its existing surface (the `npx webhands <ver
 
 ### Autonomy notes (the two gate axes)
 
-- **`humanOnly` (DECIDED):** OMITTED. Nothing here makes the TASKING of this prd a human-only act by nature (no secrets/release/security decision gates the tasking). The individual tasks that touch real third-party sites may warrant POSITION (born in `tasks/backlog/` for human review) rather than the `humanOnly` flag; the tasker decides per task from each task's own nature. (The reference-agent wiring task, if it ends up handling an API key/credential for the agent-under-test, is a candidate for task-level `humanOnly` by nature; flagged for the tasker.)
-- **`needsAnswers` (DISCOVERED):** OMITTED. The questions briefly open at launch (the agent-under-test wiring/pinning, the deterministic self-test fixture, and the per-run account hygiene on the stateful targets) are now resolved in ## Resolved decisions (D1, D2, D3). The prd tasks cleanly.
+- **`humanOnly` (DECIDED):** OMITTED. Nothing here makes the TASKING of this spec a human-only act by nature (no secrets/release/security decision gates the tasking). The individual tasks that touch real third-party sites may warrant POSITION (born in `tasks/backlog/` for human review) rather than the `humanOnly` flag; the tasker decides per task from each task's own nature. (The reference-agent wiring task, if it ends up handling an API key/credential for the agent-under-test, is a candidate for task-level `humanOnly` by nature; flagged for the tasker.)
+- **`needsAnswers` (DISCOVERED):** OMITTED. The questions briefly open at launch (the agent-under-test wiring/pinning, the deterministic self-test fixture, and the per-run account hygiene on the stateful targets) are now resolved in ## Resolved decisions (D1, D2, D3). The spec tasks cleanly.
 
 > Tasked. The build-level detail that lived here (the eval-entry contract, the harness runner + launch seam + shell adapter, the end-state-assertion-via-read-verbs mechanism, the milestone scorer, the pass/fail/INCONCLUSIVE + precheck/retry, the structural non-gating home, the per-tier target shapes, and the D3 scripted self-test) moved into the task files under `work/tasks/` (`eval-harness-foundation`, `eval-saucedemo-tier1`, `eval-stateful-tier2`, `eval-magento-tier3`, `eval-harness-docs-and-missing-verb-convention`). The durable WHY is preserved above in ## Resolved decisions (D1, D2, D3).
 
 ## Out of Scope
 
-- **Adding any new verb.** The surface is complete for this harness. A missing or messy-DOM-broken verb discovered while running an eval is a FINDING (captured per the work/ contract) and possibly a future surface PRD, NOT scope here.
+- **Adding any new verb.** The surface is complete for this harness. A missing or messy-DOM-broken verb discovered while running an eval is a FINDING (captured per the work/ contract) and possibly a future surface spec, NOT scope here.
 - **Making these evals GATE CI.** They are opt-in and non-gating by nature; they must never enter the `verify` gate (`pnpm format:check && pnpm build && pnpm test`). The harness's own unit logic may be gate-tested (above); the live-site evals never are.
 - **A pi-NATIVE adapter.** v1 ships the generic shell/command adapter (D1), which launches a real unaided agent (including pi, invoked as `pi --print`) and is a sufficient capability subject. A pi-native adapter (pi session file + native liveness, the upgrade over shell-out + PID) is a DEFERRED improvement for unattended/scheduled runs, addable later through the same launch seam without breakage. Not needed for the first eval.
 - **WebArena full-benchmark integration.** Noted as a FUTURE self-hosted benchmark suite; out of initial scope.
 - **Driving PRODUCTION sites as standing evals.** Production carries anti-bot / ToS / 2FA / real-state hazards (ADR-0002, README humility note). Sandboxes built for automation are preferred; a production target, if ever added, is a deliberate, separate, human-gated decision.
-- **A built-in captcha solver or provider key.** Unchanged from the surface PRD: webhands ships neither. An eval that involves a captcha relies on the agent-under-test bringing its own key, exactly as the surface PRD frames it.
+- **A built-in captcha solver or provider key.** Unchanged from the surface spec: webhands ships neither. An eval that involves a captcha relies on the agent-under-test bringing its own key, exactly as the surface spec frames it.
 
 ## Further Notes
 
 - **The WHY (north star).** webhands' north star is that a capable agent, given only the verb surface, can drive ANY site, including handling captchas with its own key (both families already proven verbs-only against local fixtures). This harness is how we MEASURE progress toward that north star on REAL sites, and how we catch regressions in the agent-facing surface that local fixtures cannot reveal (a verb that works on a clean fixture but not a messy real DOM). It is the capability SCOREBOARD, deliberately separate from the deterministic correctness GATE.
 - **Complement, not replacement.** The shipped local-fixture verb tests prove the verbs work MECHANICALLY in isolation; this harness proves the next thing up: that an agent can COMPOSE them to accomplish real jobs on real, unfamiliar sites. Both matter; they answer different questions.
-- **Provenance:** conversation 2026-06-29, planning the capability-eval complement to the just-landed `broaden-agent-verb-surface` surface (8 tasks merged, prd in `work/specs/tasked/`).
+- **Provenance:** conversation 2026-06-29, planning the capability-eval complement to the just-landed `broaden-agent-verb-surface` surface (8 tasks merged, spec in `work/specs/tasked/`).
 - **Launch-seam prior art (D1):** `~/dev/github/wighawag/dorfl`, specifically `packages/dorfl/src/harness.ts` (the `Harness` seam interface + the `HarnessAdapter = 'null' | 'pi'` split, where `null` is the GENERIC SHELL adapter that shells out to a configured `agentCmd` with `{model}` substitution and feeds the prompt on stdin) and `pi-harness.ts` (the pi-native adapter: `pi --print --session <full-path>`, session-file liveness). The eval harness's `AgentUnderTest` launch seam, generic-shell-adapter-as-v1, and pi-adapter-as-deferred-improvement mirror this directly. Note: dorfl's `null` adapter is a REAL agent launcher, not a stub, which is exactly why the shell adapter is our sufficient v1 capability subject.
 - **Read before tasking:** `work/specs/tasked/broaden-agent-verb-surface.md` (the surface that exists now + its ## Resolved decisions), `CONTEXT.md` (domain glossary + the work/ contract), `tasks/done/docs-tos-humility-and-kayak-smoke.md` (the non-CI live-smoke prior art), ADR-0005 (serve session), ADR-0002 (real-session / personal-use scope), ADR-0009 (opt-in SOCKS proxy).

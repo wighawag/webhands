@@ -63,7 +63,7 @@ frame-capable resolver (still no new addressing scheme).
 
 > Goal: prove the token-harvest captcha capability bar using ONLY webhands verbs —
 > an agent with its own (test-faked) 2captcha key gets past a same-origin captcha
-> by poking the page, no pre-built solver, no iamhuman. Deliverable from the prd
+> by poking the page, no pre-built solver, no iamhuman. Deliverable from the spec
 > `work/specs/tasked/broaden-agent-verb-surface.md` (User Stories 6, 7).
 >
 > READ FIRST: `work/notes/findings/click-and-type-already-frame-scoped-via-framelocator.md`

@@ -12,7 +12,7 @@ A thin end-to-end capability: an agent can type a credential as an `{ENV:NAME}`
 placeholder and webhands substitutes the real value from its OWN process env at
 type-time, so the literal secret never appears in the tool-call (nor, later, in
 the session verb trace or an emitted hand scaffold). This is the FOUNDATION task
-the rest of the `distill` prd is `blockedBy`.
+the rest of the `distill` spec is `blockedBy`.
 
 Three parts ship together (they are one capability, useless apart):
 
@@ -81,14 +81,14 @@ placeholder works identically.
 ## Blocked by
 
 - None. Can start immediately. (Every other task in the `distill-session-into-hand`
-  prd is `blockedBy` THIS task.)
+  spec is `blockedBy` THIS task.)
 
 ## Prompt
 
 > Build `{ENV:NAME}` placeholder substitution for webhands' value-bearing verbs
 > plus `.env` loading via the `ldenv` package, and advertise the capability to the
 > agent (verb description + `use-webhands` skill). This is the foundation the
-> `distill` prd (`work/specs/tasked/distill-session-into-hand.md`) depends on: it is
+> `distill` spec (`work/specs/tasked/distill-session-into-hand.md`) depends on: it is
 > what keeps a later session verb-trace and emitted hand scaffold free of literal
 > secrets.
 >

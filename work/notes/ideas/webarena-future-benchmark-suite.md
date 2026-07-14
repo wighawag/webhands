@@ -4,7 +4,7 @@ slug: webarena-future-benchmark-suite
 type: idea
 status: incubating
 created: 2026-06-29
-source: 'prd agent-capability-eval-harness (User Story 14 + ## Out of Scope: "WebArena full-benchmark integration ... Noted as a FUTURE self-hosted benchmark suite; out of initial scope") while building work/tasks/ready/eval-harness-docs-and-missing-verb-convention.md'
+source: 'spec agent-capability-eval-harness (User Story 14 + ## Out of Scope: "WebArena full-benchmark integration ... Noted as a FUTURE self-hosted benchmark suite; out of initial scope") while building work/tasks/ready/eval-harness-docs-and-missing-verb-convention.md'
 ---
 
 ## The ambition
@@ -20,7 +20,7 @@ comparable capability number rather than a few curated flows.
 
 ## Why it is OUT of v1 scope (recorded, not built)
 
-The prd puts it explicitly in `## Out of Scope` ("WebArena full-benchmark
+The spec puts it explicitly in `## Out of Scope` ("WebArena full-benchmark
 integration ... out of initial scope") so the ambition is captured without
 bloating v1. v1 is the harness spine + a small hand-curated catalogue + the docs
 and conventions; WebArena would be a separate, larger piece of work:
@@ -38,7 +38,7 @@ and conventions; WebArena would be a separate, larger piece of work:
 
 ## Next step when picked up
 
-A surface/eval PRD scoped to: self-host the WebArena instances, map a subset of
+A surface/eval spec scoped to: self-host the WebArena instances, map a subset of
 its tasks onto the existing eval contract, and decide the run cadence (its scale
 makes it even more clearly a scheduled scoreboard than a manual run). Until then
 this note keeps the ambition from evaporating.

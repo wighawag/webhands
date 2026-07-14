@@ -39,7 +39,7 @@ the manual Kayak smoke (owned by `docs-tos-humility-and-kayak-smoke`), not here.
 
 ## Prompt
 
-> Goal: implement the headed one-time-login `setup-profile` flow. Read the prd
+> Goal: implement the headed one-time-login `setup-profile` flow. Read the spec
 > `work/specs/ready/browser-controller-cli.md` (User Story 1; Solution —
 > setup-profile) and `CONTEXT.md` (`setup-profile`, `profile`, `launch`). ADR-0002
 > explains why the human does the one-time login and we never bypass login or

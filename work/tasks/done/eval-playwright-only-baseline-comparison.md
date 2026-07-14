@@ -7,7 +7,7 @@ covers: []
 
 ## What to build
 
-A second agent configuration for the eval harness that drives the SAME eval goals using **raw Playwright only, with NO webhands**, so a run can be compared against a **webhands** agent on the same goal. Combined with the token accounting (the blocking task), this turns "does webhands deliver?" (the prd `agent-capability-eval-harness` north star) into a measured scoreboard number: same goal, two toolkits, compare **token cost** + **pass-rate / milestones**. If the webhands agent reaches goals in materially fewer tokens and/or with a higher pass-rate, the verb surface is demonstrably earning its keep.
+A second agent configuration for the eval harness that drives the SAME eval goals using **raw Playwright only, with NO webhands**, so a run can be compared against a **webhands** agent on the same goal. Combined with the token accounting (the blocking task), this turns "does webhands deliver?" (the spec `agent-capability-eval-harness` north star) into a measured scoreboard number: same goal, two toolkits, compare **token cost** + **pass-rate / milestones**. If the webhands agent reaches goals in materially fewer tokens and/or with a higher pass-rate, the verb surface is demonstrably earning its keep.
 
 End-to-end vertical slice:
 
@@ -32,7 +32,7 @@ End-to-end vertical slice:
 
 ## Prompt
 
-> Goal: add a Playwright-ONLY agent configuration to the eval harness so the same goals can be driven with raw Playwright (no webhands) and compared against a webhands agent on tokens + pass-rate. This is the concrete "does webhands deliver?" measure from the prd `work/specs/tasked/agent-capability-eval-harness.md` (north star). It DEPENDS on `eval-token-accounting-for-webhands-vs-baseline` (the token number + standardised comparison fields).
+> Goal: add a Playwright-ONLY agent configuration to the eval harness so the same goals can be driven with raw Playwright (no webhands) and compared against a webhands agent on tokens + pass-rate. This is the concrete "does webhands deliver?" measure from the spec `work/specs/tasked/agent-capability-eval-harness.md` (north star). It DEPENDS on `eval-token-accounting-for-webhands-vs-baseline` (the token number + standardised comparison fields).
 >
 > READ FIRST: the eval-harness foundation (`evals/src/agent-under-test.ts` for the `AgentUnderTest` seam + the generic shell adapter; `evals/src/run-eval.ts`; `evals/src/bin/run-evals.ts`); the completed token-accounting task + its done record (the usage field + comparison fields live there); and `work/notes/observations/eval-end-state-assertion-needs-the-agent-to-leave-the-session-open.md` (the agent-toolkit-agnostic stance + why "leave the session open" is a per-adapter protocol preamble, not goal priming).
 >

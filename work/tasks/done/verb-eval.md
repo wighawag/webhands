@@ -35,7 +35,7 @@ an expression against fixture-page state returns the expected serialized value).
 
 ## Prompt
 
-> Goal: implement the `eval` verb. Read the prd
+> Goal: implement the `eval` verb. Read the spec
 > `work/specs/ready/browser-controller-cli.md` (User Story 9) and `CONTEXT.md`
 > (`verb`). The verb lives in `core` behind the transport seam (ADR-0003) — keep
 > CDP/Playwright types out of the public surface. `eval` is the escape hatch and

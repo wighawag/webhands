@@ -63,7 +63,7 @@ harness's internals.
   provider-specific). The seam normalizes only enough for a consumer to find the
   relevant slice; it does not promise a universal transcript schema.
 
-## Design sketch (to be pinned in a PRD, not here)
+## Design sketch (to be pinned in a spec, not here)
 
 - A small NORMALIZED descriptor a supporting harness can surface: e.g. session
   file path + format tag (+ optionally a way to request just the current
@@ -112,4 +112,4 @@ richest input is the agent's conversation, but reading it is harness-specific, s
 "session awareness in the harness seam" is its own (more speculative) idea rather
 than a coupling baked into `distill`. Kept separate so `distill` can ship on the
 portable verb-trace/`--summary`/`--session-file` path while this seam incubates.
-Nothing built; pre-PRD.
+Nothing built; pre-spec.

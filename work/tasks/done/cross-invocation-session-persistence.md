@@ -11,7 +11,7 @@ covers: []
 The mechanism that keeps a single browser session alive ACROSS separate CLI
 invocations, so an agent can run `launch`, then later `goto`, then `snapshot`,
 then `click` as distinct commands and have them all act on the SAME live page.
-This is the enabling INFRASTRUCTURE (seeded by the prd's "session/daemon question"
+This is the enabling INFRASTRUCTURE (seeded by the spec's "session/daemon question"
 paragraph) that makes the per-verb and launch user stories usable end-to-end from
 a CLI; it does not deliver the verb or launch surface itself (those are owned by
 the verb and launch tasks) — hence `covers: []`.
@@ -57,7 +57,7 @@ the second reuses the first's live session).
 ## Prompt
 
 > Goal: implement cross-invocation session persistence — keep one browser alive
-> between separate `webhands <verb>` CLI processes. Read the prd
+> between separate `webhands <verb>` CLI processes. Read the spec
 > `work/specs/ready/browser-controller-cli.md` (Implementation Decisions — the
 > "session/daemon question" paragraph; User Stories 3 and 6 give the motivating
 > launch→goto→snapshot chain this enables) and ADR-0001 (the CONTROLLER owns the

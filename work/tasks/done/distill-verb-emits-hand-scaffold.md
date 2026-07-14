@@ -10,7 +10,7 @@ covers: [1, 2, 3, 4, 6, 10, 11, 12]
 
 The `distill` verb: reduce the just-driven session into a reusable HAND SCAFFOLD
 plus a human-readable NOTES markdown, so a flow the agent explored once becomes a
-one-call verb after a human adopts it. This is the authoring half of the prd;
+one-call verb after a human adopts it. This is the authoring half of the spec;
 validation (running the scaffold via `script`) is a SEPARATE task.
 
 Behaviour (thin end-to-end path):
@@ -42,7 +42,7 @@ Behaviour (thin end-to-end path):
 NEVER `import()`s the module. It EMITS and (next task) TESTS only; ADOPTING a hand
 (naming it in `hands.json`) stays the human's explicit, operator-scoped trust act
 (ADR-0007: loading a hand == trusting an in-process npm dependency). Auto-loading
-is exactly the arbitrary-in-process-code hazard this prd refuses.
+is exactly the arbitrary-in-process-code hazard this spec refuses.
 
 ## Acceptance criteria
 
@@ -81,7 +81,7 @@ is exactly the arbitrary-in-process-code hazard this prd refuses.
 > Build the `distill` verb: reduce a just-driven webhands session into a reusable
 > HAND scaffold (frozen ADR-0007 `Hand` shape) plus a human-readable notes
 > markdown, from the in-memory session verb trace, optionally enriched by
-> `--summary` / `--session-file`. It EMITS and does NOT load. See the prd
+> `--summary` / `--session-file`. It EMITS and does NOT load. See the spec
 > `work/specs/tasked/distill-session-into-hand.md`.
 >
 > FIRST, check against reality (launch snapshot, may have DRIFTED): confirm the

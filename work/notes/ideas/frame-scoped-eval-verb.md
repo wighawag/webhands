@@ -53,7 +53,7 @@ this idea is ONLY about the AGENT seam (the over-the-wire verb vocabulary), not
 about hands. A capability author who needs frames writes a hand; this verb is for
 the agent that only speaks verbs.
 
-## Design sketch (to be pinned in a PRD, not here)
+## Design sketch (to be pinned in a spec, not here)
 
 - `eval({expression, frame?})`: `frame` is a transport-neutral STRING (a CSS
   selector for the iframe element, or a frame name/url fragment) — never a
@@ -99,4 +99,4 @@ target (DVSA): the agent-facing `eval` could not read the same-origin `#main-ifr
 the captcha lives in. The iamhuman DRIVER does not need this (it has `pwPage`); only
 the agent seam does. Pairs with `agent-provided-hand-via-cli-arg` (the richer,
 higher-trust answer to `eval`'s limits) as the small same-origin-only counterpart.
-Nothing built; pre-PRD.
+Nothing built; pre-spec.

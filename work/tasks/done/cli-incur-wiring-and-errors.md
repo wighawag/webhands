@@ -13,7 +13,7 @@ The `cli` package: wrap `core` with `incur`
 verb plus `setup-profile` / `launch` / `attach`, each with a zod `args`/`options`/
 `output` schema. Because it is built on `incur`, the same binary is also an MCP
 server (`--mcp` / `mcp add`) and emits a skills / `--llms` manifest with NO
-bespoke MCP code (see prd). Add `cta` (call-to-action) hints suggesting likely next
+bespoke MCP code (see spec). Add `cta` (call-to-action) hints suggesting likely next
 verbs after each run (e.g. navigate → snapshot → click), and **clear, actionable
 errors**: when a browser binary is missing or a profile is not set up, the message
 names the EXACT command to fix it.
@@ -41,7 +41,7 @@ missing-binary / missing-profile errors carry the fix command.
 
 ## Prompt
 
-> Goal: build the `cli` package that wraps `core` with `incur`. Read the prd
+> Goal: build the `cli` package that wraps `core` with `incur`. Read the spec
 > `work/specs/ready/browser-controller-cli.md` (User Stories 12, 13, 14, 17;
 > Implementation Decisions — `cli`; Testing Decisions — CLI tests assert incur
 > wiring) and `CONTEXT.md` (`incur`, `verb`). The incur API is

@@ -46,8 +46,8 @@ The code is split: **`packages/core`** holds the browser-control logic behind a 
 
 ### Autonomy notes (the two gate axes)
 
-- **`humanOnly`:** NOT set on this prd. Tasking can be agent-driven once the open questions are resolved. (Individual tasks that touch login/credentials or destructive profile handling may carry their own `humanOnly`, decided by the tasker per task — this prd flag does not pre-set them.)
-- **`needsAnswers`: resolved.** The five questions that shaped task boundaries are settled: (1) browser-binary install is a separate manual step with a clear missing-binary error; (2) Chromium-complete in v1, Firefox `launch` deferred and `attach` Chromium-only; (3) `snapshot` defaults to accessibility-tree + visible-text with `--full` for raw DOM; (4) `click`/`type` take a **raw Playwright locator string** (see `docs/adr/0004`); (5) `attach` requires the user to start their browser with `--remote-debugging-port` themselves (no relaunch helper). The prd is now auto-taskable.
+- **`humanOnly`:** NOT set on this spec. Tasking can be agent-driven once the open questions are resolved. (Individual tasks that touch login/credentials or destructive profile handling may carry their own `humanOnly`, decided by the tasker per task — this spec flag does not pre-set them.)
+- **`needsAnswers`: resolved.** The five questions that shaped task boundaries are settled: (1) browser-binary install is a separate manual step with a clear missing-binary error; (2) Chromium-complete in v1, Firefox `launch` deferred and `attach` Chromium-only; (3) `snapshot` defaults to accessibility-tree + visible-text with `--full` for raw DOM; (4) `click`/`type` take a **raw Playwright locator string** (see `docs/adr/0004`); (5) `attach` requires the user to start their browser with `--remote-debugging-port` themselves (no relaunch helper). The spec is now auto-taskable.
 
 ## Implementation Decisions
 

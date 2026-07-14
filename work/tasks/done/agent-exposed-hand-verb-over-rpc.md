@@ -14,7 +14,7 @@ ever holding a live page handle. The agent invokes it like any other verb; the
 served process runs the hand against its own live page internally and returns a
 SERIALIZABLE result.
 
-The serialization boundary is the load-bearing rule (prd's resolved Q3): a live
+The serialization boundary is the load-bearing rule (spec's resolved Q3): a live
 Playwright object (`Page`, `Locator`, `ElementHandle`, `BrowserContext`) may
 flow ONLY within a single in-process call chain (Model A). The moment a value is
 returned to an AGENT-EXPOSED verb (it crosses the RPC), it MUST be serializable
@@ -62,7 +62,7 @@ faithfully on the client (as `eval` already does).
 ## Prompt
 
 > Goal: surface a hand-contributed verb to the agent over the long-lived session
-> RPC (Model B of the "hands" prd,
+> RPC (Model B of the "hands" spec,
 > `work/specs/tasked/hands-pluggable-page-capabilities.md`), enforcing the
 > serializable-only boundary. The agent gains a new tool and never holds a live
 > page.
@@ -77,7 +77,7 @@ faithfully on the client (as `eval` already does).
 > is loaded and how it contributes a verb. If any of that landed differently,
 > route to needs-attention rather than guessing.
 >
-> The rule (prd's resolved Q3): live Playwright objects flow ONLY within a single
+> The rule (spec's resolved Q3): live Playwright objects flow ONLY within a single
 > in-process call chain (Model A); anything returned to an agent-exposed verb
 > crosses the RPC and MUST be serializable under `eval`'s structured-clone
 > contract. Do NOT add a blanket runtime clone of every result (it would corrupt

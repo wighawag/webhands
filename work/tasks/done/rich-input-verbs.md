@@ -70,7 +70,7 @@ the established style so a future `frame?` field is additive (R1).
 
 > Goal: add the Tier-2 rich input verbs (`press`, `hover`, `select`, `scroll`,
 > `drag`) to webhands' agent verb surface, so a seam-only agent can drive a
-> browser game or a richer form. Deliverable from the prd
+> browser game or a richer form. Deliverable from the spec
 > `work/specs/tasked/broaden-agent-verb-surface.md` (User Stories 8-12; ## Resolved
 > decisions R5 for the CLI shape).
 >

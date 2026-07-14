@@ -50,7 +50,7 @@ in a test.
 ## Prompt
 
 > Goal: lay the monorepo foundation and the transport seam that the whole project
-> hangs off. Read the prd `work/specs/ready/browser-controller-cli.md` (Solution,
+> hangs off. Read the spec `work/specs/ready/browser-controller-cli.md` (Solution,
 > Implementation Decisions) and ADRs `0003` (seam not CDP-coupled) and `0004`
 > (verb surface exposes Playwright-equivalent locator semantics) before starting —
 > they are load-bearing for the interface shape. Read `CONTEXT.md` for the domain
@@ -63,7 +63,7 @@ in a test.
 >
 > Domain vocabulary: `core` = browser-control logic + the seam; `cli` = the
 > `incur` wrapper (built in a later task). The `Driver`/`Transport` interface is
-> the HIGHEST TEST SEAM (prd Testing Decisions) and the internal structure
+> the HIGHEST TEST SEAM (spec Testing Decisions) and the internal structure
 > boundary — define it in verbs, keep CDP/Playwright types out of its public
 > surface, and address elements with a raw Playwright locator string.
 >

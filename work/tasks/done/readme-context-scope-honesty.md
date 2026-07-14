@@ -11,7 +11,7 @@ covers: [15, 16]
 Update the project's scope/positioning prose (README.md, CONTEXT.md, and the
 bundled `use-webhands` skill where it echoes the scope claim) to be HONEST about
 the broadened surface, WITHOUT overclaiming. The current docs say "this tool does
-NOT bypass authentication or solve CAPTCHAs". After this prd, that statement needs
+NOT bypass authentication or solve CAPTCHAs". After this spec, that statement needs
 a precise refinement:
 
 - webhands still ships NO solver and NO provider key, and still does the one-time
@@ -59,7 +59,7 @@ proofs.
 > Goal: update webhands' scope/positioning prose to be honest about the broadened
 > verb surface — "we do not solve captchas (no solver, no key shipped), but the
 > surface no longer stands in the way of a capable agent that brings its own key"
-> — while reaffirming hands as the simpler path. Deliverable from the prd
+> — while reaffirming hands as the simpler path. Deliverable from the spec
 > `work/specs/tasked/broaden-agent-verb-surface.md` (User Stories 15, 16).
 >
 > CHECK REALITY FIRST: both captcha-proof tasks

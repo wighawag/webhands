@@ -7,7 +7,7 @@ covers: []
 
 ## What to build
 
-Make the eval harness record and report **how many tokens the agent-under-test burned** to reach (or fail) the goal, so a run's result carries a COST alongside its pass/fail/milestones. The motivating use is comparison: run the same goal with a **webhands** agent vs. a **Playwright-only** agent (no webhands) and compare tokens + pass-rate. If the webhands agent reaches the goal in far fewer tokens, the verb surface is earning its keep; that is the concrete answer to "does webhands deliver?" (the prd `agent-capability-eval-harness` north star). This task builds ONLY the token accounting + reporting; the Playwright-only baseline configuration is a separate follow-on (captured as an idea) that DEPENDS on this.
+Make the eval harness record and report **how many tokens the agent-under-test burned** to reach (or fail) the goal, so a run's result carries a COST alongside its pass/fail/milestones. The motivating use is comparison: run the same goal with a **webhands** agent vs. a **Playwright-only** agent (no webhands) and compare tokens + pass-rate. If the webhands agent reaches the goal in far fewer tokens, the verb surface is earning its keep; that is the concrete answer to "does webhands deliver?" (the spec `agent-capability-eval-harness` north star). This task builds ONLY the token accounting + reporting; the Playwright-only baseline configuration is a separate follow-on (captured as an idea) that DEPENDS on this.
 
 End-to-end vertical slice:
 
@@ -36,7 +36,7 @@ This stays NON-GATING and lives entirely under `evals/` (outside `packages/*`), 
 
 ## Prompt
 
-> Goal: add agent TOKEN-USAGE accounting to the eval harness output, so each run reports how many tokens the agent burned alongside its pass/fail/milestones. The motivating use is the "does webhands deliver?" comparison: the same goal run by a webhands agent vs. a Playwright-only agent, compared on tokens + pass-rate (the prd `work/specs/tasked/agent-capability-eval-harness.md` north star). Build ONLY the token accounting + reporting here; the Playwright-only baseline configuration is a separate follow-on that depends on this.
+> Goal: add agent TOKEN-USAGE accounting to the eval harness output, so each run reports how many tokens the agent burned alongside its pass/fail/milestones. The motivating use is the "does webhands deliver?" comparison: the same goal run by a webhands agent vs. a Playwright-only agent, compared on tokens + pass-rate (the spec `work/specs/tasked/agent-capability-eval-harness.md` north star). Build ONLY the token accounting + reporting here; the Playwright-only baseline configuration is a separate follow-on that depends on this.
 >
 > READ FIRST: the eval-harness foundation (`evals/src/agent-under-test.ts` for the `AgentUnderTest` seam + `LaunchResult`; `evals/src/run-eval.ts` for `EvalRunResult`; `evals/src/bin/run-evals.ts` for the result line) and `work/notes/observations/eval-end-state-assertion-needs-the-agent-to-leave-the-session-open.md` (the agent-toolkit-agnostic stance: the harness must treat webhands and Playwright-only agents identically). For pi's usage shape, note that `pi --mode json` emits NDJSON events carrying a `usage` object (`input`/`output`/`cacheRead`/`cacheWrite`/`totalTokens`/`cost`) per message (confirmed live 2026-06-29); the generic shell adapter MAY sum those when driving pi, but must NOT hard-depend on any agent's output shape.
 >

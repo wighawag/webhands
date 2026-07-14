@@ -73,7 +73,7 @@ public-API decision the Phase-1 internal ADR explicitly left to Phase 2).
 
 > Goal: open the Phase-1 internal hand-host to THIRD-PARTY hands by making the
 > `Hand`/`HandContext` contract public and adding an explicit, declarative,
-> pi-style loading mechanism. This is Phase 2 of the "hands" prd
+> pi-style loading mechanism. This is Phase 2 of the "hands" spec
 > (`work/specs/tasked/hands-pluggable-page-capabilities.md`).
 >
 > FIRST, check against reality: read the landed
@@ -97,7 +97,7 @@ public-API decision the Phase-1 internal ADR explicitly left to Phase 2).
 > local/trusted page-access surface) — the whole security framing below IS
 > story 9.
 >
-> Security framing (prd's resolved Q5): a hand is arbitrary Node code in the
+> Security framing (spec's resolved Q5): a hand is arbitrary Node code in the
 > webhands process — a strictly larger surface than `eval` (which is sandboxed
 > to the page's JS world). The right mental model is npm supply-chain trust:
 > loading a hand == trusting an in-process npm dependency. The trust boundary

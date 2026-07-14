@@ -8,7 +8,7 @@ source: 'live spike 2026-06-28 (/tmp/frame-spike/spike.mjs) — real Playwright 
 
 ## What this settles
 
-The PRD-investigation question "what is the BEST way to express frame scoping
+The spec-investigation question "what is the BEST way to express frame scoping
 across the verbs, and how big is the gap?" (the `frame-scoped-eval-verb` idea +
 the captcha capability bar). It was run as a live spike rather than reasoned,
 because the existing `resolveLocator` evaluates a locator EXPRESSION with
@@ -49,7 +49,7 @@ The two read-shaped verbs cannot do it:
   a frame is cross-origin and is exactly the papercut the `frame-scoped-eval`
   idea named).
 
-## Consequence for the PRD (the captcha capability bar)
+## Consequence for the spec (the captcha capability bar)
 
 For the **token-harvest captcha family** (2captcha key; sitekey + token-sink both
 same-origin-reachable per the Imperva finding), the unaided-agent solve is:
@@ -77,13 +77,13 @@ security); the vision/tile-clicking family needs `frameLocator`-chained
 cross-origin traversal + coordinate mouse + screenshot, which are page-level
 Playwright ops available to a HAND (it holds `pwPage`) but not, today, on the
 agent seam. Whether to promote those to the seam (so even the vision family is
-verb-reachable) is a deliberate, separate PRD decision — and it strains the
+verb-reachable) is a deliberate, separate spec decision — and it strains the
 ADR-0003 "no Playwright types on the seam" line (coordinates/screenshots are not
 locator strings). The token-harvest family does NOT need any of it.
 
 ## Provenance
 
-Spike run 2026-06-28 while planning the "broaden the agent verb surface" PRD
+Spike run 2026-06-28 while planning the "broaden the agent verb surface" spec
 (self-solving captcha + web-game + shopping capability bar). Pairs with
 `playwright-cross-origin-frame-captcha-mechanics.md` (the cross-origin half) and
 the `frame-scoped-eval-verb` / `agent-provided-hand-via-cli-arg` ideas. The spike

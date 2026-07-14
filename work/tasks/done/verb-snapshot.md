@@ -21,7 +21,7 @@ The `snapshot` verb in `core`, behind the seam: return a **token-cheap, structur
 view** of the active page (accessibility tree + visible text) with **stable element
 refs** an agent can later address, so the agent understands the page and decides
 what to click WITHOUT parsing raw HTML. Defaults to the accessibility-tree +
-visible-text view; a `--full` option returns the raw DOM (a settled prd decision).
+visible-text view; a `--full` option returns the raw DOM (a settled spec decision).
 
 A thin vertical slice through the seam: `snapshot` runs against a real local
 browser driving the local fixture page and returns a structured result whose shape
@@ -44,7 +44,7 @@ unchanged page, `--full` returns raw DOM).
 
 ## Prompt
 
-> Goal: implement the `snapshot` verb. Read the prd
+> Goal: implement the `snapshot` verb. Read the spec
 > `work/specs/ready/browser-controller-cli.md` (User Story 7; Testing Decisions —
 > assert snapshot SHAPE, not real third-party DOM) and `CONTEXT.md` (`verb`,
 > `snapshot`). The verb lives in `core` behind the transport seam (ADR-0003) — keep
@@ -58,7 +58,7 @@ unchanged page, `--full` returns raw DOM).
 > assert on live third-party DOM (it rots).
 >
 > Default view = accessibility tree + visible text; `--full` = raw DOM (settled
-> prd decision).
+> spec decision).
 >
 > "Done" = `snapshot` returns the cheap structured view with stable refs by default
 > and raw DOM under `--full`, tested at the seam against the fixture page.

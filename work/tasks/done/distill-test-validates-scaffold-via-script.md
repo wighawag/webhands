@@ -32,7 +32,7 @@ through the EXISTING `script` verb (ADR-0012) and reports pass/fail LOUDLY.
 - [ ] A scaffold that throws / fails reports FAIL loudly with a typed, clear error
       (reusing `script`'s error path), never a silent pass.
 - [ ] `--test` writes NO `hands.json` and does NOT load/`import()` the module (the
-      prd's HARD INVARIANT still holds, assert it, as in the emit task).
+      spec's HARD INVARIANT still holds, assert it, as in the emit task).
 - [ ] Tests cover both the PASS and the FAIL path (mirror the repo's existing
       `script` + verb test style), driving against a served page / fixture flow.
 - [ ] **Shared/global write isolation:** any files the test emits go to a
@@ -48,7 +48,7 @@ through the EXISTING `script` verb (ADR-0012) and reports pass/fail LOUDLY.
 
 > Add `distill --test`: validate the hand scaffold `distill` just emitted by running
 > it against the LIVE page through the existing `script` verb (ADR-0012), reporting
-> pass/fail loudly. See the prd `work/specs/tasked/distill-session-into-hand.md`.
+> pass/fail loudly. See the spec `work/specs/tasked/distill-session-into-hand.md`.
 >
 > FIRST, check against reality (launch snapshot, may have DRIFTED): confirm the
 > `distill` emit task landed as assumed (in `work/tasks/done/`) and re-read how the

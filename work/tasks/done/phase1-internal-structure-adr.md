@@ -8,9 +8,9 @@ covers: []
 
 ## What to build
 
-The lightweight internal-structure ADR recording the Phase-1 decision (prd's
+The lightweight internal-structure ADR recording the Phase-1 decision (spec's
 resolved Q2 + Q4 + Q1 trust model), and the glossary pin of `hand` into
-`CONTEXT.md` (which the prd says happens ONLY when tasked).
+`CONTEXT.md` (which the spec says happens ONLY when tasked).
 
 Two deliverables:
 
@@ -54,12 +54,12 @@ Two deliverables:
 ## Prompt
 
 > Goal: write the lightweight internal-structure ADR for Phase 1 of the "hands"
-> prd, and pin the `hand` term into `CONTEXT.md`'s glossary. This is a
+> spec, and pin the `hand` term into `CONTEXT.md`'s glossary. This is a
 > docs/decision task, NOT code.
 >
 > FIRST, check against reality: read the landed
 > `hand-host-primitive-and-builtin-hands` work (the internal hand-host + built-in
-> hands) so the ADR describes what ACTUALLY shipped, not the prd's pre-build
+> hands) so the ADR describes what ACTUALLY shipped, not the spec's pre-build
 > intent. Read `work/specs/tasked/hands-pluggable-page-capabilities.md`
 > (Implementation Decisions), `docs/adr/0003-*` and `docs/adr/0004-*` (this ADR
 > REFINES them), and `work/protocol/ADR-FORMAT.md`.

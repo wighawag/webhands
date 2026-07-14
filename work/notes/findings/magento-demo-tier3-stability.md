@@ -25,7 +25,7 @@ a transient network blip and not anything the eval harness can fix.
 The domain is otherwise the well-known stable Luma/Adobe-Commerce demo store
 (self-described "demo store to test your test automation scripts. No orders will
 be fulfilled."), so the target choice is right; it is just **measurably flakier
-than the sandbox tiers** (Tier-1 SauceDemo, Tier-2 ParaBank), exactly as the prd
+than the sandbox tiers** (Tier-1 SauceDemo, Tier-2 ParaBank), exactly as the spec
 (User Story 8) and the task warned. It is Cloudflare-fronted, so on top of plain
 downtime it can also rate-limit / challenge automated traffic.
 

@@ -15,7 +15,7 @@ step later). This trace is the PORTABLE, ground-truth BACKBONE the `distill` ver
 (a later task) crystallizes into a hand scaffold, so it must be faithful to what
 drove the page, not a reconstruction.
 
-Scope decisions fixed by the prd:
+Scope decisions fixed by the spec:
 
 - **In-memory for the live session is the default.** The trace lives with the
   running `serve` session; `distill` reads it from the same session. Persisting the

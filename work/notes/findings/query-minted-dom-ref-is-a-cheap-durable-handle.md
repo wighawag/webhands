@@ -8,7 +8,7 @@ source: 'live spike 2026-06-28 (/tmp/frame-spike/ref-spike.mjs) — real Playwri
 
 ## What this settles
 
-The PRD `broaden-agent-verb-surface` open question on the ADDRESSING STORY:
+The spec `broaden-agent-verb-surface` open question on the ADDRESSING STORY:
 the plan was "(A) re-address by locator now, defer the durable-ref (B) addressing
 as a future additive." The user asked to SPIKE B first — "maybe it is not that
 hard." It is not hard. This finding records the mechanism so B can be specified
@@ -119,7 +119,7 @@ already forces. We deliberately do NOT persist refs across navigation.
 - **Frames.** A ref resolves within its frame; a frame-aware resolve falls out of
   R1's single frame-resolution helper (the ref id is unique page-wide).
 
-## Consequence for the PRD
+## Consequence for the spec
 
 (A) stays the FIRST deliverable (locator/`.nth()` addressing, already works), but
 (B) is now a KNOWN-CHEAP additive, not a hand-wave: a `ref` field on `query` rows
@@ -132,11 +132,11 @@ that fails LOUD-stale (never silent-wrong) on SPA reconciliation and full-page
 reloads. Recommend pulling B forward to a fast-follow task (T1b) that OPENS WITH A
 SPIKE against real React/Svelte re-renders to pick the minting mechanism — the
 cost is low and the safety gain (no silent wrong-element click) is high for
-exactly this PRD's hard targets.
+exactly this spec's hard targets.
 
 ## Provenance
 
-Spiked 2026-06-28 during PRD planning, at the user's request to verify B's
+Spiked 2026-06-28 during spec planning, at the user's request to verify B's
 difficulty before deferring it. Pairs with
 `click-and-type-already-frame-scoped-via-framelocator.md` (the frame spike). Spike
 script `/tmp/frame-spike/ref-spike.mjs` (throwaway; not committed).

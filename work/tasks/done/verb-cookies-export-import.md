@@ -40,7 +40,7 @@ re-import into a fresh context, and observe them restored.
 
 ## Prompt
 
-> Goal: implement the `cookies export` / `cookies import` verbs. Read the prd
+> Goal: implement the `cookies export` / `cookies import` verbs. Read the spec
 > `work/specs/ready/browser-controller-cli.md` (User Story 11) and `CONTEXT.md`
 > (`verb` — cookies export/import). The verb lives in `core` behind the transport
 > seam (ADR-0003) — keep CDP/Playwright types out of the public surface.

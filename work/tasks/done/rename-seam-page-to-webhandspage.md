@@ -149,7 +149,7 @@ the trust model are all byte-for-byte unchanged. Only the type's NAME differs.
 > identifier's name: the seam type `Page` → `WebHandsPage`.
 >
 > Where to look (find references by SEARCH, do not trust a hardcoded file list —
-> the prd's file list is slightly over-inclusive). Search `packages/core` for
+> the spec's file list is slightly over-inclusive). Search `packages/core` for
 > the identifier `Page` and the JSDoc token `{@link Page}` across both `src/` and
 > `test/`, and classify EACH hit:
 > - Imports `type Page` / `Page` FROM `./seam.js` (or from the package entry in
@@ -206,7 +206,7 @@ the trust model are all byte-for-byte unchanged. Only the type's NAME differs.
 > done record / PR description so a reviewer need not reverse-engineer it. An
 > un-recorded in-scope decision is a review FINDING, not a silent default.
 >
-> Out of scope (the prd rejected these as YAGNI — do NOT do them): any
+> Out of scope (the spec rejected these as YAGNI — do NOT do them): any
 > `HandContribution` redesign, a `{ page, hands }` namespace split, a
 > `defineHand` helper, a hand-override policy, or any verb/wire/trust-model
 > change. The ONLY defect being fixed is the type's NAME.

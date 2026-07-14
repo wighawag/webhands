@@ -17,10 +17,10 @@ The honesty-and-proof closer for v1:
 - A **manual smoke** script/doc running the whole pipe end-to-end against Kayak:
   `setup-profile` → `launch --headless` → `goto` a search → `snapshot` the results.
   It is LIVE and FLAKY by nature — explicitly NOT a CI gate, documented as a manual
-  proof of the end-to-end pipe (per prd Testing Decisions). Kayak is the smoke-test
+  proof of the end-to-end pipe (per spec Testing Decisions). Kayak is the smoke-test
   TARGET, not a hardcoded feature.
 - Capture the **deferred browser-extension transport** as a `work/notes/ideas/`
-  item (the prd's Out of Scope says to capture it once tasked) so the phase-2
+  item (the spec's Out of Scope says to capture it once tasked) so the phase-2
   stealth path is not lost.
 
 A thin vertical slice: the docs land, the manual smoke is runnable and documented
@@ -30,7 +30,7 @@ as non-CI, and the deferred-transport idea is captured.
 
 - [ ] A humility/ToS note is documented (README/docs): personal use, own session/machine/IP, against these sites' ToS, no login-bypass / CAPTCHA-solving (story 18, ADR-0002).
 - [ ] A manual Kayak smoke (setup-profile → launch headless → goto search → snapshot results) is runnable and DOCUMENTED AS NON-CI / manual (story 19) — it does not run in the `verify` gate and does not assert on live third-party DOM in automated tests.
-- [ ] The deferred browser-extension transport is captured as a `work/notes/ideas/` item (per prd Out of Scope).
+- [ ] The deferred browser-extension transport is captured as a `work/notes/ideas/` item (per spec Out of Scope).
 - [ ] No automated test added by this task depends on a live third-party site.
 - [ ] A changeset is added if shipped code/docs warrant it.
 - [ ] Tests cover any added behaviour (mirror the repo's existing test style); doc-only portions need no test.
@@ -43,7 +43,7 @@ as non-CI, and the deferred-transport idea is captured.
 
 > Goal: land the ToS humility docs, a manual (non-CI) Kayak smoke proving the
 > end-to-end pipe, and capture the deferred extension transport as an idea. Read the
-> prd `work/specs/ready/browser-controller-cli.md` (User Stories 18 and 19; Testing
+> spec `work/specs/ready/browser-controller-cli.md` (User Stories 18 and 19; Testing
 > Decisions — manual smoke is not a gate, avoid asserting on real third-party DOM;
 > Out of Scope — capture the extension transport once tasked) and ADR-0002 (real
 > session, personal use, never bypass login / solve CAPTCHAs). Read `CONTEXT.md`

@@ -89,7 +89,7 @@ The safe pipeline end to end:
 > explore -> `distill` (emit scaffold + notes, validate via `script`) -> human
 > reviews the file -> human names it in `hands.json` -> next run is one cheap call.
 
-## Design sketch (to be pinned in a PRD, not here)
+## Design sketch (to be pinned in a spec, not here)
 
 - `distill` inputs: the session VERB TRACE (from `serve`, the backbone), optional
   `--summary <text>`, optional `--session-file <path>`. Omitting the enrichments
@@ -100,7 +100,7 @@ The safe pipeline end to end:
   markdown (what the flow does, the steps, the selectors, the notable
   decisions/dead-ends) so a human can judge it fast.
 - `serve` keeps a per-session verb trace to make the backbone possible (scope: how
-  much to record - locators, args, results? - is a PRD question; a redaction pass
+  much to record - locators, args, results? - is a spec question; a redaction pass
   matters because traces may contain typed secrets).
 - Validation: `distill --test` (or a follow-up) runs the scaffold via `script`
   against the live page and reports pass/fail, so the emitted hand is tested.
@@ -125,7 +125,7 @@ The safe pipeline end to end:
 
 1. What exactly does the `serve` verb trace record, and how is it REDACTED? A
    trace of a login flow contains typed credentials; the distilled scaffold and
-   the notes markdown must not leak secrets. (Likely a PRD-level decision with an
+   the notes markdown must not leak secrets. (Likely a spec-level decision with an
    ADR for the redaction contract.)
 2. Is `distill` one verb with flags (`--summary`, `--session-file`, `--test`,
    `--out`) or a small family? Lean: one verb, flagged, mirroring `script`'s
@@ -152,4 +152,4 @@ discarded, yet it is exactly what a token-collapsing hand should encode - so a
 scaffold is the cheap authoring path. Pairs with
 `agent-provided-hand-via-cli-arg` (the loading/trust half) and
 `harness-seam-session-awareness` (the optional transcript-source half). Nothing
-built; pre-PRD.
+built; pre-spec.

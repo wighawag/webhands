@@ -122,6 +122,6 @@ hand, file-path-only, behind a default-off switch.
 ## Provenance
 
 Surfaced in conversation 2026-06-27 while reflecting on the just-landed hands
-work (ADR-0006/0007, the Phase-1/Phase-2 task chain). Pre-PRD; the natural next
-step is a small PRD that refines ADR-0007 with the `--hand` + `allowAgentHands`
+work (ADR-0006/0007, the Phase-1/Phase-2 task chain). Pre-spec; the natural next
+step is a small spec that refines ADR-0007 with the `--hand` + `allowAgentHands`
 gate. Nothing built.

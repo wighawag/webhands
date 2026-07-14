@@ -43,7 +43,7 @@ spike is the live-Imperva end-to-end (anti-bot detection + server-side token
 acceptance), NOT sitekey acquisition. The Imperva end-to-end proof is a named
 follow-up, not part of this task's done.
 
-The captcha LOGIC lives in iamhuman, not in this repo (prd Out of Scope); this
+The captcha LOGIC lives in iamhuman, not in this repo (spec Out of Scope); this
 task is the LOADING + WIRING + PROOF that a real third-party hand composes
 through the host and reaches the agent.
 
@@ -83,7 +83,7 @@ through the host and reaches the agent.
 
 > Goal: load iamhuman captcha-solving as the FIRST third-party hand and surface
 > its capability to the agent as a verb — the end-to-end Phase-2 proof of the
-> "hands" prd (`work/specs/tasked/hands-pluggable-page-capabilities.md`).
+> "hands" spec (`work/specs/tasked/hands-pluggable-page-capabilities.md`).
 >
 > Q6 IS PARTIALLY RESOLVED (this task is unblocked but scoped): read
 > `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md` FIRST,
@@ -121,7 +121,7 @@ through the host and reaches the agent.
 > `page.mouse.*`, `page.evaluate`, `page.click`, and for nested frames
 > `frameLocator`-chained traversal, all on the live `pwPage`); **Model B**
 > surfaces a hand's capability to the agent as a serializable verb over the RPC.
-> The captcha logic lives in iamhuman (prd Out of Scope) — this task is loading +
+> The captcha logic lives in iamhuman (spec Out of Scope) — this task is loading +
 > wiring + proof only, scoped to a standard direct hCaptcha embed.
 >
 > What "done" means: iamhuman loads as a third-party hand via the

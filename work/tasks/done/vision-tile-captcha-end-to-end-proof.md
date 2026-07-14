@@ -60,12 +60,12 @@ real captcha service). This proves the MECHANISM composes, not a solve rate.
 > agent SEES the cross-origin tile grid (element-clipped screenshot) and CLICKS it
 > at viewport coordinates (`mouse`), reading challenge state via the cross-origin
 > frame READ, two cross-origin frames deep, no iamhuman, no solver. Deliverable
-> from the prd `work/specs/tasked/broaden-agent-verb-surface.md` (User Story 17).
+> from the spec `work/specs/tasked/broaden-agent-verb-surface.md` (User Story 17).
 >
 > READ FIRST: `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md`
 > (the spike-verified mechanism: coordinate mouse + screenshot AND frameLocator-
 > chained read/click two cross-origin frames deep; the real Imperva frame tree) and
-> the prd's ## Resolved decisions R3.
+> the spec's ## Resolved decisions R3.
 >
 > CHECK REALITY: the `tier4-coordinate-screenshot-crossorigin-read` task must have
 > landed — this proof USES its `mouse`, `screenshot` (element-clipped + viewport),

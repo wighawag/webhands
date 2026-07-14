@@ -77,14 +77,14 @@ mechanism — exactly as the A-vs-B spike picked B
 
 > Goal: add an opt-in durable `ref` to the `query` verb so an agent can act on a
 > previously-read element even after the page mutates, fixing the index-drift
-> hazard. This is deliverable B of the prd
+> hazard. This is deliverable B of the spec
 > `work/specs/tasked/broaden-agent-verb-surface.md` (read ## Resolved decisions R4)
 > and the finding
 > `work/notes/findings/query-minted-dom-ref-is-a-cheap-durable-handle.md`.
 >
 > FIRST check against reality: the `query-and-state-verbs` task must have landed
 > (its `query` verb is what you extend). Confirm its options-object signature and
-> the single locator resolver are as the prd's R1 invariant requires; if it landed
+> the single locator resolver are as the spec's R1 invariant requires; if it landed
 > differently, route to needs-attention rather than building on a stale premise.
 >
 > START WITH A SPIKE (and record it as a `work/notes/findings/` note, matching the

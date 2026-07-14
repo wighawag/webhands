@@ -90,7 +90,7 @@ R1).
 
 > Goal: add the Tier-1 extraction + state verbs (`query`, `exists`, `count`,
 > `isVisible`, `getAttribute`) to webhands' agent verb surface, as the first
-> deliverable of the prd `work/specs/tasked/broaden-agent-verb-surface.md`
+> deliverable of the spec `work/specs/tasked/broaden-agent-verb-surface.md`
 > (read its ## Resolved decisions R1, R2, R5 and ## Testing Decisions).
 >
 > FIRST check this task against current reality (it is a launch snapshot): does
@@ -111,7 +111,7 @@ R1).
 > same-origin `frameLocator(...)` hops — see
 > `work/notes/findings/click-and-type-already-frame-scoped-via-framelocator.md`).
 >
-> Design (from the prd, R2): `query(locator, {attrs?, props?, pw?, limit?})`
+> Design (from the spec, R2): `query(locator, {attrs?, props?, pw?, limit?})`
 > returns one row per match carrying EXACTLY the requested fields. There is NO
 > curated DOM field list — `attrs` are DOM attributes (`getAttribute`), `props`
 > are live JS properties (`el[name]`; `text` = `props:['innerText']`), and `pw`

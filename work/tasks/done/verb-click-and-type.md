@@ -22,7 +22,7 @@ Elements are addressed by a **raw Playwright locator string** (e.g.
 `getByRole('button', { name: 'Search' })`) which the active transport resolves —
 NOT a reduced selector subset and NOT a structured JSON locator (see
 `docs/adr/0004`). Handle hidden custom inputs where a normal click would time out
-by dispatching a click (an escape path the prd calls out explicitly).
+by dispatching a click (an escape path the spec calls out explicitly).
 
 A thin vertical slice through the seam: each verb runs against a real local
 browser driving the local fixture page and its effect is asserted — `click`
@@ -46,7 +46,7 @@ fills the addressed input.
 ## Prompt
 
 > Goal: implement the `click` and `type` verbs with raw-Playwright-locator
-> addressing. Read the prd `work/specs/ready/browser-controller-cli.md`
+> addressing. Read the spec `work/specs/ready/browser-controller-cli.md`
 > (User Story 8) and ADR `0004` (the verb surface exposes Playwright-equivalent
 > locator semantics — raw locator STRING, the chosen option; structured/CSS-subset
 > were rejected) plus ADR `0003` (no CDP/Chromium-only types in the public seam).
@@ -54,7 +54,7 @@ fills the addressed input.
 >
 > Depends on `playwright-launch-transport-and-profile`: drive a REAL local browser
 > against the LOCAL FIXTURE PAGE. Include a fixture with a HIDDEN custom input to
-> exercise the dispatch-click path (a normal click times out; the prd calls this
+> exercise the dispatch-click path (a normal click times out; the spec calls this
 > out). Assert effects against the controlled fixture, not third-party DOM.
 >
 > KEY: the locator is a raw Playwright expression the controller resolves (sibling

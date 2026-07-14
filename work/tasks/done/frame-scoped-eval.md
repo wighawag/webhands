@@ -62,7 +62,7 @@ evaluates in.
 
 > Goal: add an optional same-origin `frame` qualifier to the `eval` verb so an
 > agent can RUN logic inside a named same-origin child frame (e.g. fire a captcha
-> callback), the only `frame?` qualifier on the surface. Deliverable from the prd
+> callback), the only `frame?` qualifier on the surface. Deliverable from the spec
 > `work/specs/tasked/broaden-agent-verb-surface.md` (User Story 13; ## Resolved
 > decisions R1) and the idea `work/notes/ideas/frame-scoped-eval-verb.md`.
 >

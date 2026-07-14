@@ -16,7 +16,7 @@ source: 'two live Playwright spikes captured 2026-06-27 (real headless Chromium,
 
 ## What this addresses
 
-The "hands" prd's deferred **Q6 spike** (the `needsAnswers` that was on the
+The "hands" spec's deferred **Q6 spike** (the `needsAnswers` that was on the
 `iamhuman-captcha-hand-first-thirdparty` task): *does Playwright reach + operate
 nested cross-origin frames (a WAF iframe containing a captcha iframe) via
 `frameLocator(...).frameLocator(...)` + coordinate clicks + screenshot?*

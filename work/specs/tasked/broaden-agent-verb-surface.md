@@ -224,7 +224,7 @@ difficulty:
   shows the one missing piece for the realistic same-origin case is a frame-aware
   READ.
 
-This PRD does not abandon the hand tier. Third-party HANDS (like iamhuman, or a
+This spec does not abandon the hand tier. Third-party HANDS (like iamhuman, or a
 future "buy-on-amazon" hand) remain the SIMPLER path: an agent can be dumb and a
 hand makes the hard thing one call. The verb surface is the floor that makes the
 unaided path POSSIBLE; hands are the ramp that makes it EASY. We want both.
@@ -342,7 +342,7 @@ already works. Tier 4 is what the vision/tile family additionally needs.
 
 - **A built-in captcha solver or any provider key in webhands.** webhands ships
   neither. The agent brings its own 2captcha key and its own logic, or uses a
-  third-party hand (iamhuman). This PRD only makes the verb surface CAPABLE.
+  third-party hand (iamhuman). This spec only makes the verb surface CAPABLE.
 - **OS-level / screen input injection.** The coordinate `mouse` verb is
   VIEWPORT-relative (Playwright `page.mouse`), never OS desktop coordinates; we
   do not inject OS-level input. (The vision/tile cross-origin family IS in scope
@@ -353,7 +353,7 @@ already works. Tier 4 is what the vision/tile family additionally needs.
 - **The `--hand` / `allowAgentHands` runtime-hand path** — a different trust tier,
   captured separately in `work/notes/ideas/agent-provided-hand-via-cli-arg.md`.
 - **A buy-on-amazon (or any task-specific) hand.** Mentioned as the "make it easy"
-  counterpart, but building one is its own work, not this surface PRD.
+  counterpart, but building one is its own work, not this surface spec.
 
 ## Further Notes
 
@@ -366,7 +366,7 @@ already works. Tier 4 is what the vision/tile family additionally needs.
   PATH instead of bytes; viewport CSS-pixel numbers instead of an image/Locator
   type). Extension transport is explicitly no longer a driving constraint; the
   priority is agent-digestible types.
-- This PRD SUPERSEDES the two standalone ideas it absorbs by collapsing them:
+- This spec SUPERSEDES the two standalone ideas it absorbs by collapsing them:
   `frame-scoped-eval-verb` (becomes Tier 3 + informs the frame-aware `query`) and
   the Tier-1 `query` need are the same "address + read" requirement; keep the idea
   notes as provenance but task from here.

@@ -6,7 +6,7 @@
 
 Live run: `pnpm --filter @webhands/evals run-eval --eval saucedemo-core-flow --headed --agent-cmd "pi --mode json --tools bash,read"` against the REAL https://www.saucedemo.com/ (verified HTTP 200, NOT down). The unaided agent (pi) drove the whole flow correctly and reached `checkout-complete.html` showing "Thank you for your order!". Then, being a tidy agent, it ran `webhands stop` ("Browser session torn down cleanly").
 
-The harness then ran its OWN independent end-state assertion (prd property 2: the harness checks via read verbs, never the agent's self-report). But the session was gone, so the harness's precheck `goto https://www.saucedemo.com/` failed ("entry URL unreachable"), and the run scored **INCONCLUSIVE (milestones 0/4)** even though the agent had SUCCEEDED.
+The harness then ran its OWN independent end-state assertion (spec property 2: the harness checks via read verbs, never the agent's self-report). But the session was gone, so the harness's precheck `goto https://www.saucedemo.com/` failed ("entry URL unreachable"), and the run scored **INCONCLUSIVE (milestones 0/4)** even though the agent had SUCCEEDED.
 
 Root cause: the harness's verdict has an UNSTATED assumption that, when the agent reports done, it has LEFT the session alive AND on (or reachable from) the final state. Two ways an agent breaks that:
 

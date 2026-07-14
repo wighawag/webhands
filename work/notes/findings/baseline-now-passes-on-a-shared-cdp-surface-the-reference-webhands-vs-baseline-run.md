@@ -40,7 +40,7 @@ reflect the two interaction SHAPES, not a clean capability gap:
 
 So on saucedemo-core-flow the chatty-verbs vs write-a-script-once shape makes the
 Playwright-only leg cheaper in raw tokens here, while BOTH reach the goal. That is
-itself the interesting axis the prd north star wanted measurable; it is now a fair
+itself the interesting axis the spec north star wanted measurable; it is now a fair
 comparison because the verdict is trustworthy (both PASS the SAME assertion on the
 SAME page). Single-task, single-run: treat as the reference point, not a verdict on
 webhands across tasks.

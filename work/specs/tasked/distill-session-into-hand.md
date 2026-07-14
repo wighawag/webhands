@@ -4,7 +4,7 @@ slug: distill-session-into-hand
 humanOnly: true
 ---
 
-> Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked — they move into tasks/ADRs and this prd settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
+> Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked — they move into tasks/ADRs and this spec settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
 
 ## Resolved decisions (were open questions)
 
@@ -20,7 +20,7 @@ decision reshapes the solution rather than just answering it:
    values from its OWN process env at type-time. The agent types
    `type '#pass' '{ENV:PASSWORD}'`; webhands substitutes the real value; the
    tool-call, the verb trace, and the emitted scaffold all record only the
-   non-secret token `{ENV:PASSWORD}`. This is in-scope for THIS prd and is the
+   non-secret token `{ENV:PASSWORD}`. This is in-scope for THIS spec and is the
    FIRST task (every other task is `blockedBy` it), because it is what makes the
    trace safe to keep and the scaffold reusable.
 2. **Persistence is fine, BECAUSE of #1 (DECIDED).** The only real objection to
@@ -108,7 +108,7 @@ verb thereafter.
 - **`distill` NEVER loads the hand.** Adopting means the HUMAN names it in
   `hands.json` (ADR-0007: loading a hand == trusting an in-process npm dependency).
   `distill` emits and tests; the human reviews the file and adopts. Auto-loading is
-  the load-bearing thing this PRD refuses (it is the arbitrary-in-process-RCE
+  the load-bearing thing this spec refuses (it is the arbitrary-in-process-RCE
   hazard the `agent-provided-hand-via-cli-arg` idea guards).
 
 **The pipeline:** explore → `distill` (emit scaffold + notes, validate via
@@ -163,7 +163,7 @@ the verb-trace + the `{ENV:NAME}` substitution contract (see *Resolved decisions
 
 ### Autonomy notes
 
-- **`humanOnly: true` (DECIDED).** A human must drive the TASKING of this PRD. It
+- **`humanOnly: true` (DECIDED).** A human must drive the TASKING of this spec. It
   introduces a security-adjacent surface: a verb trace, an emitted-code path
   adjacent to the hand trust tier, and the `{ENV:NAME}` substitution. A human
   should own the decomposition, the task ordering (`{ENV:NAME}` first, everything
@@ -172,7 +172,7 @@ the verb-trace + the `{ENV:NAME}` substitution contract (see *Resolved decisions
 - **`needsAnswers` cleared (RESOLVED).** The two once-blocking questions (the
   credential/redaction contract and trace persistence) are DECIDED in *Resolved
   decisions* above: `{ENV:NAME}` substitution replaces redaction, and persistence
-  is safe because of it. The prd is tasking-ready.
+  is safe because of it. The spec is tasking-ready.
 
 ## Implementation Decisions
 
@@ -261,7 +261,7 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
   Cursor / pi / an MCP client stores a session is harness-specific; `distill` only
   accepts a `--session-file` PATH it is handed. Producing that path (optionally,
   gracefully) is the separate `work/notes/ideas/harness-seam-session-awareness.md`
-  idea, not this PRD.
+  idea, not this spec.
 - **Auto-loading / adopting the generated hand.** Naming a hand in `hands.json`
   stays a human, operator-scoped act (ADR-0007). `distill` emits + tests only. The
   operator-gated `--hand`/`allowAgentHands` runtime-loading path is the separate
@@ -275,7 +275,7 @@ Decided at launch (to seed tasking; trimmed into tasks/ADRs at `to-task`):
   the page and does NOT attempt to scrub them. Only the credential class gets the
   `{ENV:NAME}` placeholder (see *Resolved decisions*).
 - **A hand marketplace / distribution / portability format.** Out, exactly as the
-  parent hands PRD scoped it; `distill` authors a LOCAL scaffold for local adoption.
+  parent hands spec scoped it; `distill` authors a LOCAL scaffold for local adoption.
 
 ## Further Notes
 

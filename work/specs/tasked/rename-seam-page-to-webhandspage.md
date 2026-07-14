@@ -5,7 +5,7 @@ slug: rename-seam-page-to-webhandspage
 
 > Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/` tasks.
 >
-> Tasked — the implementation/testing detail now lives in the task `work/tasks/ready/rename-seam-page-to-webhandspage.md`; the durable WHY is recorded as an ADR at build time (story 10). This PRD has settled to its durable framing.
+> Tasked — the implementation/testing detail now lives in the task `work/tasks/ready/rename-seam-page-to-webhandspage.md`; the durable WHY is recorded as an ADR at build time (story 10). This spec has settled to its durable framing.
 
 ## Problem Statement
 
@@ -45,11 +45,11 @@ This is a BREAKING change to the exported type name, shipped as one major bump w
 
 ## Out of Scope
 
-- **Any `HandContribution` REDESIGN.** Separating third-party hand verbs into their own namespace (`{ page, hands }`), changing the `Partial<...>` shape, adding a `defineHand` helper, or a hand-override policy are all explicitly NOT done here. The conversation that spawned this PRD considered that redesign and REJECTED it as YAGNI: `Partial<Page>` is correct for built-in hands, and the third-party-verb runtime-cast path is already tested and working (`rpc-hand.mjs`). The ONLY defect being fixed is the type's NAME. If a real second hand later motivates a namespacing redesign, that is a fresh PRD.
+- **Any `HandContribution` REDESIGN.** Separating third-party hand verbs into their own namespace (`{ page, hands }`), changing the `Partial<...>` shape, adding a `defineHand` helper, or a hand-override policy are all explicitly NOT done here. The conversation that spawned this spec considered that redesign and REJECTED it as YAGNI: `Partial<Page>` is correct for built-in hands, and the third-party-verb runtime-cast path is already tested and working (`rpc-hand.mjs`). The ONLY defect being fixed is the type's NAME. If a real second hand later motivates a namespacing redesign, that is a fresh spec.
 - **No verb additions/removals, no wire-protocol change, no trust-model change.**
-- **iamhuman's hand adapter** is built in the iamhuman repo (PRD `imperva-page-read-sitekey-and-webhands-hand`), not here. This PRD only makes the type name its adapter's types will reference honest; it does not change a line of iamhuman code.
+- **iamhuman's hand adapter** is built in the iamhuman repo (spec `imperva-page-read-sitekey-and-webhands-hand`), not here. This spec only makes the type name its adapter's types will reference honest; it does not change a line of iamhuman code.
 
 ## Further Notes
 
-- Provenance: this PRD was spawned from the iamhuman-hand grilling session (2026-06-27). The collision was discovered when `HandContribution.verbs: Partial<Page>` was misread as Playwright's `Page`. The iamhuman cross-repo note `work/notes/observations/webhands-hand-contract-is-landed-and-cites-stale-imperva-finding.md` (in the iamhuman repo) records the read of this repo's landed hand contract.
-- Unrelated but noticed while grounding: the LANDED task `work/tasks/ready/iamhuman-captcha-hand-first-thirdparty.md` cites the STALE (pre-Update) iamhuman Imperva finding as rationale ("sitekey out-of-band on Imperva"). Its SCOPE (standard-direct-embed proof) is unaffected, but its stated reason is now corrected by the iamhuman finding's `## Update 2026-06-27` (the sitekey IS page-readable on Imperva via the same-origin `#main-iframe`). This is a separate, pre-existing item — NOT part of this rename PRD — flagged here only so a human can route a rationale fix to that task when it is next touched.
+- Provenance: this spec was spawned from the iamhuman-hand grilling session (2026-06-27). The collision was discovered when `HandContribution.verbs: Partial<Page>` was misread as Playwright's `Page`. The iamhuman cross-repo note `work/notes/observations/webhands-hand-contract-is-landed-and-cites-stale-imperva-finding.md` (in the iamhuman repo) records the read of this repo's landed hand contract.
+- Unrelated but noticed while grounding: the LANDED task `work/tasks/ready/iamhuman-captcha-hand-first-thirdparty.md` cites the STALE (pre-Update) iamhuman Imperva finding as rationale ("sitekey out-of-band on Imperva"). Its SCOPE (standard-direct-embed proof) is unaffected, but its stated reason is now corrected by the iamhuman finding's `## Update 2026-06-27` (the sitekey IS page-readable on Imperva via the same-origin `#main-iframe`). This is a separate, pre-existing item — NOT part of this rename spec — flagged here only so a human can route a rationale fix to that task when it is next touched.
