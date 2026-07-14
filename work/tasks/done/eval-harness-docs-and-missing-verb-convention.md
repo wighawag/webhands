@@ -1,7 +1,7 @@
 ---
 title: Eval-harness docs (non-gating/ToS/manual framing) + the missing-verb-as-finding convention
 slug: eval-harness-docs-and-missing-verb-convention
-prd: agent-capability-eval-harness
+spec: agent-capability-eval-harness
 blockedBy: [eval-harness-foundation]
 covers: [13, 14]
 ---
@@ -32,7 +32,7 @@ Docs-and-convention only: no harness behaviour change. The non-gating MECHANISM 
 
 ## Prompt
 
-> Goal: land the docs and conventions for the agent capability eval harness, per the prd `work/prds/tasked/agent-capability-eval-harness.md` (User Stories 13 and 14; ## Out of Scope; ## Further Notes). This is documentation + convention, NOT a behaviour change.
+> Goal: land the docs and conventions for the agent capability eval harness, per the prd `work/specs/tasked/agent-capability-eval-harness.md` (User Stories 13 and 14; ## Out of Scope; ## Further Notes). This is documentation + convention, NOT a behaviour change.
 >
 > READ FIRST: the prd (especially ## Out of Scope and ## Further Notes' north-star framing), `tasks/done/docs-tos-humility-and-kayak-smoke.md` (the existing non-CI "manual by nature" humility note to sit alongside), ADR-0002 (real-session / personal-use / ToS scope), and the completed `eval-harness-foundation` task + done record (for the runner command, the result shape, and the non-gating mechanism to document accurately).
 >

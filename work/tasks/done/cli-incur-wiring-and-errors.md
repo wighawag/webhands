@@ -1,7 +1,7 @@
 ---
 title: incur CLI wiring — verbs, structured output, cta, MCP/skills, clear errors
 slug: cli-incur-wiring-and-errors
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [scaffold-monorepo-and-driver-seam, playwright-launch-transport-and-profile, attach-transport-cdp-chromium, setup-profile-headed-login]
 covers: [12, 13, 14, 17]
 ---
@@ -42,7 +42,7 @@ missing-binary / missing-profile errors carry the fix command.
 ## Prompt
 
 > Goal: build the `cli` package that wraps `core` with `incur`. Read the prd
-> `work/prds/ready/browser-controller-cli.md` (User Stories 12, 13, 14, 17;
+> `work/specs/ready/browser-controller-cli.md` (User Stories 12, 13, 14, 17;
 > Implementation Decisions — `cli`; Testing Decisions — CLI tests assert incur
 > wiring) and `CONTEXT.md` (`incur`, `verb`). The incur API is
 > `Cli.create()/.command()/.serve()` with `mcp add`, `skills add`, `--llms`,

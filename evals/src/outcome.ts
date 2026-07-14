@@ -5,7 +5,7 @@ import {runPrecheck} from './precheck.js';
 import type {VerbClient} from './verb-client.js';
 
 /**
- * The THREE-state OUTCOME + bounded RETRY (prd property; user story 10).
+ * The THREE-state OUTCOME + bounded RETRY (spec property; user story 10).
  *
  * The verdict is never just pass/fail: an external site rots, rate-limits, and
  * goes down, so the harness distinguishes "the agent failed" (FAIL) from "the

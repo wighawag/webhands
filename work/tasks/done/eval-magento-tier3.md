@@ -1,7 +1,7 @@
 ---
 title: 'Tier-3 eval: messy-real DOM regression catcher (Magento demo)'
 slug: eval-magento-tier3
-prd: agent-capability-eval-harness
+spec: agent-capability-eval-harness
 blockedBy: [eval-harness-foundation]
 covers: [8]
 ---
@@ -30,7 +30,7 @@ Before committing Magento as a STANDING eval, assess its stability and rate-limi
 
 ## Prompt
 
-> Goal: ship a Tier-3 messy-real eval against the Magento demo (`magento.softwaretestingboard.com`) per the prd `work/prds/tasked/agent-capability-eval-harness.md` (User Story 8). Its purpose is to catch the "clean fixture passes, messy real DOM fails" regression that local fixtures cannot reveal. It plugs into the foundation task (`eval-harness-foundation`).
+> Goal: ship a Tier-3 messy-real eval against the Magento demo (`magento.softwaretestingboard.com`) per the prd `work/specs/tasked/agent-capability-eval-harness.md` (User Story 8). Its purpose is to catch the "clean fixture passes, messy real DOM fails" regression that local fixtures cannot reveal. It plugs into the foundation task (`eval-harness-foundation`).
 >
 > READ FIRST: the prd's User Story 8 and the completed `eval-harness-foundation` task + done record (the eval-entry contract, runner, shell adapter, read-verb assertion, milestone scoring, pass/fail/INCONCLUSIVE outcome). The Tier-3 target detail (Magento's messy production-like DOM as the regression catcher, and the stability/rate-limit caveat) is inlined in this task's ## What to build above; the prd's tiered-target assessment was trimmed into the tasks at tasking-time. Domain reminder: agent gets ONLY the goal-prompt + verb surface (no selectors, no steps), which matters MOST here because the DOM is messy; the HARNESS checks the END STATE via read verbs.
 >

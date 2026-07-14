@@ -15,7 +15,7 @@ import {
 import type {WebhandsCommand} from './verb-client.js';
 
 /**
- * The `AgentUnderTest` LAUNCH SEAM (prd D1; user stories 4, 16), modelled on
+ * The `AgentUnderTest` LAUNCH SEAM (spec D1; user stories 4, 16), modelled on
  * dorfl's `Harness` seam (`packages/dorfl/src/harness.ts`). It is the DURABLE
  * deliverable: hand it the goal-prompt + the verb-surface reference, it launches
  * a real unaided agent and returns when the agent reports done (or times out).
@@ -99,7 +99,7 @@ export interface LaunchResult {
 	/**
 	 * How the run ENDED, from the launcher's view only. This is NOT the verdict:
 	 * `reported-done` merely TRIGGERS the harness's own end-state assertion
-	 * (prd property 2). `timed-out` / `crashed` are signals the precheck + scorer
+	 * (spec property 2). `timed-out` / `crashed` are signals the precheck + scorer
 	 * fold into pass/fail/INCONCLUSIVE.
 	 */
 	readonly status: 'reported-done' | 'timed-out' | 'crashed';
@@ -126,7 +126,7 @@ export interface AgentUnderTest {
 }
 
 /**
- * The GENERIC SHELL/COMMAND adapter (prd D1 v1; dorfl `null`-adapter analogue).
+ * The GENERIC SHELL/COMMAND adapter (spec D1 v1; dorfl `null`-adapter analogue).
  * It shells out to a configured agent command with dorfl's `{model}`
  * substitution, feeds the agent the goal-prompt + the per-adapter PROTOCOL
  * preamble on STDIN ({@link buildAgentInput}, the no-priming enforcement point),

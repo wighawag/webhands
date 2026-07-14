@@ -2,7 +2,7 @@ import {loadEnv} from 'ldenv';
 
 /**
  * `.env` loading for the long-lived `serve` process (task
- * `env-placeholder-substitution-and-dotenv-loading`; prd
+ * `env-placeholder-substitution-and-dotenv-loading`; spec
  * `distill-session-into-hand`, resolved decision #1).
  *
  * The controller that OWNS the browser (ADR-0005: `serve` launches the ONE

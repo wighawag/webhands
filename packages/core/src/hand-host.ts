@@ -34,8 +34,8 @@ import {mkdir} from 'node:fs/promises';
 import {isAbsolute, join, relative, resolve as resolvePath} from 'node:path';
 
 /**
- * The hand-host primitive (Phase 1 of the "hands" prd,
- * `work/prds/tasked/hands-pluggable-page-capabilities.md`).
+ * The hand-host primitive (Phase 1 of the "hands" spec,
+ * `work/specs/tasked/hands-pluggable-page-capabilities.md`).
  *
  * A **hand** is in-process code that closes over the WebHandsPage and contributes named
  * verbs (+ an optional `dispose`). This module is the host: it builds the
@@ -51,13 +51,13 @@ import {isAbsolute, join, relative, resolve as resolvePath} from 'node:path';
  * duplicated `page` object literal in BOTH Playwright transports now lives here
  * once.
  *
- * INTERNAL-ONLY BOUNDARY (the prd's resolved Q2): this whole module is
+ * INTERNAL-ONLY BOUNDARY (the spec's resolved Q2): this whole module is
  * package-internal. {@link Hand}/{@link HandContext}/{@link composePage} are
  * NOT exported from the package entry point (`index.ts`) in Phase 1; they go
  * public in the separate Phase 2 task. The public seam (`seam.ts`) is
  * unchanged.
  *
- * NO-LEAK / CROSS-BROWSER (ADR-0003, refined by the prd): the host is built
+ * NO-LEAK / CROSS-BROWSER (ADR-0003, refined by the spec): the host is built
  * INSIDE the Playwright transport(s) and uses only the Playwright
  * `Page`/`BrowserContext` API — no CDP/Chromium-only types — so the live
  * `pwPage` stays in-process and never crosses the seam, and the host introduces
@@ -93,7 +93,7 @@ export interface HandContext {
 	readonly ensureOpen: () => void;
 	/**
 	 * The managed SCREENSHOTS directory the `screenshot` verb mints PNGs under
-	 * (Tier-4, prd `broaden-agent-verb-surface`, R3). Resolved by each transport
+	 * (Tier-4, spec `broaden-agent-verb-surface`, R3). Resolved by each transport
 	 * from its home root (`<homeRoot>/screenshots`, beside `profiles/`) via
 	 * {@link resolveScreenshotsDir}, so the same `root`/`WEBHANDS_HOME` override
 	 * that isolates profiles in a test isolates screenshots too. The verb creates
@@ -280,7 +280,7 @@ export const navigationHand: Hand = ({pwPage, ensureOpen}) => ({
 		async navigate(url: string): Promise<void> {
 			ensureOpen();
 			// "Settled" for `goto` = the `load` event: the document and its
-			// subresources have loaded (PRD story 6, "navigate ... and wait for it
+			// subresources have loaded (SPEC story 6, "navigate ... and wait for it
 			// to settle"). We deliberately do NOT wait for `networkidle`:
 			// Playwright discourages it, and it hangs forever on pages with
 			// long-poll / streaming / analytics beacons (exactly the logged-in apps
@@ -438,7 +438,7 @@ export const cookiesHand: Hand = ({context, ensureOpen}) => ({
 });
 
 /**
- * The Tier-1 read verbs (prd `broaden-agent-verb-surface`, R2): the `query`
+ * The Tier-1 read verbs (spec `broaden-agent-verb-surface`, R2): the `query`
  * extraction verb plus the thin state shorthands `count` / `exists` /
  * `isVisible` / `getAttribute`. All five address element(s) by the SAME raw
  * Playwright locator expression the other verbs use, resolved through the ONE
@@ -487,7 +487,7 @@ export const queryHand: Hand = ({pwPage, ensureOpen}) => ({
 });
 
 /**
- * The Tier-2 rich INPUT verbs (prd `broaden-agent-verb-surface`, stories 8-12):
+ * The Tier-2 rich INPUT verbs (spec `broaden-agent-verb-surface`, stories 8-12):
  * `press` / `hover` / `select` / `scroll` / `drag`. These lift page-level
  * Playwright actions a hand already has on `pwPage` (`keyboard.press`,
  * `hover`, `selectOption`, `mouse.wheel`/`scrollIntoViewIfNeeded`, `dragTo`) up
@@ -546,7 +546,7 @@ export const inputHand: Hand = ({pwPage, ensureOpen}) => ({
 });
 
 /**
- * The Tier-4 COORDINATE + SCREENSHOT hand (prd `broaden-agent-verb-surface`,
+ * The Tier-4 COORDINATE + SCREENSHOT hand (spec `broaden-agent-verb-surface`,
  * R3; stories 17-19): the `mouse` coordinate-input verb and the `screenshot`
  * path-returning verb, the look-then-click pair that lets a seam-only agent
  * handle the VISION/TILE captcha family and any visual task.
@@ -631,7 +631,7 @@ export function composeWithHands(
 // ---------------------------------------------------------------------------
 
 /**
- * Run the `wait` verb's three forms (PRD story 10) against a Playwright page.
+ * Run the `wait` verb's three forms (SPEC story 10) against a Playwright page.
  *
  * - `timeout` — pace by a fixed delay (`waitForTimeout`), so an agent can act
  *   like a human and let XHR-rendered content land.
@@ -673,8 +673,8 @@ export async function waitFor(
 }
 
 /**
- * Run the `eval` verb against a Playwright page (PRD story 9; frame scope from
- * prd `broaden-agent-verb-surface`, Tier-3), shared by both Playwright
+ * Run the `eval` verb against a Playwright page (SPEC story 9; frame scope from
+ * spec `broaden-agent-verb-surface`, Tier-3), shared by both Playwright
  * transports (via the built-in eval hand) so the verb behaves identically (no
  * parallel second implementation).
  *
@@ -785,7 +785,7 @@ export async function runScript(
 
 /**
  * Resolve a `frame` SELECTOR string to a live, SAME-ORIGIN Playwright
- * {@link Frame} for a frame-scoped `eval` (prd `broaden-agent-verb-surface`,
+ * {@link Frame} for a frame-scoped `eval` (spec `broaden-agent-verb-surface`,
  * Tier-3, R1). This is the SINGLE frame resolver: it reuses the very same
  * {@link resolveLocator} the locator-taking verbs use (a `frameLocator(...)`
  * over the selector), then walks the iframe element handle to its content
@@ -901,13 +901,13 @@ export function resolveLocator(page: Page, expression: string) {
 }
 
 /**
- * Run the `click` verb against a Playwright page (PRD story 8), shared by both
+ * Run the `click` verb against a Playwright page (SPEC story 8), shared by both
  * Playwright transports (via the built-in interaction hand) so the verb behaves
  * identically (mirrors {@link waitFor}; no parallel second implementation).
  *
  * First try a normal `Locator.click()`, which AUTO-WAITS for the element to be
  * visible and actionable — the right behaviour for a real button. A hidden
- * custom input (the case the prd calls out) NEVER becomes actionable, so that
+ * custom input (the case the spec calls out) NEVER becomes actionable, so that
  * click times out; on a Playwright `TimeoutError` we fall back to
  * `dispatchEvent('click')`, which fires a click WITHOUT the actionability
  * checks. The fallback is deliberately the documented Playwright escape (a
@@ -946,13 +946,13 @@ export async function clickLocator(
 			throw cause;
 		}
 		// The element never became actionable (e.g. a hidden custom input). Fire
-		// the click without actionability checks, the prd's explicit escape path.
+		// the click without actionability checks, the spec's explicit escape path.
 		await target.dispatchEvent('click', {timeout: NORMAL_CLICK_TIMEOUT_MS});
 	}
 }
 
 /**
- * Run the `query` verb (prd `broaden-agent-verb-surface`, R2) against a
+ * Run the `query` verb (spec `broaden-agent-verb-surface`, R2) against a
  * Playwright page: resolve the locator EXPRESSION through the SINGLE existing
  * {@link resolveLocator} (so a same-origin `frameLocator(...)` hop in the string
  * Just Works), then return ONE ROW PER MATCH carrying EXACTLY the requested
@@ -1259,7 +1259,7 @@ async function readRow(
 }
 
 /**
- * Run the `mouse` verb (prd `broaden-agent-verb-surface`, Tier-4, R3) against a
+ * Run the `mouse` verb (spec `broaden-agent-verb-surface`, Tier-4, R3) against a
  * Playwright page: drive `page.mouse` at the given VIEWPORT CSS-pixel
  * coordinate. Viewport-relative, NOT OS-level input — the same coordinate frame
  * a VIEWPORT `screenshot` is captured in, so a pixel an agent saw maps directly
@@ -1291,7 +1291,7 @@ export async function doMouse(page: Page, input: MouseInput): Promise<void> {
 }
 
 /**
- * Run the `screenshot` verb (prd `broaden-agent-verb-surface`, Tier-4, R3;
+ * Run the `screenshot` verb (spec `broaden-agent-verb-surface`, Tier-4, R3;
  * stories 17-19) against a Playwright page: capture the requested SCOPE to a PNG
  * FILE under the managed `screenshotsDir` and return `{path, width, height}` —
  * NEVER image bytes (the load-bearing ADR-0003-as-amended choice). Shared by

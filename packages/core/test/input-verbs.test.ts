@@ -13,10 +13,10 @@ import {
 
 /**
  * The Tier-2 rich INPUT verbs `press` / `hover` / `select` / `scroll` / `drag`
- * (prd `broaden-agent-verb-surface`, stories 8-12), exercised at the `core`
+ * (spec `broaden-agent-verb-surface`, stories 8-12), exercised at the `core`
  * Driver/Transport seam against a REAL local Playwright (Chromium) browser
  * driving the LOCAL FIXTURE PAGES (deterministic, never a third-party site
- * whose DOM rots), per the prd "Testing Decisions".
+ * whose DOM rots), per the spec "Testing Decisions".
  *
  * Elements are addressed by a RAW Playwright locator string (ADR-0004), passed
  * through `locator(...)` exactly as an agent would emit it. Each verb's EFFECT

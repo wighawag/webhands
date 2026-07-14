@@ -1,7 +1,7 @@
 import type {SessionRpcRequest} from './session-rpc.js';
 
 /**
- * The per-session VERB TRACE (task `serve-session-verb-trace`; prd
+ * The per-session VERB TRACE (task `serve-session-verb-trace`; spec
  * `distill-session-into-hand`, covers story 2 and the "Verb trace lives in
  * `serve`" implementation decision).
  *
@@ -13,7 +13,7 @@ import type {SessionRpcRequest} from './session-rpc.js';
  * a hand scaffold, so it must be faithful to what drove the page, not a
  * reconstruction.
  *
- * NO LITERAL SECRETS (the load-bearing guarantee, prd resolved decision #1). An
+ * NO LITERAL SECRETS (the load-bearing guarantee, spec resolved decision #1). An
  * entry records the {@link SessionRpcRequest} EXACTLY as it arrived over the
  * wire, BEFORE any `{ENV:NAME}` substitution. `{ENV:NAME}` resolution happens
  * later and IN-PROCESS, inside the `type` verb body (`hand-host.ts`), against
@@ -26,7 +26,7 @@ import type {SessionRpcRequest} from './session-rpc.js';
  * recorded AS-IS — they are unavoidable and already agent-readable by
  * definition, and this task adds no redaction pass over them.
  *
- * IN-MEMORY + PER-SESSION (the default, prd resolved decision #2). The trace
+ * IN-MEMORY + PER-SESSION (the default, spec resolved decision #2). The trace
  * lives with the running session and is read from the same session by `distill`
  * (an in-process accessor, {@link VerbTrace.entries}). Persisting it to the
  * profile dir (surviving `stop`) is an ADDITIVE, later opt-in and is NOT built

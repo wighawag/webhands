@@ -14,7 +14,7 @@ import {
 } from '../src/index.js';
 
 /**
- * The opt-in durable `query` `ref` (prd `broaden-agent-verb-surface`, R4; task
+ * The opt-in durable `query` `ref` (spec `broaden-agent-verb-surface`, R4; task
  * `query-durable-ref-handle`; mechanism settled by the finding
  * `query-ref-mint-mechanism-attribute-beats-weakmap`), exercised at the `core`
  * Driver/Transport seam against a REAL local Playwright (Chromium) browser

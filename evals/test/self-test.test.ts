@@ -19,7 +19,7 @@ import {
 import type {EvalEntry} from '../src/eval-contract.js';
 
 /**
- * The DETERMINISTIC SCRIPTED-RUN self-test (prd D3): the gate-testable-BY-NATURE
+ * The DETERMINISTIC SCRIPTED-RUN self-test (spec D3): the gate-testable-BY-NATURE
  * machinery proof. It exercises the harness's OWN logic (the serve lifecycle,
  * the read-verb end-state assertion, milestone scoring, the three-state
  * pass/fail/INCONCLUSIVE decision, the precheck, the no-priming guard) against a

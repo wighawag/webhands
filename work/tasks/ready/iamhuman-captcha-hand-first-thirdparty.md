@@ -1,7 +1,7 @@
 ---
 title: Load iamhuman captcha-solving as the first third-party hand (Phase 2 proof)
 slug: iamhuman-captcha-hand-first-thirdparty
-prd: hands-pluggable-page-capabilities
+spec: hands-pluggable-page-capabilities
 blockedBy: [third-party-hand-loading-and-public-api, agent-exposed-hand-verb-over-rpc]
 covers: [3, 4]
 ---
@@ -83,7 +83,7 @@ through the host and reaches the agent.
 
 > Goal: load iamhuman captcha-solving as the FIRST third-party hand and surface
 > its capability to the agent as a verb — the end-to-end Phase-2 proof of the
-> "hands" prd (`work/prds/tasked/hands-pluggable-page-capabilities.md`).
+> "hands" prd (`work/specs/tasked/hands-pluggable-page-capabilities.md`).
 >
 > Q6 IS PARTIALLY RESOLVED (this task is unblocked but scoped): read
 > `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md` FIRST,

@@ -37,7 +37,7 @@ import {verbNameOf} from './verb-trace.js';
  * structured {@link WaitCondition} cross as plain JSON and are re-branded on the
  * server with {@link locator}; no Playwright/CDP type is ever named here.
  *
- * THIRD-PARTY HAND VERBS (Phase 2, Model B of the "hands" prd; ADR-0007). The
+ * THIRD-PARTY HAND VERBS (Phase 2, Model B of the "hands" spec; ADR-0007). The
  * eight built-in verbs stay a CLOSED union (the 1:1 source of truth above). A
  * dynamically-loaded hand contributes a verb whose name `core` does NOT know at
  * compile time, so it cannot be a named member of that closed union without
@@ -48,7 +48,7 @@ import {verbNameOf} from './verb-trace.js';
  * dynamically, alongside the typed built-ins. The agent thereby gains a new tool
  * over the wire WITHOUT ever holding a live page handle.
  *
- * SERIALIZATION BOUNDARY (the load-bearing rule; prd's resolved Q3). A hand
+ * SERIALIZATION BOUNDARY (the load-bearing rule; spec's resolved Q3). A hand
  * verb's result crosses this RPC, so it MUST be serializable under the same
  * structured-clone contract `eval` documents (see {@link WebHandsPage.eval}): richer
  * than JSON, but a value with no transferable form does not round-trip. This is

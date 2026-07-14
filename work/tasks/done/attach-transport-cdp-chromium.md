@@ -1,7 +1,7 @@
 ---
 title: attach transport via connectOverCDP (Chromium-only)
 slug: attach-transport-cdp-chromium
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [scaffold-monorepo-and-driver-seam]
 covers: [5]
 ---
@@ -39,7 +39,7 @@ fixture page through the seam.
 ## Prompt
 
 > Goal: implement the `attach` transport (CDP, Chromium-only). Read the prd
-> `work/prds/ready/browser-controller-cli.md` (User Story 5; Solution — attach;
+> `work/specs/ready/browser-controller-cli.md` (User Story 5; Solution — attach;
 > Implementation Decisions — attach) and ADRs `0002` (why a real live session) and
 > `0003` (seam not CDP-coupled — attach is Chromium-only; keep CDP types out of the
 > public seam). Read `CONTEXT.md` (`attach`, `driver/transport`).

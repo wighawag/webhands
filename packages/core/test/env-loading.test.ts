@@ -6,7 +6,7 @@ import {loadWebhandsEnv} from '../src/index.js';
 
 /**
  * `.env` loading for the served process via ldenv (task
- * `env-placeholder-substitution-and-dotenv-loading`; prd
+ * `env-placeholder-substitution-and-dotenv-loading`; spec
  * `distill-session-into-hand`, resolved decision #1).
  *
  * The controller that owns the browser (ADR-0005: `serve`) loads `.env` /

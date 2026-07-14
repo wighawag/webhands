@@ -3,7 +3,7 @@
  *
  * These are raised by the concrete transports (the v1 Playwright launch
  * transport, and later `attach`/`setup-profile`) so that the `cli` package
- * (`cli-incur-wiring-and-errors`, PRD story 17) can render the EXACT
+ * (`cli-incur-wiring-and-errors`, SPEC story 17) can render the EXACT
  * fix-command message without re-detecting the condition. This module OWNS the
  * typed condition; the CLI owns the user-facing message text.
  *
@@ -279,7 +279,7 @@ export class CrossOriginFrameError extends ControllerError {
  * A `screenshot --out <path>` override pointed OUTSIDE the managed screenshots
  * dir. webhands MINTS screenshots under one managed directory it owns (under the
  * controller home root, beside `profiles/`); a caller MAY override the output
- * path, but only WITHIN that managed dir (prd `broaden-agent-verb-surface`, R3:
+ * path, but only WITHIN that managed dir (spec `broaden-agent-verb-surface`, R3:
  * "validate it stays under a sane managed dir"). An override that escapes it
  * (an absolute path elsewhere, or a `..` traversal out) is refused LOUDLY with
  * this typed condition rather than silently writing a PNG to an arbitrary
@@ -311,7 +311,7 @@ export class ScreenshotPathError extends ControllerError {
 }
 
 /**
- * A durable `query` `ref` (prd `broaden-agent-verb-surface`, R4; finding
+ * A durable `query` `ref` (spec `broaden-agent-verb-surface`, R4; finding
  * `query-ref-mint-mechanism-attribute-beats-weakmap`) failed to resolve to
  * EXACTLY ONE element when an action verb (`click`/`type`) tried to act on it.
  * A `ref` is a SHORT-LIVED handle, not a stable identity: between the `query`

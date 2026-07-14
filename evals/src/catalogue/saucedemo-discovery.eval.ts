@@ -1,7 +1,7 @@
 import type {EvalEntry} from '../eval-contract.js';
 
 /**
- * TIER-1 SauceDemo DISCOVERY eval (prd `agent-capability-eval-harness`, user
+ * TIER-1 SauceDemo DISCOVERY eval (spec `agent-capability-eval-harness`, user
  * story 6; task `eval-saucedemo-tier1`): a goal whose success REQUIRES the agent
  * to DISCOVER special-user behaviour it was NOT told about, and ADAPT, rather
  * than follow a scripted path.
@@ -18,14 +18,14 @@ import type {EvalEntry} from '../eval-contract.js';
  * out" gets stuck at checkout and never reaches the confirmation, so a PASS here
  * is unambiguous evidence of unaided discovery + adaptation.
  *
- * NO-PRIMING (prd property 3): the goal names the entry URL, the PUBLIC fixed
+ * NO-PRIMING (spec property 3): the goal names the entry URL, the PUBLIC fixed
  * demo password, and the demo USERNAMES (all shown on the entry page itself, so
  * this is login info, not site-DOM foreknowledge). It does NOT say WHICH account
  * is broken or HOW, does NOT name the working account to use, and carries no
  * selectors, no steps, and no URL beyond the entry point. The agent must work
  * out the special-user behaviour for itself.
  *
- * END STATE asserted BY THE HARNESS (prd property 2) via webhands read verbs:
+ * END STATE asserted BY THE HARNESS (spec property 2) via webhands read verbs:
  * the order-complete confirmation container is present AND the URL is the
  * checkout-complete page (the same mechanical end state as the core flow, but
  * here reaching it PROVES the agent escaped the broken account). Milestones give

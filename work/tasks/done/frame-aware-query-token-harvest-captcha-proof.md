@@ -1,7 +1,7 @@
 ---
 title: Frame-aware `query` read + same-origin token-harvest captcha proof
 slug: frame-aware-query-token-harvest-captcha-proof
-prd: broaden-agent-verb-surface
+spec: broaden-agent-verb-surface
 blockedBy: [query-and-state-verbs]
 covers: [6, 7]
 ---
@@ -64,7 +64,7 @@ frame-capable resolver (still no new addressing scheme).
 > Goal: prove the token-harvest captcha capability bar using ONLY webhands verbs —
 > an agent with its own (test-faked) 2captcha key gets past a same-origin captcha
 > by poking the page, no pre-built solver, no iamhuman. Deliverable from the prd
-> `work/prds/tasked/broaden-agent-verb-surface.md` (User Stories 6, 7).
+> `work/specs/tasked/broaden-agent-verb-surface.md` (User Stories 6, 7).
 >
 > READ FIRST: `work/notes/findings/click-and-type-already-frame-scoped-via-framelocator.md`
 > (the spike: `click`/`type` already reach same-origin frames via `frameLocator`,

@@ -1,5 +1,5 @@
 /**
- * Controlled static fixture pages for the D3 machinery self-test (prd D3),
+ * Controlled static fixture pages for the D3 machinery self-test (spec D3),
  * served by {@link ./fixture-server.js}. Mirrors `packages/core`'s
  * `startFixtureServer` style (in-module strings, survives no build step), but
  * lives in `evals/` so the self-test never depends on a live site and stays

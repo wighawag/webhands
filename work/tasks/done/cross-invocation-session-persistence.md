@@ -1,7 +1,7 @@
 ---
 title: Cross-invocation session persistence (long-lived browser between CLI calls)
 slug: cross-invocation-session-persistence
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [cli-incur-wiring-and-errors]
 covers: []
 ---
@@ -58,7 +58,7 @@ the second reuses the first's live session).
 
 > Goal: implement cross-invocation session persistence — keep one browser alive
 > between separate `webhands <verb>` CLI processes. Read the prd
-> `work/prds/ready/browser-controller-cli.md` (Implementation Decisions — the
+> `work/specs/ready/browser-controller-cli.md` (Implementation Decisions — the
 > "session/daemon question" paragraph; User Stories 3 and 6 give the motivating
 > launch→goto→snapshot chain this enables) and ADR-0001 (the CONTROLLER owns the
 > long-lived control loop — that is exactly this loop's home). Read `CONTEXT.md`

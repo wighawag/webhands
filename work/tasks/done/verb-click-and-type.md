@@ -1,7 +1,7 @@
 ---
 title: click and type verbs (raw Playwright locator addressing)
 slug: verb-click-and-type
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [playwright-launch-transport-and-profile]
 covers: [8]
 ---
@@ -46,7 +46,7 @@ fills the addressed input.
 ## Prompt
 
 > Goal: implement the `click` and `type` verbs with raw-Playwright-locator
-> addressing. Read the prd `work/prds/ready/browser-controller-cli.md`
+> addressing. Read the prd `work/specs/ready/browser-controller-cli.md`
 > (User Story 8) and ADR `0004` (the verb surface exposes Playwright-equivalent
 > locator semantics — raw locator STRING, the chosen option; structured/CSS-subset
 > were rejected) plus ADR `0003` (no CDP/Chromium-only types in the public seam).

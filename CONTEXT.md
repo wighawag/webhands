@@ -1,6 +1,6 @@
 # CONTEXT — webhands domain language
 
-The domain glossary for `webhands`. Agents and skills use THIS vocabulary when naming modules, tests, and discussing the system. Architectural rationale lives in `docs/adr/` (decisions); product framing lives in `work/prds/`.
+The domain glossary for `webhands`. Agents and skills use THIS vocabulary when naming modules, tests, and discussing the system. Architectural rationale lives in `docs/adr/` (decisions); product framing lives in `work/specs/`.
 
 ## What webhands is
 
@@ -23,7 +23,7 @@ webhands is a **personal-use** tool: you drive a browser **you logged into yours
 - **extension transport (deferred)** — the phase-2 stealth fallback: a Chrome/Firefox extension content-script that reads/drives the page with zero automation fingerprint, bridged to the controller. Designed-for via the transport seam; NOT built in v1. To qualify as a fallback it must offer Playwright-equivalent element addressing (the capability floor set by `docs/adr/0004`).
 - **incur** — the CLI framework (`Cli.create().command().serve()`) the `cli` package uses; it provides MCP (`--mcp` / `mcp add`), agent skills, TOON output, and JSON-schema'd I/O for free, so the same binary serves both humans and agents.
 - **promptGuidance** — the per-repo NUDGE namespace in `.dorfl.json` whose members (currently just `testFirst`) strengthen the wording in the worker's in-band prompt. NOT a gate: the `verify` step is still the only acceptance bar. Omitted ⇒ off; absence is the default.
-- **work/ contract** — the on-disk system this repo uses, defined by the reference docs in **`work/protocol/`** (copied here by `setup`): `WORK-CONTRACT.md` (the contract), `CLAIM-PROTOCOL.md`, `REVIEW-PROTOCOL.md`, `task-template.md`, `prd-template.md`, `ADR-FORMAT.md`. Three REGIME umbrellas — `notes/` (capture buckets), `tasks/` (the build board), `prds/` (the prd lifecycle) — plus top-level `questions/` and `protocol/`. One markdown file per item, status = the folder it lives in (never a field). Capture buckets: `notes/ideas/` (proposed), `notes/observations/` (spotted, unverified, append-only), `notes/findings/` (verified external/domain ground truth, each with a `source:`). ADRs (`docs/adr/`, format in `work/protocol/ADR-FORMAT.md`) record what WE decided and why.
+- **work/ contract** — the on-disk system this repo uses, defined by the reference docs in **`work/protocol/`** (copied here by `setup`): `WORK-CONTRACT.md` (the contract), `CLAIM-PROTOCOL.md`, `REVIEW-PROTOCOL.md`, `task-template.md`, `spec-template.md`, `ADR-FORMAT.md`. Three REGIME umbrellas — `notes/` (capture buckets), `tasks/` (the build board), `specs/` (the spec lifecycle) — plus top-level `questions/` and `protocol/`. One markdown file per item, status = the folder it lives in (never a field). Capture buckets: `notes/ideas/` (proposed), `notes/observations/` (spotted, unverified, append-only), `notes/findings/` (verified external/domain ground truth, each with a `source:`). ADRs (`docs/adr/`, format in `work/protocol/ADR-FORMAT.md`) record what WE decided and why.
 
 ## Conventions
 
@@ -33,5 +33,5 @@ Standing per-change rules agents must follow in this repo.
 
 ## Skills this repo uses
 
-- Required: `setup` (onboarding/migration), `to-prd`, `to-task`.
+- Required: `setup` (onboarding/migration), `to-spec`, `to-task`.
 - Recommended: `review`, `grill-me`.

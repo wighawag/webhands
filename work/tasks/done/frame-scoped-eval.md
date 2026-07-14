@@ -1,7 +1,7 @@
 ---
 title: Tier-3 frame-scoped `eval` (same-origin child frames only)
 slug: frame-scoped-eval
-prd: broaden-agent-verb-surface
+spec: broaden-agent-verb-surface
 blockedBy: [rich-input-verbs]
 covers: [13]
 ---
@@ -63,7 +63,7 @@ evaluates in.
 > Goal: add an optional same-origin `frame` qualifier to the `eval` verb so an
 > agent can RUN logic inside a named same-origin child frame (e.g. fire a captcha
 > callback), the only `frame?` qualifier on the surface. Deliverable from the prd
-> `work/prds/tasked/broaden-agent-verb-surface.md` (User Story 13; ## Resolved
+> `work/specs/tasked/broaden-agent-verb-surface.md` (User Story 13; ## Resolved
 > decisions R1) and the idea `work/notes/ideas/frame-scoped-eval-verb.md`.
 >
 > READ FIRST: `work/notes/findings/click-and-type-already-frame-scoped-via-framelocator.md`

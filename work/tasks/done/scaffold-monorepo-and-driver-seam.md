@@ -1,7 +1,7 @@
 ---
 title: Scaffold the pnpm monorepo and the core Driver/Transport seam
 slug: scaffold-monorepo-and-driver-seam
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: []
 covers: [15, 16]
 ---
@@ -50,7 +50,7 @@ in a test.
 ## Prompt
 
 > Goal: lay the monorepo foundation and the transport seam that the whole project
-> hangs off. Read the prd `work/prds/ready/browser-controller-cli.md` (Solution,
+> hangs off. Read the prd `work/specs/ready/browser-controller-cli.md` (Solution,
 > Implementation Decisions) and ADRs `0003` (seam not CDP-coupled) and `0004`
 > (verb surface exposes Playwright-equivalent locator semantics) before starting —
 > they are load-bearing for the interface shape. Read `CONTEXT.md` for the domain

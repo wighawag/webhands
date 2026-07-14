@@ -12,7 +12,7 @@ import {startServe, type ServeLaunchOptions} from './serve-lifecycle.js';
 import {VerbClient, type WebhandsCommand} from './verb-client.js';
 
 /**
- * The harness SPINE: run ONE eval end to end and score it (prd user stories 1,
+ * The harness SPINE: run ONE eval end to end and score it (spec user stories 1,
  * 12). It is the thin-but-complete vertical path every per-tier eval task later
  * plugs into.
  *
@@ -40,7 +40,7 @@ export interface EvalRunResult {
 	/** The harness's INDEPENDENT three-state outcome. */
 	readonly outcome: Outcome;
 	/**
-	 * Whether the best-effort post-PASS cleanup actually RAN to completion (prd
+	 * Whether the best-effort post-PASS cleanup actually RAN to completion (spec
 	 * D2.3/D2.4). `'skipped'` ⇒ no cleanup was attempted (a non-PASS verdict, or
 	 * the entry declares no cleanup); `'ran'` ⇒ it completed; `'failed'` ⇒ it threw
 	 * and was swallowed. NEVER part of the verdict: it is a teardown report only.
@@ -173,7 +173,7 @@ export interface RunEvalOptions {
 	/**
 	 * Force-keep the isolated home after the run. By default the home is removed
 	 * only on a clean PASS; a FAIL/INCONCLUSIVE KEEPS it for inspection (mirrors
-	 * the prd D2 "keep evidence on a non-pass" stance at the home-dir level). Set
+	 * the spec D2 "keep evidence on a non-pass" stance at the home-dir level). Set
 	 * `true` to keep it even on PASS.
 	 */
 	readonly keepHome?: boolean;
@@ -237,7 +237,7 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 				: {}),
 		});
 
-		// Assert FIRST, clean SECOND (prd D2.2 -> D2.3/D2.4 strict order). The verdict
+		// Assert FIRST, clean SECOND (spec D2.2 -> D2.3/D2.4 strict order). The verdict
 		// is already decided above; ONLY a clean PASS triggers the best-effort
 		// post-PASS cleanup (e.g. an account delete), and a FAIL/INCONCLUSIVE run does
 		// NOT clean (state kept for inspection). A failed or absent cleanup can NEVER

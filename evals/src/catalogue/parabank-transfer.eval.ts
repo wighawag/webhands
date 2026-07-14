@@ -3,7 +3,7 @@ import type {VerbClient} from '../verb-client.js';
 import {mintNonce, nonceTransferAmount, nonceUsername} from '../nonce.js';
 
 /**
- * TIER-2 ParaBank STATEFUL/BRANCHING eval (prd `agent-capability-eval-harness`,
+ * TIER-2 ParaBank STATEFUL/BRANCHING eval (spec `agent-capability-eval-harness`,
  * user stories 7, 11; ## Resolved decisions D2; task `eval-stateful-tier2`).
  *
  * ParaBank (`parabank.parasoft.com`) is a fake online bank: a CONSEQUENTIAL,
@@ -33,13 +33,13 @@ import {mintNonce, nonceTransferAmount, nonceUsername} from '../nonce.js';
  * AND the harness's end-state assertion (the amount it looks for). The runner
  * mints a fresh nonce per invocation.
  *
- * NO-PRIMING (prd property 3): the goal names the entry URL, a username/password
+ * NO-PRIMING (spec property 3): the goal names the entry URL, a username/password
  * to register with, and the exact transfer amount (all VALUES the agent uses,
  * not site-DOM selectors/steps). It carries no selectors, no step list, and no
  * URL beyond the entry point; the HARNESS-side ParaBank locators below are never
  * handed to the agent.
  *
- * END STATE asserted BY THE HARNESS (prd property 2) via webhands read verbs,
+ * END STATE asserted BY THE HARNESS (spec property 2) via webhands read verbs,
  * NEVER the agent's self-report, and targeted at THIS run's nonce artifact:
  *  - precheck landmark: the login form (`input[name='username']`) is present;
  *  - milestone `reached-registered`: logged in (the account-overview table is

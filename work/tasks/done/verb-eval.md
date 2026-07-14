@@ -1,7 +1,7 @@
 ---
 title: eval verb (run JS in the page context, return the result)
 slug: verb-eval
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [playwright-launch-transport-and-profile]
 covers: [9]
 ---
@@ -36,7 +36,7 @@ an expression against fixture-page state returns the expected serialized value).
 ## Prompt
 
 > Goal: implement the `eval` verb. Read the prd
-> `work/prds/ready/browser-controller-cli.md` (User Story 9) and `CONTEXT.md`
+> `work/specs/ready/browser-controller-cli.md` (User Story 9) and `CONTEXT.md`
 > (`verb`). The verb lives in `core` behind the transport seam (ADR-0003) — keep
 > CDP/Playwright types out of the public surface. `eval` is the escape hatch and
 > sits naturally beside the raw-locator addressing (ADR-0004), both being

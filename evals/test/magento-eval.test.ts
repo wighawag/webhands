@@ -70,7 +70,7 @@ describe('Tier-3 Magento eval entry (offline contract + no-priming checks)', () 
 
 	it('is a NO-ACCOUNT guest flow: no per-run hygiene, no cleanup, no login priming', () => {
 		// The goal steers the agent to shop as a GUEST (acceptance: avoid account
-		// state where possible), so prd D2 does not apply and no cleanup is declared.
+		// state where possible), so spec D2 does not apply and no cleanup is declared.
 		expect(magentoCheckoutEval.cleanup).toBeUndefined();
 		const goal = magentoCheckoutEval.goalPrompt.toLowerCase();
 		expect(goal).toContain('guest');

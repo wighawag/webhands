@@ -1,5 +1,5 @@
 /**
- * The per-run NONCE (prd `agent-capability-eval-harness`, ## Resolved decisions
+ * The per-run NONCE (spec `agent-capability-eval-harness`, ## Resolved decisions
  * D2.1; task `eval-stateful-tier2`).
  *
  * D2's CORRECTNESS mechanism is that every run mints a FRESH, uniquely-tagged

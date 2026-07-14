@@ -1,7 +1,7 @@
 import type {EvalEntry} from './eval-contract.js';
 
 /**
- * The NO-PRIMING property (prd property 3; user story 4), ENFORCED as code, not
+ * The NO-PRIMING property (spec property 3; user story 4), ENFORCED as code, not
  * a comment.
  *
  * What makes this a CAPABILITY eval and not a scripted test is that the agent
@@ -15,7 +15,7 @@ import type {EvalEntry} from './eval-contract.js';
  * The guard binds ONLY the D1 capability-subject adapters (the shell adapter).
  * The D3 scripted self-test is PRIMED by construction and never passes through
  * here: that separation is what stops a primed script masquerading as a
- * capability pass (prd D3).
+ * capability pass (spec D3).
  */
 
 /** The verb-surface reference the agent is pointed at (and nothing more). */

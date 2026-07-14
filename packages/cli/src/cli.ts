@@ -331,7 +331,7 @@ interface CtaCommand {
 // --- cta wording (one source of truth) ------------------------------------
 
 /**
- * Call-to-action hints suggesting likely NEXT verbs after a run (PRD story 13),
+ * Call-to-action hints suggesting likely NEXT verbs after a run (SPEC story 13),
  * so an agent can chain navigate -> snapshot -> click without extra prompting.
  * The chain mirrors how a human reads then acts on a page: after navigating or
  * waiting you SNAPSHOT to see the page; after a snapshot you CLICK/TYPE/EVAL;
@@ -394,7 +394,7 @@ async function withSession<T>(
 }
 
 /**
- * Build the `incur` CLI that wraps `core`'s verb surface (PRD Implementation
+ * Build the `incur` CLI that wraps `core`'s verb surface (SPEC Implementation
  * Decisions — `cli`; stories 12-14, 17).
  *
  * Because it is built on `incur`, the SAME binary is also an MCP server
@@ -983,7 +983,7 @@ export function createCli(deps: CliDeps = {}) {
 	});
 
 	// --- distill: emit a hand scaffold + notes from the session (never load) ---
-	// (prd distill-session-into-hand; task distill-verb-emits-hand-scaffold.) The
+	// (spec distill-session-into-hand; task distill-verb-emits-hand-scaffold.) The
 	// authoring half: reduce the just-driven session's verb trace into a reusable
 	// HAND SCAFFOLD (a frozen ADR-0007 `Hand`) plus a human-readable NOTES
 	// markdown, so a flow explored once becomes a one-call verb after a human
@@ -1204,7 +1204,7 @@ export function createCli(deps: CliDeps = {}) {
 		},
 	});
 
-	// --- Tier-1 read verbs: query + state shorthands (prd broaden-agent-verb-
+	// --- Tier-1 read verbs: query + state shorthands (spec broaden-agent-verb-
 	// surface, R2/R5). Each is its own incur command, so one definition yields
 	// both the CLI command and the MCP tool. List flags (--attr/--prop/--pw) are
 	// REPEATABLE, not comma-joined (R5): incur arrays collect each occurrence.
@@ -1447,7 +1447,7 @@ export function createCli(deps: CliDeps = {}) {
 		},
 	});
 
-	// --- Tier-2 rich input verbs: press / hover / select / scroll / drag (prd
+	// --- Tier-2 rich input verbs: press / hover / select / scroll / drag (spec
 	// broaden-agent-verb-surface, stories 8-12, R5). Each is its own incur
 	// command, so one definition yields both the CLI command and the MCP tool.
 	// Positional-arg + small-flag, mirroring `click` (R5); `select`/`scroll` use
@@ -1655,7 +1655,7 @@ export function createCli(deps: CliDeps = {}) {
 		},
 	});
 
-	// --- Tier-4 coordinate + screenshot verbs: mouse / screenshot (prd
+	// --- Tier-4 coordinate + screenshot verbs: mouse / screenshot (spec
 	// broaden-agent-verb-surface, R3/R5, stories 17-19). Each is its own incur
 	// command, so one definition yields both the CLI command and the MCP tool.
 	// The seam stays string/number-typed (ADR-0003 as amended by the Tier-4 ADR):
@@ -2089,7 +2089,7 @@ async function readScriptFile(path: string): Promise<string> {
 
 /**
  * The shared failure path. Map a typed `core` error to its user-facing message
- * + exact fix command (PRD story 17); fall back to a generic error otherwise.
+ * + exact fix command (SPEC story 17); fall back to a generic error otherwise.
  * Always goes through incur's `c.error(...)` so the failure is in the
  * structured output envelope with a machine-readable `code`.
  */

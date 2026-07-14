@@ -1,6 +1,6 @@
 # The agent-capability eval harness lives OUTSIDE `packages/*` and OWNS the serve lifecycle
 
-The capability eval harness (prd `agent-capability-eval-harness`) lives in a
+The capability eval harness (spec `agent-capability-eval-harness`) lives in a
 top-level `evals/` workspace member, deliberately NOT under `packages/*`, so the
 repo gate (`pnpm test` = `pnpm --filter './packages/*' test`, and likewise
 `build`) is STRUCTURALLY unable to reach its live-site path: a flaky third-party

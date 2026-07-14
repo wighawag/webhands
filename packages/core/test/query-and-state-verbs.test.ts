@@ -14,11 +14,11 @@ import {
 
 /**
  * The Tier-1 `query` extraction verb and the state shorthands
- * `exists`/`count`/`isVisible`/`getAttribute` (prd
+ * `exists`/`count`/`isVisible`/`getAttribute` (spec
  * `broaden-agent-verb-surface`, R2), exercised at the `core` Driver/Transport
  * seam against a REAL local Playwright (Chromium) browser driving the LOCAL
  * structured-list FIXTURE PAGE (deterministic, never a third-party site whose
- * DOM rots), per the prd "Testing Decisions".
+ * DOM rots), per the spec "Testing Decisions".
  *
  * Elements are addressed by a RAW Playwright locator string (ADR-0004), passed
  * through `locator(...)` exactly as an agent would emit it. The tests lock down

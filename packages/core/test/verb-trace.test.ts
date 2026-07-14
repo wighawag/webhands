@@ -21,7 +21,7 @@ import {
 } from '../src/index.js';
 
 /**
- * The per-session VERB TRACE (task `serve-session-verb-trace`; prd
+ * The per-session VERB TRACE (task `serve-session-verb-trace`; spec
  * `distill-session-into-hand`, story 2). `serve` accumulates an ordered,
  * in-memory record of the verbs that drove the live page (verb name + the
  * locator/args as the agent passed them + enough result shape to reconstruct
@@ -303,7 +303,7 @@ describe('verb trace: no-secret guarantee + write isolation (real browser, local
 		// ...but the trace recorded only the TOKEN for the CREDENTIAL-bearing verb
 		// (the `type` request), and the secret appears NOWHERE in what the credential
 		// step recorded. (A later READ verb legitimately returns page content as-is,
-		// including whatever was typed — that is out of scope by nature per the prd;
+		// including whatever was typed — that is out of scope by nature per the spec;
 		// only the credential class is a placeholder, and that already happened
 		// upstream. So the guarantee is scoped to the `type` step, not to every read.)
 		const entries = server.trace.entries();

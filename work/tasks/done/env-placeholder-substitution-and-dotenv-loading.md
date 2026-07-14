@@ -1,7 +1,7 @@
 ---
 title: '{ENV:NAME} placeholder substitution in verbs + .env loading via ldenv (with agent-facing advertisement)'
 slug: env-placeholder-substitution-and-dotenv-loading
-prd: distill-session-into-hand
+spec: distill-session-into-hand
 blockedBy: []
 covers: [7, 8, 9]
 ---
@@ -88,7 +88,7 @@ placeholder works identically.
 > Build `{ENV:NAME}` placeholder substitution for webhands' value-bearing verbs
 > plus `.env` loading via the `ldenv` package, and advertise the capability to the
 > agent (verb description + `use-webhands` skill). This is the foundation the
-> `distill` prd (`work/prds/tasked/distill-session-into-hand.md`) depends on: it is
+> `distill` prd (`work/specs/tasked/distill-session-into-hand.md`) depends on: it is
 > what keeps a later session verb-trace and emitted hand scaffold free of literal
 > secrets.
 >

@@ -2,7 +2,7 @@ import {UnresolvedEnvPlaceholderError} from './errors.js';
 
 /**
  * `{ENV:NAME}` placeholder substitution for the value-bearing verbs (task
- * `env-placeholder-substitution-and-dotenv-loading`; prd
+ * `env-placeholder-substitution-and-dotenv-loading`; spec
  * `distill-session-into-hand`, resolved decision #1).
  *
  * This is webhands' OWN placeholder grammar, deliberately DISTINCT from ldenv's
@@ -17,7 +17,7 @@ import {UnresolvedEnvPlaceholderError} from './errors.js';
  *   secret never appears in the tool-call, the (future) verb trace, or an
  *   emitted hand scaffold, while the real value still reaches the page.
  *
- * HONEST SCOPE (prd framing): `{ENV:NAME}` is HYGIENE, not a security boundary.
+ * HONEST SCOPE (spec framing): `{ENV:NAME}` is HYGIENE, not a security boundary.
  * The substituted value still lands in the DOM and is readable back, and a local
  * agent could read the env itself; the point is only to avoid gratuitously
  * writing a literal credential into the tool-call and the on-disk artifacts when

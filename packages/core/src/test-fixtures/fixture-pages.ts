@@ -28,7 +28,7 @@ const INDEX = `<!doctype html>
  * marker element are injected by script ~150ms after the `load` event fires, the
  * way an XHR-rendered price or a hydrated result list appears AFTER the document
  * itself has settled. So the `load`-settled `goto` returns BEFORE this content
- * exists, and only `wait({kind: 'locator'})` (PRD story 10) makes a reader block
+ * exists, and only `wait({kind: 'locator'})` (SPEC story 10) makes a reader block
  * until it does. The delay is deterministic (driven by `setTimeout` against the
  * fixture's own clock, not a network round-trip), so the wait-for-selector test
  * is not flaky.
@@ -57,14 +57,14 @@ const DELAYED_CONTENT = `<!doctype html>
 `;
 
 /**
- * A page exercising the `click` and `type` verbs (PRD story 8).
+ * A page exercising the `click` and `type` verbs (SPEC story 8).
  *
  * - `#search` is a VISIBLE button; clicking it runs its handler, which writes
  *   `clicked` into `#status`. A normal `click()` (actionability-checked)
  *   handles this path.
  * - `#query` is a VISIBLE text input the `type` verb fills.
  * - `#hidden-toggle` is a HIDDEN custom control (`display:none`), the case the
- *   prd calls out: a normal `click()` AUTO-WAITS for the element to become
+ *   spec calls out: a normal `click()` AUTO-WAITS for the element to become
  *   visible/actionable and TIMES OUT, because it never does. The verb's escape
  *   path DISPATCHES a click event (no actionability check); the handler then
  *   sets `#hidden-state` to `toggled`, so the test can assert the dispatch path
@@ -102,7 +102,7 @@ const CLICK_TYPE = `<!doctype html>
 `;
 
 /**
- * A page whose submit button triggers a SLOW navigation (PRD story 8, the
+ * A page whose submit button triggers a SLOW navigation (SPEC story 8, the
  * "real submit button" path). Clicking `#slow-submit` navigates to
  * `index.html?delayMs=1500`; the fixture server holds that response back ~1.5s,
  * so the navigation the click schedules takes far longer than the verb's short
@@ -134,7 +134,7 @@ const SLOW_SUBMIT = `<!doctype html>
 /**
  * A page that NAVIGATES itself to `index.html` ~150ms after load, the way a
  * landing/redirect page bounces to the real destination. `goto` here settles on
- * THIS page's `load`; only `wait({kind: 'navigation'})` (PRD story 10) blocks
+ * THIS page's `load`; only `wait({kind: 'navigation'})` (SPEC story 10) blocks
  * until the subsequent navigation has settled, after which a reader is on
  * `index.html`. Deterministic (a `setTimeout`-driven `location.assign`), so the
  * wait-for-navigation test is not flaky.
@@ -157,10 +157,10 @@ const REDIRECTING = `<!doctype html>
 `;
 
 /**
- * A page carrying controlled, deterministic state for the `eval` verb (PRD
+ * A page carrying controlled, deterministic state for the `eval` verb (SPEC
  * story 9) to read back. The escape-hatch tests evaluate expressions against
  * THIS fixture's own state and assert the serialized result, never against
- * third-party DOM (PRD "Testing Decisions"):
+ * third-party DOM (SPEC "Testing Decisions"):
  *
  * - `#marker` holds a known text the verb can read.
  * - `window.__fixture` is a known object graph (a number, a string, a nested
@@ -203,7 +203,7 @@ const EVAL = `<!doctype html>
 `;
 
 /**
- * A page that SETS its own cookies client-side on load (PRD story 11), so the
+ * A page that SETS its own cookies client-side on load (SPEC story 11), so the
  * `cookies export`/`cookies import` round-trip exports cookies the PAGE
  * created (not only ones seeded through the seam) and re-imports them into a
  * fresh context. Two cookies make the round-trip meaningful: a session-like
@@ -231,7 +231,7 @@ const COOKIES = `<!doctype html>
 
 /**
  * A structured-LIST page for the Tier-1 `query` extraction verb plus the state
- * verbs `exists`/`count`/`isVisible`/`getAttribute` (prd
+ * verbs `exists`/`count`/`isVisible`/`getAttribute` (spec
  * `broaden-agent-verb-surface`, R2). Controlled, deterministic markup the seam
  * tests assert one ROW PER MATCH against, never third-party DOM:
  *
@@ -308,7 +308,7 @@ const QUERY_LIST = `<!doctype html>
 `;
 
 /**
- * A page exercising the Tier-2 `press` verb (prd `broaden-agent-verb-surface`,
+ * A page exercising the Tier-2 `press` verb (spec `broaden-agent-verb-surface`,
  * story 8). It RECORDS keyboard events deterministically so a test asserts the
  * verb fired the right key, not merely that it did not throw:
  *
@@ -373,7 +373,7 @@ const KEYBOARD = `<!doctype html>
 `;
 
 /**
- * A page exercising the Tier-2 `hover` verb (prd `broaden-agent-verb-surface`,
+ * A page exercising the Tier-2 `hover` verb (spec `broaden-agent-verb-surface`,
  * story 9). `#menu` reveals a `#menu-item` ONLY while `#menu` is hovered (CSS
  * `:hover`), AND a `mouseenter` listener flips `#hover-state` to `entered`, so
  * the test asserts the hover affordance fired (the item became visible / the
@@ -411,7 +411,7 @@ const HOVER = `<!doctype html>
 `;
 
 /**
- * A page exercising the Tier-2 `select` verb (prd `broaden-agent-verb-surface`,
+ * A page exercising the Tier-2 `select` verb (spec `broaden-agent-verb-surface`,
  * story 10). `#color` is a native `<select>` with three options whose VALUE and
  * LABEL deliberately DIFFER (value `r` / label `Red`, etc.), so a select-by-value
  * and a select-by-label are distinguishable. A `change` listener mirrors the
@@ -443,7 +443,7 @@ const SELECT = `<!doctype html>
 `;
 
 /**
- * A page exercising the Tier-2 `scroll` verb (prd `broaden-agent-verb-surface`,
+ * A page exercising the Tier-2 `scroll` verb (spec `broaden-agent-verb-surface`,
  * story 11). The body is much taller than the viewport, with `#far-target` near
  * the BOTTOM (off-viewport at load), so:
  *
@@ -469,7 +469,7 @@ const SCROLL = `<!doctype html>
 `;
 
 /**
- * A page exercising the Tier-2 `drag` verb (prd `broaden-agent-verb-surface`,
+ * A page exercising the Tier-2 `drag` verb (spec `broaden-agent-verb-surface`,
  * story 12). `#drag-source` is a draggable element and `#drop-target` is a drop
  * zone wired with the HTML5 drag-and-drop events: on `drop`, the handler moves
  * the source INTO the target and flips `#drop-state` to `dropped`, so the test
@@ -522,7 +522,7 @@ const DRAG = `<!doctype html>
 
 /**
  * The SAME-ORIGIN child frame embedded by {@link FRAME_PARENT} (Tier-3
- * frame-scoped `eval`, prd `broaden-agent-verb-surface`, story 13). It carries
+ * frame-scoped `eval`, spec `broaden-agent-verb-surface`, story 13). It carries
  * controlled, deterministic state the parent's top document CANNOT see, so a
  * frame-scoped `eval` is proved to actually land IN the child:
  *
@@ -560,7 +560,7 @@ const FRAME_CHILD = `<!doctype html>
 `;
 
 /**
- * The PARENT page for the Tier-3 frame-scoped `eval` (prd
+ * The PARENT page for the Tier-3 frame-scoped `eval` (spec
  * `broaden-agent-verb-surface`, story 13). It embeds {@link FRAME_CHILD} as a
  * SAME-ORIGIN child frame (`#main-iframe`, relative `src`), mimicking the
  * Imperva `#main-iframe` structure the idea names. The top document carries a
@@ -599,7 +599,7 @@ const FRAME_PARENT = `<!doctype html>
 `;
 
 /**
- * A page exercising the Tier-4 coordinate `mouse` verb (prd
+ * A page exercising the Tier-4 coordinate `mouse` verb (spec
  * `broaden-agent-verb-surface`, R3, stories 17-18). It records WHERE a
  * coordinate click/press landed so a test asserts the verb acted at the
  * intended VIEWPORT pixel, and proves the VIEWPORT-screenshot <-> `mouse`
@@ -692,7 +692,7 @@ const COORDINATE = `<!doctype html>
 `;
 
 /**
- * A page exercising the Tier-4 `screenshot` verb's ELEMENT scope (prd
+ * A page exercising the Tier-4 `screenshot` verb's ELEMENT scope (spec
  * `broaden-agent-verb-surface`, R3, story 17). `#widget` is a fixed-size,
  * solid-colour box (a stand-in for a captcha widget) at a known size, so an
  * element-clipped screenshot of it produces a PNG whose dimensions match the
@@ -730,7 +730,7 @@ const SCREENSHOT = `<!doctype html>
 `;
 
 /**
- * The SAME-ORIGIN TOKEN-HARVEST captcha child frame (prd
+ * The SAME-ORIGIN TOKEN-HARVEST captcha child frame (spec
  * `broaden-agent-verb-surface`, stories 6-7; the
  * `frame-aware-query-token-harvest-captcha-proof` task). It is the child
  * embedded by {@link TOKEN_CAPTCHA_PARENT} as `#main-iframe`, and it carries the
@@ -799,7 +799,7 @@ const TOKEN_CAPTCHA_CHILD = `<!doctype html>
 `;
 
 /**
- * The PARENT page for the SAME-ORIGIN TOKEN-HARVEST captcha proof (prd
+ * The PARENT page for the SAME-ORIGIN TOKEN-HARVEST captcha proof (spec
  * `broaden-agent-verb-surface`, stories 6-7). It embeds {@link
  * TOKEN_CAPTCHA_CHILD} as a SAME-ORIGIN child frame (`#main-iframe`, relative
  * `src`), mirroring the Imperva `#main-iframe` structure the findings give for
@@ -829,7 +829,7 @@ const TOKEN_CAPTCHA_PARENT = `<!doctype html>
 `;
 
 /**
- * The Tier-4 CROSS-ORIGIN nested-frame fixture (prd
+ * The Tier-4 CROSS-ORIGIN nested-frame fixture (spec
  * `broaden-agent-verb-surface`, R3, stories 17-19), mirroring the synthetic
  * doubly-nested cross-origin tree the finding
  * `playwright-cross-origin-frame-captcha-mechanics.md` spike-verified:
@@ -898,7 +898,7 @@ const NESTED_FRAME = `<!doctype html>
 `;
 
 /**
- * The Tier-4 VISION/TILE captcha fixture (prd `broaden-agent-verb-surface`, R3,
+ * The Tier-4 VISION/TILE captcha fixture (spec `broaden-agent-verb-surface`, R3,
  * story 17; the `vision-tile-captcha-end-to-end-proof` task). It mirrors the
  * doubly-nested CROSS-ORIGIN tree the finding
  * `playwright-cross-origin-frame-captcha-mechanics.md` spike-verified, but unlike
@@ -1077,7 +1077,7 @@ const TILE_CAPTCHA = `<!doctype html>
 `;
 
 /**
- * A page for the durable `query` `ref` (prd `broaden-agent-verb-surface`, R4;
+ * A page for the durable `query` `ref` (spec `broaden-agent-verb-surface`, R4;
  * task `query-durable-ref-handle`). A results list whose rows exercise the
  * REF PREFERENCE LADDER and the loud-stale contract WITHOUT any framework, by
  * driving the exact reconciliation shapes the React/Svelte spike measured via

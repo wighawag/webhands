@@ -1,7 +1,7 @@
 ---
 title: Hand-host primitive + webhands' own verbs as built-in hands (Phase 1, internal)
 slug: hand-host-primitive-and-builtin-hands
-prd: hands-pluggable-page-capabilities
+spec: hands-pluggable-page-capabilities
 blockedBy: []
 covers: [2]
 ---
@@ -107,8 +107,8 @@ Internal-only boundary (the gate from the prd's resolved Q2):
 > Goal: introduce an internal hand-host primitive in `@webhands/core` and
 > refactor webhands' own verbs into built-in hands over it, with ZERO change to
 > the public seam and ZERO behavior change. This is Phase 1 of the "hands" prd
-> (`work/prds/proposed/hands-pluggable-page-capabilities.md` → moved to
-> `work/prds/tasked/`): proof-by-self-application before any third-party hand.
+> (`work/specs/proposed/hands-pluggable-page-capabilities.md` → moved to
+> `work/specs/tasked/`): proof-by-self-application before any third-party hand.
 >
 > FIRST, check this task against current reality (it is a launch snapshot and
 > may have DRIFTED). Confirm: (1) the public seam is `packages/core/src/seam.ts`

@@ -1,7 +1,7 @@
 ---
 title: distill --test validates the emitted scaffold via the script verb
 slug: distill-test-validates-scaffold-via-script
-prd: distill-session-into-hand
+spec: distill-session-into-hand
 blockedBy: [distill-verb-emits-hand-scaffold]
 covers: [5]
 ---
@@ -48,7 +48,7 @@ through the EXISTING `script` verb (ADR-0012) and reports pass/fail LOUDLY.
 
 > Add `distill --test`: validate the hand scaffold `distill` just emitted by running
 > it against the LIVE page through the existing `script` verb (ADR-0012), reporting
-> pass/fail loudly. See the prd `work/prds/tasked/distill-session-into-hand.md`.
+> pass/fail loudly. See the prd `work/specs/tasked/distill-session-into-hand.md`.
 >
 > FIRST, check against reality (launch snapshot, may have DRIFTED): confirm the
 > `distill` emit task landed as assumed (in `work/tasks/done/`) and re-read how the

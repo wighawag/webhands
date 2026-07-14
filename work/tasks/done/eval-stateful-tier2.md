@@ -1,7 +1,7 @@
 ---
 title: 'Tier-2 eval: a stateful/branching flow with per-run account hygiene (AutomationExercise and/or ParaBank)'
 slug: eval-stateful-tier2
-prd: agent-capability-eval-harness
+spec: agent-capability-eval-harness
 blockedBy: [eval-harness-foundation]
 covers: [7, 11]
 ---
@@ -39,7 +39,7 @@ Ordered milestones give partial credit (e.g. reached-registered, reached-logged-
 
 ## Prompt
 
-> Goal: ship a Tier-2 stateful/branching eval per the prd `work/prds/tasked/agent-capability-eval-harness.md` (User Stories 7 and 11; ## Resolved decisions D2). Pick ONE target to ship first: AutomationExercise (full e-commerce, persistent account, in-flow delete) or ParaBank (fake bank, register + open accounts + transfer funds + confirm transaction, no clean delete). It plugs into the foundation task (`eval-harness-foundation`).
+> Goal: ship a Tier-2 stateful/branching eval per the prd `work/specs/tasked/agent-capability-eval-harness.md` (User Stories 7 and 11; ## Resolved decisions D2). Pick ONE target to ship first: AutomationExercise (full e-commerce, persistent account, in-flow delete) or ParaBank (fake bank, register + open accounts + transfer funds + confirm transaction, no clean delete). It plugs into the foundation task (`eval-harness-foundation`).
 >
 > READ FIRST: the prd's ## Resolved decisions D2 (in full) and User Stories 7/11, plus the completed `eval-harness-foundation` task + done record (the eval-entry contract, runner, shell adapter, read-verb assertion, milestone scoring, and pass/fail/INCONCLUSIVE outcome live there). The Tier-2 target detail (the AutomationExercise-vs-ParaBank shapes, their state/cleanup differences) is inlined in this task's ## What to build above; the prd's tiered-target assessment was trimmed into the tasks at tasking-time. Domain reminder: agent gets ONLY the goal-prompt + verb surface; the HARNESS checks the END STATE via webhands read verbs.
 >

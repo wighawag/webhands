@@ -12,7 +12,7 @@ import {
 } from '../src/index.js';
 
 /**
- * The TOKEN-HARVEST captcha capability bar, proved with ONLY webhands verbs (prd
+ * The TOKEN-HARVEST captcha capability bar, proved with ONLY webhands verbs (spec
  * `broaden-agent-verb-surface`, stories 6-7; the
  * `frame-aware-query-token-harvest-captcha-proof` task). This is the same-origin
  * sibling of the vision/tile proof: it shows the EXISTING verb surface is rich

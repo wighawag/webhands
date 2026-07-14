@@ -15,7 +15,7 @@ import {
  * REAL local Playwright (Chromium) browser driving the LOCAL FIXTURE PAGE
  * (deterministic, never a third-party site whose DOM rots). We assert the
  * snapshot SHAPE (roles/names/text present; refs present and stable;
- * `--full` returns raw DOM), per the PRD "Testing Decisions".
+ * `--full` returns raw DOM), per the SPEC "Testing Decisions".
  *
  * Shared-write isolation: every launch points its profile root at a per-test
  * temp dir; nothing here ever touches the real `~/.webhands`.

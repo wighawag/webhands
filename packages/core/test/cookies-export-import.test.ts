@@ -14,7 +14,7 @@ import {
 } from '../src/index.js';
 
 /**
- * The `cookies export` / `cookies import` round-trip (PRD story 11), asserted at
+ * The `cookies export` / `cookies import` round-trip (SPEC story 11), asserted at
  * the `core` Driver/Transport seam against the local fixture page (deterministic,
  * never a third-party site). The verb is built on the seam's existing
  * `cookies()` (export source) and `setCookies()` (import sink); this test drives

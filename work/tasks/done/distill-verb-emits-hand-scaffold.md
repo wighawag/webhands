@@ -1,7 +1,7 @@
 ---
 title: distill verb emits a hand scaffold + notes from the session (never loads it)
 slug: distill-verb-emits-hand-scaffold
-prd: distill-session-into-hand
+spec: distill-session-into-hand
 blockedBy: [serve-session-verb-trace]
 covers: [1, 2, 3, 4, 6, 10, 11, 12]
 ---
@@ -82,7 +82,7 @@ is exactly the arbitrary-in-process-code hazard this prd refuses.
 > HAND scaffold (frozen ADR-0007 `Hand` shape) plus a human-readable notes
 > markdown, from the in-memory session verb trace, optionally enriched by
 > `--summary` / `--session-file`. It EMITS and does NOT load. See the prd
-> `work/prds/tasked/distill-session-into-hand.md`.
+> `work/specs/tasked/distill-session-into-hand.md`.
 >
 > FIRST, check against reality (launch snapshot, may have DRIFTED): confirm the
 > session verb-trace accessor from `serve-session-verb-trace` landed as assumed

@@ -1,7 +1,7 @@
 ---
 title: snapshot verb (token-cheap structured page view with stable refs)
 slug: verb-snapshot
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [playwright-launch-transport-and-profile]
 covers: [7]
 ---
@@ -45,7 +45,7 @@ unchanged page, `--full` returns raw DOM).
 ## Prompt
 
 > Goal: implement the `snapshot` verb. Read the prd
-> `work/prds/ready/browser-controller-cli.md` (User Story 7; Testing Decisions —
+> `work/specs/ready/browser-controller-cli.md` (User Story 7; Testing Decisions —
 > assert snapshot SHAPE, not real third-party DOM) and `CONTEXT.md` (`verb`,
 > `snapshot`). The verb lives in `core` behind the transport seam (ADR-0003) — keep
 > CDP/Playwright types out of the public surface. Snapshot refs and the

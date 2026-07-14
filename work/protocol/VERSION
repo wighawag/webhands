@@ -1,1 +1,4 @@
-synced from agent-runner/skills/setup/protocol @ 2026-06-25T06:08Z
+protocol-version: 2026-07-14
+synced-from: skills/setup/protocol/
+synced-at: 2026-07-14T17:32:10.144Z
+source-commit: dorfl prd-to-spec

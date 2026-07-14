@@ -195,7 +195,7 @@ const defaultStealthImporter: StealthChromiumImporter = async () => {
 
 /**
  * The v1 concrete transport: a Playwright browser the controller LAUNCHES
- * against a dedicated, persistent profile directory it owns (PRD "Solution,
+ * against a dedicated, persistent profile directory it owns (SPEC "Solution,
  * launch"; ADR-0002). It implements the `core` {@link Transport}/`Driver` seam
  * with NO Playwright/CDP types in its public surface (ADR-0003): the
  * Playwright types are confined to this module.
@@ -296,7 +296,7 @@ export class PlaywrightLaunchTransport implements Transport {
 		// A profile is "set up" iff its dedicated dir exists on disk. Creating it
 		// is the headed `setup-profile` flow's job (a later task); `launch`
 		// against a missing profile is the typed MissingProfileError so the CLI
-		// can tell the user to run `setup-profile` first (PRD story 17). We never
+		// can tell the user to run `setup-profile` first (SPEC story 17). We never
 		// create the dir here, so a `launch` typo cannot silently spawn a blank
 		// profile.
 		if (!(await isExistingDirectory(loc.profileDir))) {
@@ -409,7 +409,7 @@ export class PlaywrightLaunchTransport implements Transport {
 			: undefined;
 
 		// launchPersistentContext always opens with exactly one page; reuse it as
-		// the single active page (PRD: single active session in v1). Create one if
+		// the single active page (SPEC: single active session in v1). Create one if
 		// the build ever changes that invariant.
 		const pwPage = context.pages()[0] ?? (await context.newPage());
 		// The managed screenshots dir resolves from the SAME location override as

@@ -15,7 +15,7 @@ import {
  * The `goto` (navigate) and `wait` verbs, exercised at the `core`
  * Driver/Transport seam against a REAL local Playwright (Chromium) browser
  * driving the LOCAL FIXTURE PAGES (deterministic, never a third-party site
- * whose DOM rots), per the PRD "Testing Decisions".
+ * whose DOM rots), per the SPEC "Testing Decisions".
  *
  * `goto`: navigates and SETTLES on the `load` event before returning, so a
  * subsequent read sees the rendered page. `wait`: the three forms (selector,

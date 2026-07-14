@@ -4,8 +4,8 @@ import {pathToFileURL} from 'node:url';
 import type {Hand} from './hand-host.js';
 
 /**
- * Explicit, declarative third-party-hand loading (Phase 2 of the "hands" prd,
- * `work/prds/tasked/hands-pluggable-page-capabilities.md`; ADR-0007).
+ * Explicit, declarative third-party-hand loading (Phase 2 of the "hands" spec,
+ * `work/specs/tasked/hands-pluggable-page-capabilities.md`; ADR-0007).
  *
  * A third-party **hand** is in-process Node code the host will hand the live
  * Playwright page (see {@link Hand}). Because that is arbitrary Node code in the

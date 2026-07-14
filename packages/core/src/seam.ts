@@ -2,7 +2,7 @@
  * The verb-level transport seam.
  *
  * This is the highest test seam and the internal structure boundary of
- * `core` (see PRD "Testing Decisions" and `docs/adr/0003`). It is expressed
+ * `core` (see SPEC "Testing Decisions" and `docs/adr/0003`). It is expressed
  * purely in terms of high-level VERBS (navigate, snapshot, click, type, eval,
  * wait, cookies), NOT in terms of CDP or Playwright primitives, so that a
  * future browser-extension transport or a non-Chromium (Firefox) transport
@@ -124,7 +124,7 @@ export type WaitCondition =
 
 /**
  * Which native `<select>` option the {@link WebHandsPage.select} verb chooses
- * (prd `broaden-agent-verb-surface`, Tier-2). EXACTLY ONE of `value` / `label`,
+ * (spec `broaden-agent-verb-surface`, Tier-2). EXACTLY ONE of `value` / `label`,
  * a discriminated union so the mutual exclusion is impossible to violate at the
  * seam (the CLI mirrors it with `wait`-style loud validation, R5):
  *
@@ -136,7 +136,7 @@ export type WaitCondition =
 export type SelectChoice = {readonly value: string} | {readonly label: string};
 
 /**
- * Where the {@link WebHandsPage.scroll} verb scrolls (prd
+ * Where the {@link WebHandsPage.scroll} verb scrolls (spec
  * `broaden-agent-verb-surface`, Tier-2). EXACTLY ONE of `to` / `by`, a
  * discriminated union mirroring `wait`'s mutually-exclusive forms:
  *
@@ -153,7 +153,7 @@ export type ScrollTarget =
 	| {readonly by: {readonly dx: number; readonly dy: number}};
 
 /**
- * Which mouse button the {@link WebHandsPage.mouse} verb uses (prd
+ * Which mouse button the {@link WebHandsPage.mouse} verb uses (spec
  * `broaden-agent-verb-surface`, Tier-4, R3; story 17). Plain string enum, the
  * Playwright `page.mouse` button vocabulary, so nothing Playwright-shaped
  * crosses the seam (ADR-0003 as amended by the Tier-4 ADR).
@@ -161,7 +161,7 @@ export type ScrollTarget =
 export type MouseButton = 'left' | 'right' | 'middle';
 
 /**
- * What the {@link WebHandsPage.mouse} verb does at the given coordinate (prd
+ * What the {@link WebHandsPage.mouse} verb does at the given coordinate (spec
  * `broaden-agent-verb-surface`, Tier-4, R3):
  *
  * - `'click'` — a full press-and-release at `(x, y)` (`mouse.click`).
@@ -173,7 +173,7 @@ export type MouseButton = 'left' | 'right' | 'middle';
 export type MouseAction = 'click' | 'move' | 'down' | 'up';
 
 /**
- * A coordinate mouse input (prd `broaden-agent-verb-surface`, Tier-4, R3, story
+ * A coordinate mouse input (spec `broaden-agent-verb-surface`, Tier-4, R3, story
  * 17). The coordinate-input counterpart to the locator-addressing `click`, for
  * the VISION/TILE captcha family and any task that must act at a raw pixel an
  * agent SAW in a screenshot rather than at a DOM element.
@@ -201,7 +201,7 @@ export interface MouseInput {
 }
 
 /**
- * Which region a {@link WebHandsPage.screenshot} captures (prd
+ * Which region a {@link WebHandsPage.screenshot} captures (spec
  * `broaden-agent-verb-surface`, Tier-4, R3; stories 17-19):
  *
  * - `'viewport'` — the DEFAULT: exactly the visible viewport. Its pixels are
@@ -218,7 +218,7 @@ export interface MouseInput {
 export type ScreenshotScope = 'viewport' | 'full' | 'element';
 
 /**
- * Options for the {@link WebHandsPage.screenshot} verb (prd
+ * Options for the {@link WebHandsPage.screenshot} verb (spec
  * `broaden-agent-verb-surface`, Tier-4, R3; R5). An OPTIONS OBJECT so future
  * fields stay additive (R1).
  *
@@ -250,7 +250,7 @@ export interface ScreenshotOptions {
 
 /**
  * The result of a {@link WebHandsPage.screenshot}: the file PATH webhands wrote
- * the PNG to, plus its pixel dimensions (prd `broaden-agent-verb-surface`,
+ * the PNG to, plus its pixel dimensions (spec `broaden-agent-verb-surface`,
  * Tier-4, R3, story 19).
  *
  * `path` is a plain STRING — the load-bearing ADR-0003 (as amended) choice: a
@@ -276,7 +276,7 @@ export interface Screenshot {
  *   refs (see {@link Snapshot.content}). This is the cheap view an agent reads
  *   to decide what to act on WITHOUT parsing raw HTML.
  * - `'full'` — the raw DOM (serialized outer HTML), returned when the verb is
- *   called with {@link SnapshotOptions.full}. A settled PRD decision (story 7,
+ *   called with {@link SnapshotOptions.full}. A settled SPEC decision (story 7,
  *   `needsAnswers` Q3): default is the accessibility view, `--full` is raw DOM.
  */
 export type SnapshotView = 'accessibility' | 'full';
@@ -526,7 +526,7 @@ export interface WebHandsPage {
 	/**
 	 * Return a structured, token-cheap view of the page. Defaults to the
 	 * accessibility-tree + visible-text view with stable refs; pass
-	 * `{full: true}` to get the raw DOM instead (PRD story 7). An unknown or
+	 * `{full: true}` to get the raw DOM instead (SPEC story 7). An unknown or
 	 * misshapen option REJECTS (e.g. `{view: 'full'}`), it is never silently
 	 * ignored (see {@link validateSnapshotOptions}).
 	 */
@@ -557,7 +557,7 @@ export interface WebHandsPage {
 	): Promise<void>;
 	/**
 	 * Run a JavaScript EXPRESSION in the active page's context and return its
-	 * result, the `eval` escape hatch for cases no other verb covers (PRD story
+	 * result, the `eval` escape hatch for cases no other verb covers (SPEC story
 	 * 9). It sits naturally beside the raw-locator addressing (ADR-0004): both are
 	 * page-context expressions the transport resolves.
 	 *
@@ -696,7 +696,7 @@ export interface WebHandsPage {
 	 */
 	getAttribute(target: LocatorString, name: string): Promise<string | null>;
 	/**
-	 * Press a keyboard key or chord (prd `broaden-agent-verb-surface`, Tier-2,
+	 * Press a keyboard key or chord (spec `broaden-agent-verb-surface`, Tier-2,
 	 * story 8) — arrows, `Enter`, `Space`, a letter (`w`), or a chord like
 	 * `Control+A`. The chord grammar is Playwright's `keyboard.press` grammar:
 	 * `Modifier+Modifier+Key`, modifiers `Control`/`Alt`/`Shift`/`Meta`, key names
@@ -710,13 +710,13 @@ export interface WebHandsPage {
 	 */
 	press(key: string, target?: LocatorString): Promise<void>;
 	/**
-	 * Hover the pointer over the element a locator addresses (prd
+	 * Hover the pointer over the element a locator addresses (spec
 	 * `broaden-agent-verb-surface`, Tier-2, story 9), to reveal a hover menu /
 	 * on-hover control `click` cannot surface (`locator.hover`).
 	 */
 	hover(target: LocatorString): Promise<void>;
 	/**
-	 * Choose an option in the native `<select>` a locator addresses (prd
+	 * Choose an option in the native `<select>` a locator addresses (spec
 	 * `broaden-agent-verb-surface`, Tier-2, story 10), by `value` OR by `label`
 	 * (EXACTLY ONE; see {@link SelectChoice}). Maps to Playwright
 	 * `locator.selectOption`; the chosen option is reflected in the element's live
@@ -725,21 +725,21 @@ export interface WebHandsPage {
 	select(target: LocatorString, choice: SelectChoice): Promise<void>;
 	/**
 	 * Scroll the page, either TO an element a locator addresses or BY a pixel
-	 * delta (prd `broaden-agent-verb-surface`, Tier-2, story 11; EXACTLY ONE form,
+	 * delta (spec `broaden-agent-verb-surface`, Tier-2, story 11; EXACTLY ONE form,
 	 * see {@link ScrollTarget}). `to` reaches lazy-loaded / off-viewport content
 	 * (`scrollIntoViewIfNeeded`); `by` nudges the page a fixed amount
 	 * (`mouse.wheel`).
 	 */
 	scroll(target: ScrollTarget): Promise<void>;
 	/**
-	 * Drag the element `source` addresses onto the element `target` addresses (prd
+	 * Drag the element `source` addresses onto the element `target` addresses (spec
 	 * `broaden-agent-verb-surface`, Tier-2, story 12), for drag-reorder UIs and
 	 * drag-slider challenges (`locator.dragTo`). Both are raw locator EXPRESSIONS
 	 * resolved through the SAME resolver as `click`/`type` (ADR-0004).
 	 */
 	drag(source: LocatorString, target: LocatorString): Promise<void>;
 	/**
-	 * Coordinate mouse input at VIEWPORT CSS-pixels (prd
+	 * Coordinate mouse input at VIEWPORT CSS-pixels (spec
 	 * `broaden-agent-verb-surface`, Tier-4, R3, story 17): click / move / press /
 	 * release at a raw `(x, y)` the agent SAW in a VIEWPORT {@link
 	 * WebHandsPage.screenshot}, the input half of the look-then-click loop. This
@@ -753,7 +753,7 @@ export interface WebHandsPage {
 	 */
 	mouse(input: MouseInput): Promise<void>;
 	/**
-	 * Capture the page to a PNG FILE and return its PATH (prd
+	 * Capture the page to a PNG FILE and return its PATH (spec
 	 * `broaden-agent-verb-surface`, Tier-4, R3; stories 17-19). webhands MINTS the
 	 * PNG under its managed screenshots dir and returns `{path, width, height}`;
 	 * NO image bytes cross the seam (the load-bearing ADR-0003-as-amended choice),
@@ -776,7 +776,7 @@ export interface WebHandsPage {
 /**
  * A live browser session owning one active {@link WebHandsPage}. The session lifetime
  * spans from {@link Transport.open} to {@link Session.close}; it is the unit a
- * long-lived controller process keeps between CLI invocations (PRD
+ * long-lived controller process keeps between CLI invocations (SPEC
  * "session/daemon question").
  */
 export interface Session {

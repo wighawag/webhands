@@ -17,7 +17,7 @@ import {createCli} from '../src/index.js';
 
 /**
  * `distill --test` VALIDATION (task `distill-test-validates-scaffold-via-script`;
- * prd `distill-session-into-hand`, story 5).
+ * spec `distill-session-into-hand`, story 5).
  *
  * `--test` runs the just-emitted hand scaffold against the LIVE page through the
  * EXISTING `script` verb (ADR-0012) and reports pass/fail LOUDLY. It reuses

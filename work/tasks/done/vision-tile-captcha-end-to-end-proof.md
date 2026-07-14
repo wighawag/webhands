@@ -1,7 +1,7 @@
 ---
 title: Vision/tile captcha end-to-end proof (verbs-only, multi-origin fixture)
 slug: vision-tile-captcha-end-to-end-proof
-prd: broaden-agent-verb-surface
+spec: broaden-agent-verb-surface
 blockedBy: [tier4-coordinate-screenshot-crossorigin-read]
 covers: [17]
 ---
@@ -60,7 +60,7 @@ real captcha service). This proves the MECHANISM composes, not a solve rate.
 > agent SEES the cross-origin tile grid (element-clipped screenshot) and CLICKS it
 > at viewport coordinates (`mouse`), reading challenge state via the cross-origin
 > frame READ, two cross-origin frames deep, no iamhuman, no solver. Deliverable
-> from the prd `work/prds/tasked/broaden-agent-verb-surface.md` (User Story 17).
+> from the prd `work/specs/tasked/broaden-agent-verb-surface.md` (User Story 17).
 >
 > READ FIRST: `work/notes/findings/playwright-cross-origin-frame-captcha-mechanics.md`
 > (the spike-verified mechanism: coordinate mouse + screenshot AND frameLocator-

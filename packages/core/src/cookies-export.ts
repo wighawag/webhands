@@ -1,5 +1,5 @@
 /**
- * The `cookies export` / `cookies import` verb's FILE FORMAT (PRD story 11).
+ * The `cookies export` / `cookies import` verb's FILE FORMAT (SPEC story 11).
  *
  * The seam already carries the transport-neutral cookie primitives:
  * {@link WebHandsPage.cookies} reads the active context's cookies and

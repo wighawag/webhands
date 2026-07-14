@@ -30,12 +30,12 @@ import type {DynamicFixtureModel} from '../dynamic-fixture.js';
  *    one-shot (the crux the idea note flags: Playwright CAN read-and-branch in
  *    one script, so the levers must defeat even that).
  *
- * NO-PRIMING (prd property 3): the goal names the entry URL and the dynamic
+ * NO-PRIMING (spec property 3): the goal names the entry URL and the dynamic
  * CONDITION ("until the subtotal shown on the page is greater than the
  * free-shipping threshold shown on the page"), with NO selectors, NO specific
  * values, NO step list. It passes {@link ../no-priming.js#assertNoPriming}.
  *
- * END STATE asserted BY THE HARNESS (prd property 2) via webhands read verbs,
+ * END STATE asserted BY THE HARNESS (spec property 2) via webhands read verbs,
  * NEVER the agent's self-report, and DETERMINISTICALLY checkable despite the
  * dynamic path: the harness reads the on-page final subtotal + the on-page
  * threshold and asserts the order completed AND the final subtotal EXCEEDS the

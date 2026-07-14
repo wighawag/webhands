@@ -1,7 +1,7 @@
 ---
 title: serve records a per-session verb trace (the distill backbone)
 slug: serve-session-verb-trace
-prd: distill-session-into-hand
+spec: distill-session-into-hand
 blockedBy: [env-placeholder-substitution-and-dotenv-loading]
 covers: [2]
 ---
@@ -70,7 +70,7 @@ Scope decisions fixed by the prd:
 > ordered, in-memory record of the verbs that drove the live page (verb name,
 > locator/args, enough result shape to reconstruct the step). This is the backbone
 > the `distill` verb (a later task in
-> `work/prds/tasked/distill-session-into-hand.md`) turns into a hand scaffold.
+> `work/specs/tasked/distill-session-into-hand.md`) turns into a hand scaffold.
 >
 > FIRST, check this task against reality (launch snapshot, may have DRIFTED):
 > confirm how `serve` owns the session/controller today (ADR-0005: one long-lived

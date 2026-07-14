@@ -20,7 +20,7 @@ import {
 } from '../src/index.js';
 
 /**
- * The hand-host primitive (Phase 1 of the "hands" prd). Two layers of coverage:
+ * The hand-host primitive (Phase 1 of the "hands" spec). Two layers of coverage:
  *
  * 1. The COMPOSITION primitive in isolation (`composePage`): a hand contributes
  *    named verbs (+ optional dispose) over a {@link HandContext}; the host

@@ -12,10 +12,10 @@ import {
 } from '../src/index.js';
 
 /**
- * The `click` and `type` verbs (PRD story 8), exercised at the `core`
+ * The `click` and `type` verbs (SPEC story 8), exercised at the `core`
  * Driver/Transport seam against a REAL local Playwright (Chromium) browser
  * driving the LOCAL FIXTURE PAGE (deterministic, never a third-party site whose
- * DOM rots), per the PRD "Testing Decisions".
+ * DOM rots), per the SPEC "Testing Decisions".
  *
  * Elements are addressed by a RAW Playwright locator string (ADR-0004), passed
  * through `locator(...)` exactly as an agent would emit it (`getByRole(...)`,

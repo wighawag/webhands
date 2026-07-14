@@ -1,7 +1,7 @@
 ---
 title: ToS humility docs, manual Kayak smoke, capture deferred extension transport
 slug: docs-tos-humility-and-kayak-smoke
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [cross-invocation-session-persistence]
 covers: [18, 19]
 ---
@@ -43,7 +43,7 @@ as non-CI, and the deferred-transport idea is captured.
 
 > Goal: land the ToS humility docs, a manual (non-CI) Kayak smoke proving the
 > end-to-end pipe, and capture the deferred extension transport as an idea. Read the
-> prd `work/prds/ready/browser-controller-cli.md` (User Stories 18 and 19; Testing
+> prd `work/specs/ready/browser-controller-cli.md` (User Stories 18 and 19; Testing
 > Decisions — manual smoke is not a gate, avoid asserting on real third-party DOM;
 > Out of Scope — capture the extension transport once tasked) and ADR-0002 (real
 > session, personal use, never bypass login / solve CAPTCHAs). Read `CONTEXT.md`

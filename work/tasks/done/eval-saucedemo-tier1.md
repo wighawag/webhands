@@ -1,7 +1,7 @@
 ---
 title: 'Tier-1 eval: SauceDemo end-to-end (login + sort + cart + checkout, plus a special-user discovery goal)'
 slug: eval-saucedemo-tier1
-prd: agent-capability-eval-harness
+spec: agent-capability-eval-harness
 blockedBy: [eval-harness-foundation]
 covers: [6]
 ---
@@ -32,7 +32,7 @@ SauceDemo is reset-free (fixed demo credentials, no persistent server state), so
 
 ## Prompt
 
-> Goal: ship the first REAL capability eval on SauceDemo (`saucedemo.com`), per the prd `work/prds/tasked/agent-capability-eval-harness.md` (User Story 6). It plugs into the foundation task (`eval-harness-foundation`): use its eval contract `{goal-prompt, end-state-assertion, milestones}`, its runner, its generic shell/command adapter, its harness-makes-the-assertion-via-read-verbs rule, its milestone scoring, and its pass/fail/INCONCLUSIVE outcome.
+> Goal: ship the first REAL capability eval on SauceDemo (`saucedemo.com`), per the prd `work/specs/tasked/agent-capability-eval-harness.md` (User Story 6). It plugs into the foundation task (`eval-harness-foundation`): use its eval contract `{goal-prompt, end-state-assertion, milestones}`, its runner, its generic shell/command adapter, its harness-makes-the-assertion-via-read-verbs rule, its milestone scoring, and its pass/fail/INCONCLUSIVE outcome.
 >
 > TIER-1 TARGET DETAIL (the prd's tiered-target assessment was trimmed into the tasks at tasking-time; the SauceDemo specifics are here): SauceDemo is the simplest, most stable, RESET-FREE target (fixed public demo credentials, no persistent server state), so it is trivially re-runnable and needs NO D2 account hygiene. Its standard login plus several SPECIAL users (notably `problem_user`, whose UI is subtly broken, and `performance_glitch_user`, which is artificially slow) make it ideal for a discovery goal an unprimed agent must work out for itself. The store flow is: login, product sort, add-to-cart, multi-step checkout, order-complete confirmation.
 >

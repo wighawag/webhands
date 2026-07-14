@@ -4,7 +4,7 @@ Phase 1 (ADR-0006) refactored webhands' own verbs onto an INTERNAL hand-host and
 
 ## Status
 
-accepted (Phase 2 of the "hands" prd; the public-contract follow-on to ADR-0006, which it does not contradict)
+accepted (Phase 2 of the "hands" spec; the public-contract follow-on to ADR-0006, which it does not contradict)
 
 ## Trust framing: loading a hand == trusting an in-process npm dependency
 
@@ -25,7 +25,7 @@ Modeled on pi's `settings.json` `packages[]` (an explicit named list of sources,
 
 - **Auto-discovery / `node_modules` scan** — REJECTED. It would make merely INSTALLING a package (or a transitive dependency pulling one in) silently load in-process code, which is precisely the supply-chain footgun the trust framing exists to prevent. Trust must be an explicit operator act, not a side effect of `npm install`.
 - **Convention-inferred entry (`main`/index)** — REJECTED. Pinning the exact entry keeps the loaded code unambiguous and auditable; an inferred entry could change under the operator (e.g. a dependency bump moving `main`) without a config change.
-- **A managed installer** — OUT of scope (prd). webhands records WHAT to load and trusts it; obtaining the bits is the operator's job, which keeps webhands out of the package-management business and the trust record cleanly separate from install state.
+- **A managed installer** — OUT of scope (spec). webhands records WHAT to load and trusts it; obtaining the bits is the operator's job, which keeps webhands out of the package-management business and the trust record cleanly separate from install state.
 
 ## Consequences
 

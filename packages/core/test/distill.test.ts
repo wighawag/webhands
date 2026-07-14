@@ -15,7 +15,7 @@ import {
 } from '../src/index.js';
 
 /**
- * The `distill` authoring core (prd `distill-session-into-hand`; task
+ * The `distill` authoring core (spec `distill-session-into-hand`; task
  * `distill-verb-emits-hand-scaffold`). `distill` reduces the just-driven
  * session's verb trace into a reusable HAND SCAFFOLD (a frozen ADR-0007 `Hand`
  * closing over `ctx.pwPage`) plus a human-readable NOTES markdown, so a flow
@@ -55,7 +55,7 @@ function step(request: SessionRpcRequest, verb?: string): VerbTraceEntry {
 
 /**
  * A saucedemo-style login + add-to-cart sub-flow, the kind of realistic flow the
- * prd asks distill to crystallize (an eval fixture flow reused as a sub-flow).
+ * spec asks distill to crystallize (an eval fixture flow reused as a sub-flow).
  * The earlier steps (a snapshot probe) are the "failed probes" a slice drops.
  */
 function saucedemoTrace(): VerbTraceEntry[] {

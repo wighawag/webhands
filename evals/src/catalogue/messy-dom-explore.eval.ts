@@ -36,12 +36,12 @@ import {
  *  - DECOYS + LATE CONTENT: several similar rows per section (one correct), and
  *    the rows are injected via a short setTimeout, so the agent must pace + reread.
  *
- * NO-PRIMING (prd property 3): the goal names the entry URL and the dynamic
+ * NO-PRIMING (spec property 3): the goal names the entry URL and the dynamic
  * CONDITION ("open the section and select the entry the page's instruction
  * describes"), with NO selectors, NO class names, NO section word, NO code, NO
  * step list. It passes {@link ../no-priming.js#assertNoPriming}.
  *
- * END STATE asserted BY THE HARNESS (prd property 2) via webhands read verbs,
+ * END STATE asserted BY THE HARNESS (spec property 2) via webhands read verbs,
  * NEVER the agent's self-report, and DETERMINISTICALLY checkable: the harness
  * reads the on-page result marker (`#explore-result`) and asserts its
  * `data-selected-code` equals the nonce-seeded correct code

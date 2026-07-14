@@ -17,7 +17,7 @@ import {
 
 /**
  * `{ENV:NAME}` placeholder substitution in value-bearing verbs (task
- * `env-placeholder-substitution-and-dotenv-loading`; prd
+ * `env-placeholder-substitution-and-dotenv-loading`; spec
  * `distill-session-into-hand`, resolved decision #1).
  *
  * Two seams are covered here:

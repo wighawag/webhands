@@ -32,7 +32,7 @@ End-to-end vertical slice:
 
 ## Prompt
 
-> Goal: add a Playwright-ONLY agent configuration to the eval harness so the same goals can be driven with raw Playwright (no webhands) and compared against a webhands agent on tokens + pass-rate. This is the concrete "does webhands deliver?" measure from the prd `work/prds/tasked/agent-capability-eval-harness.md` (north star). It DEPENDS on `eval-token-accounting-for-webhands-vs-baseline` (the token number + standardised comparison fields).
+> Goal: add a Playwright-ONLY agent configuration to the eval harness so the same goals can be driven with raw Playwright (no webhands) and compared against a webhands agent on tokens + pass-rate. This is the concrete "does webhands deliver?" measure from the prd `work/specs/tasked/agent-capability-eval-harness.md` (north star). It DEPENDS on `eval-token-accounting-for-webhands-vs-baseline` (the token number + standardised comparison fields).
 >
 > READ FIRST: the eval-harness foundation (`evals/src/agent-under-test.ts` for the `AgentUnderTest` seam + the generic shell adapter; `evals/src/run-eval.ts`; `evals/src/bin/run-evals.ts`); the completed token-accounting task + its done record (the usage field + comparison fields live there); and `work/notes/observations/eval-end-state-assertion-needs-the-agent-to-leave-the-session-open.md` (the agent-toolkit-agnostic stance + why "leave the session open" is a per-adapter protocol preamble, not goal priming).
 >

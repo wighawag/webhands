@@ -2,7 +2,7 @@ import type {EvalEntry} from './eval-contract.js';
 import type {VerbClient} from './verb-client.js';
 
 /**
- * The site-health PRECHECK (prd property; user story 10): the cheap
+ * The site-health PRECHECK (spec property; user story 10): the cheap
  * reachability/landmark read that decides FAIL vs INCONCLUSIVE.
  *
  * Before scoring a FAIL, the harness navigates the served session to the entry

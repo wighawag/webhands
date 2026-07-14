@@ -13,10 +13,10 @@ import {
 } from '../src/index.js';
 
 /**
- * The Tier-3 FRAME-SCOPED `eval` (prd `broaden-agent-verb-surface`, story 13),
+ * The Tier-3 FRAME-SCOPED `eval` (spec `broaden-agent-verb-surface`, story 13),
  * exercised at the `core` Driver/Transport seam against a REAL local Playwright
  * (Chromium) browser driving the LOCAL FIXTURE PAGES (deterministic, never a
- * third-party site whose DOM rots), per the prd "Testing Decisions".
+ * third-party site whose DOM rots), per the spec "Testing Decisions".
  *
  * `eval` gains an optional `frame` SELECTOR (the ONE `frame?` qualifier on the
  * surface, R1): with it, the expression runs inside a NAMED SAME-ORIGIN child

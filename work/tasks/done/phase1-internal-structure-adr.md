@@ -1,7 +1,7 @@
 ---
 title: ADR for the Phase-1 hand-host internal structure + pin `hand` in CONTEXT.md
 slug: phase1-internal-structure-adr
-prd: hands-pluggable-page-capabilities
+spec: hands-pluggable-page-capabilities
 blockedBy: [hand-host-primitive-and-builtin-hands]
 covers: []
 ---
@@ -60,7 +60,7 @@ Two deliverables:
 > FIRST, check against reality: read the landed
 > `hand-host-primitive-and-builtin-hands` work (the internal hand-host + built-in
 > hands) so the ADR describes what ACTUALLY shipped, not the prd's pre-build
-> intent. Read `work/prds/tasked/hands-pluggable-page-capabilities.md`
+> intent. Read `work/specs/tasked/hands-pluggable-page-capabilities.md`
 > (Implementation Decisions), `docs/adr/0003-*` and `docs/adr/0004-*` (this ADR
 > REFINES them), and `work/protocol/ADR-FORMAT.md`.
 >

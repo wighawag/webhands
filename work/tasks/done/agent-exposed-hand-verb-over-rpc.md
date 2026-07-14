@@ -1,7 +1,7 @@
 ---
 title: Surface a hand-contributed verb to the agent over the session RPC (Phase 2, Model B)
 slug: agent-exposed-hand-verb-over-rpc
-prd: hands-pluggable-page-capabilities
+spec: hands-pluggable-page-capabilities
 blockedBy: [third-party-hand-loading-and-public-api]
 covers: [5]
 ---
@@ -63,7 +63,7 @@ faithfully on the client (as `eval` already does).
 
 > Goal: surface a hand-contributed verb to the agent over the long-lived session
 > RPC (Model B of the "hands" prd,
-> `work/prds/tasked/hands-pluggable-page-capabilities.md`), enforcing the
+> `work/specs/tasked/hands-pluggable-page-capabilities.md`), enforcing the
 > serializable-only boundary. The agent gains a new tool and never holds a live
 > page.
 >

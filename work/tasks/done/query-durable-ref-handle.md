@@ -1,7 +1,7 @@
 ---
 title: Durable `query` `ref` handle (stable-attr ladder + mint fallback)
 slug: query-durable-ref-handle
-prd: broaden-agent-verb-surface
+spec: broaden-agent-verb-surface
 blockedBy: [query-and-state-verbs]
 covers: [1]
 ---
@@ -78,7 +78,7 @@ mechanism — exactly as the A-vs-B spike picked B
 > Goal: add an opt-in durable `ref` to the `query` verb so an agent can act on a
 > previously-read element even after the page mutates, fixing the index-drift
 > hazard. This is deliverable B of the prd
-> `work/prds/tasked/broaden-agent-verb-surface.md` (read ## Resolved decisions R4)
+> `work/specs/tasked/broaden-agent-verb-surface.md` (read ## Resolved decisions R4)
 > and the finding
 > `work/notes/findings/query-minted-dom-ref-is-a-cheap-durable-handle.md`.
 >

@@ -11,9 +11,9 @@ import {
 } from '../src/index.js';
 
 /**
- * The `eval` verb (PRD story 9), exercised at the `core` Driver/Transport seam
+ * The `eval` verb (SPEC story 9), exercised at the `core` Driver/Transport seam
  * against a REAL local Playwright (Chromium) browser driving the LOCAL FIXTURE
- * PAGE (deterministic, never a third-party site whose DOM rots), per the PRD
+ * PAGE (deterministic, never a third-party site whose DOM rots), per the SPEC
  * "Testing Decisions".
  *
  * `eval` is the escape hatch: it runs a raw JS EXPRESSION in the active page's

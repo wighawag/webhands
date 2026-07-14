@@ -14,7 +14,7 @@ import {
 } from '../src/index.js';
 
 /**
- * The VISION/TILE captcha capability bar, proved with ONLY webhands verbs (prd
+ * The VISION/TILE captcha capability bar, proved with ONLY webhands verbs (spec
  * `broaden-agent-verb-surface`, R3, story 17; the
  * `vision-tile-captcha-end-to-end-proof` task). This is the vision/tile sibling
  * of the token-harvest proof: it shows the Tier-4 surface COMPOSES into the

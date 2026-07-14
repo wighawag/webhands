@@ -12,10 +12,10 @@ import {
 } from '../src/index.js';
 
 /**
- * The Tier-4 CROSS-ORIGIN frame READ (prd `broaden-agent-verb-surface`, R3,
+ * The Tier-4 CROSS-ORIGIN frame READ (spec `broaden-agent-verb-surface`, R3,
  * stories 17-19), exercised at the `core` Driver/Transport seam against a REAL
  * local Playwright (Chromium) browser driving a MULTI-ORIGIN nested-frame
- * fixture, per the prd "Testing Decisions".
+ * fixture, per the spec "Testing Decisions".
  *
  * This is the READ counterpart to the already-working cross-origin `click`: it
  * is NOT a new verb. It is the EXISTING locator-resolver path (`query` and the

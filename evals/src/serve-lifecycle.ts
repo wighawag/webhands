@@ -7,7 +7,7 @@ import type {WebhandsCommand} from './verb-client.js';
 const run = promisify(execFile);
 
 /**
- * The `serve` LIFECYCLE OWNERSHIP (ADR-0005; prd user story 12).
+ * The `serve` LIFECYCLE OWNERSHIP (ADR-0005; spec user story 12).
  *
  * ADR-0005 made the session lifecycle EXPLICIT: a verb with no live `serve`
  * errors and never auto-spawns. So the harness must OWN bringing a `serve`

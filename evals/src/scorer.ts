@@ -2,7 +2,7 @@ import type {EvalEntry, EndStateCheck} from './eval-contract.js';
 import type {VerbClient} from './verb-client.js';
 
 /**
- * The SCORER (prd property; user stories 2, 9): the harness's INDEPENDENT
+ * The SCORER (spec property; user stories 2, 9): the harness's INDEPENDENT
  * verdict, made via webhands' OWN read verbs AFTER the agent reports done. It
  * never trusts the agent's self-report; the report only TRIGGERS this.
  *

@@ -1,7 +1,7 @@
 import type {EvalEntry} from '../eval-contract.js';
 
 /**
- * The TRIVIAL catalogue entry exercised ONLY by the D3 machinery self-test (prd
+ * The TRIVIAL catalogue entry exercised ONLY by the D3 machinery self-test (spec
  * D3; task: "Ship at least one trivial catalogue entry exercised only by the
  * self-test fixture"). One file per eval (work/ contract rule 2: no shared
  * manifest); the catalogue is the set of `*.eval.ts` modules.

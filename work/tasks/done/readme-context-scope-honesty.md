@@ -1,7 +1,7 @@
 ---
 title: README/CONTEXT scope-honesty update (capable, not a solver)
 slug: readme-context-scope-honesty
-prd: broaden-agent-verb-surface
+spec: broaden-agent-verb-surface
 blockedBy: [frame-aware-query-token-harvest-captcha-proof, vision-tile-captcha-end-to-end-proof]
 covers: [15, 16]
 ---
@@ -60,7 +60,7 @@ proofs.
 > verb surface — "we do not solve captchas (no solver, no key shipped), but the
 > surface no longer stands in the way of a capable agent that brings its own key"
 > — while reaffirming hands as the simpler path. Deliverable from the prd
-> `work/prds/tasked/broaden-agent-verb-surface.md` (User Stories 15, 16).
+> `work/specs/tasked/broaden-agent-verb-surface.md` (User Stories 15, 16).
 >
 > CHECK REALITY FIRST: both captcha-proof tasks
 > (`frame-aware-query-token-harvest-captcha-proof`,

@@ -4,7 +4,7 @@ import {promisify} from 'node:util';
 const run = promisify(execFile);
 
 /**
- * The harness's window onto webhands' EXISTING surface (prd property 2; user
+ * The harness's window onto webhands' EXISTING surface (spec property 2; user
  * story 12). It shells out to the SAME `webhands <verb>` path the README leads
  * with, parses the structured JSON envelope incur emits, and exposes the READ
  * verbs the harness uses to make end-state assertions ITSELF

@@ -37,7 +37,7 @@ import {
  * id->builder lookup over the imported modules, not a config file). Each value
  * is a BUILDER `() => EvalEntry` invoked fresh per run: a STATIC entry (Tier-1
  * SauceDemo) is wrapped as a constant builder; a per-run NONCE-tagged entry
- * (Tier-2 ParaBank, prd D2) mints a fresh nonce on every invocation, so re-runs
+ * (Tier-2 ParaBank, spec D2) mints a fresh nonce on every invocation, so re-runs
  * are independent. The local-fixture self-test builder is deliberately NOT here:
  * it needs a live fixture URL and is driven only by the D3 self-test, never as a
  * real-site eval.
@@ -96,7 +96,7 @@ const MESSY_DOM_FIXTURE_EVAL_ID = 'messy-dom-explore';
 const HELP = `webhands eval runner (opt-in, live-by-nature, NON-GATING)
 
 Runs ONE capability eval against a REAL site with a REAL unaided agent (the
-generic shell adapter, prd D1). NEVER part of \`pnpm test\` / the verify gate.
+generic shell adapter, spec D1). NEVER part of \`pnpm test\` / the verify gate.
 
 Usage:
   pnpm --filter @webhands/evals run-eval --eval <id> --agent-cmd "<command>" [options]
@@ -185,7 +185,7 @@ Registered real-site evals:
                         account, transfer a per-run nonce-tagged amount between
                         them, and confirm it (end state: the nonce-tagged
                         transaction is present in an account's activity). A fresh
-                        nonce-tagged identity is minted each run (prd D2).
+                        nonce-tagged identity is minted each run (spec D2).
   magento-checkout      Tier-3 Magento demo (Luma): as a GUEST (no account),
                         search for a jacket, open a product, add it to the cart,
                         and reach the checkout (end state: the checkout page is
@@ -417,14 +417,14 @@ async function loadEval(id: string): Promise<EvalEntry> {
 				'(The local-fixture self-test is run separately via `self-test`.)',
 		);
 	}
-	// Built FRESH per run: a per-run NONCE-tagged eval (ParaBank, prd D2) mints a
+	// Built FRESH per run: a per-run NONCE-tagged eval (ParaBank, spec D2) mints a
 	// new identity on each invocation here; a static eval just returns its constant.
 	return builder();
 }
 
 /**
  * Run ONE config (a freshly-built eval entry + an agent adapter) end to end.
- * Built fresh per leg so a per-run NONCE-tagged eval (ParaBank, prd D2) mints an
+ * Built fresh per leg so a per-run NONCE-tagged eval (ParaBank, spec D2) mints an
  * independent identity for each run, including each leg of a --compare.
  */
 async function runOne(

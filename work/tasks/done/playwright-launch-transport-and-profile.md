@@ -1,7 +1,7 @@
 ---
 title: Playwright launch transport with a dedicated persistent profile
 slug: playwright-launch-transport-and-profile
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [scaffold-monorepo-and-driver-seam]
 covers: [2, 3, 4]
 ---
@@ -41,7 +41,7 @@ local fixture page and assert profile persistence across a relaunch (set a cooki
 ## Prompt
 
 > Goal: implement the v1 Playwright launch transport with a dedicated persistent
-> profile. Read the prd `work/prds/ready/browser-controller-cli.md` (Solution —
+> profile. Read the prd `work/specs/ready/browser-controller-cli.md` (Solution —
 > launch mode; Implementation Decisions — Profile management) and ADRs `0002`
 > (real session over spoofing — why a dedicated profile, never the default Chrome
 > profile) and `0003` (seam not CDP-coupled). Read `CONTEXT.md` for `profile`,

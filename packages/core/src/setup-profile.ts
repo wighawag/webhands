@@ -8,7 +8,7 @@ import {
 import type {Session, Transport} from './seam.js';
 
 /**
- * The headed one-time-login flow (PRD User Story 1; CONTEXT `setup-profile`;
+ * The headed one-time-login flow (SPEC User Story 1; CONTEXT `setup-profile`;
  * ADR-0002).
  *
  * `setup-profile` opens the dedicated profile in a VISIBLE (headed) browser so
@@ -58,7 +58,7 @@ export interface SetupProfileOptions extends ProfileLocationOptions {
 	 * The transport that opens the headed session. Defaults to a
 	 * {@link PlaywrightLaunchTransport} bound to this flow's profile location.
 	 * Injectable so the orchestration (dir creation, headed open, prompt) is
-	 * testable without a real browser, and so the SAME launch transport the PRD
+	 * testable without a real browser, and so the SAME launch transport the SPEC
 	 * mandates is reused rather than a parallel headed-open path.
 	 */
 	readonly transport?: Transport;
@@ -112,7 +112,7 @@ export async function setupProfile(
 }
 
 /**
- * Compose the clear, actionable headed-login prompt (PRD acceptance: tell the
+ * Compose the clear, actionable headed-login prompt (SPEC acceptance: tell the
  * user what to do AND which profile is being set up). Kept pure so a test can
  * assert its content directly.
  */

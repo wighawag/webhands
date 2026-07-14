@@ -1,7 +1,7 @@
 ---
 title: Tier-2 rich input verbs (press / hover / select / scroll / drag)
 slug: rich-input-verbs
-prd: broaden-agent-verb-surface
+spec: broaden-agent-verb-surface
 blockedBy: [query-and-state-verbs]
 covers: [8, 9, 10, 11, 12]
 ---
@@ -71,7 +71,7 @@ the established style so a future `frame?` field is additive (R1).
 > Goal: add the Tier-2 rich input verbs (`press`, `hover`, `select`, `scroll`,
 > `drag`) to webhands' agent verb surface, so a seam-only agent can drive a
 > browser game or a richer form. Deliverable from the prd
-> `work/prds/tasked/broaden-agent-verb-surface.md` (User Stories 8-12; ## Resolved
+> `work/specs/tasked/broaden-agent-verb-surface.md` (User Stories 8-12; ## Resolved
 > decisions R5 for the CLI shape).
 >
 > FIRST check reality: trace an existing action verb (`click`) end to end to learn

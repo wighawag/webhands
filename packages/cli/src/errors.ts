@@ -17,7 +17,7 @@ import {
 
 /**
  * Map a TYPED `core` error condition into the user-facing message + the EXACT
- * command to fix it (PRD story 17).
+ * command to fix it (SPEC story 17).
  *
  * `core` OWNS the typed conditions (a `ControllerError` with a stable `code`,
  * raised by the transports — see `packages/core/src/errors.ts`); the CLI OWNS

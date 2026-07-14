@@ -2,7 +2,7 @@ import type {EvalEntry} from '../eval-contract.js';
 import type {VerbClient} from '../verb-client.js';
 
 /**
- * TIER-3 Magento-demo MESSY-REAL eval (prd `agent-capability-eval-harness`,
+ * TIER-3 Magento-demo MESSY-REAL eval (spec `agent-capability-eval-harness`,
  * user story 8; task `eval-magento-tier3`). The scoreboard's regression catcher.
  *
  * The Magento demo store (`magento.softwaretestingboard.com`, the standard
@@ -10,20 +10,20 @@ import type {VerbClient} from '../verb-client.js';
  * e-commerce DOM. Its job in the scoreboard is precisely to catch the "works on
  * a clean local fixture, FAILS on a real messy production-like DOM" regression
  * that the deterministic local-fixture verb tests structurally CANNOT reveal
- * (prd ## Problem Statement, "Messy-real DOM regressions"). Where Tier-1
+ * (spec ## Problem Statement, "Messy-real DOM regressions"). Where Tier-1
  * SauceDemo is a deliberately clean, stable store, Tier-3 Magento exercises the
  * SAME agent-facing verb surface against a real, reconciling, knockout-style DOM.
  *
  * NO-ACCOUNT BY DESIGN (task acceptance: avoid account state where possible).
  * The goal is search -> product -> cart -> checkout, all of which Magento's Luma
  * store allows as a GUEST: no registration, no login, no per-run identity. So
- * the prd D2 account-hygiene contract (fresh nonce-tagged identity,
+ * the spec D2 account-hygiene contract (fresh nonce-tagged identity,
  * assert-then-best-effort-delete) does NOT apply here and this entry declares no
  * cleanup. The end state is REACHING the checkout with the chosen item in the
  * cart, NOT placing an order: the demo fulfils no orders, and reaching checkout
  * is the clean, side-effect-free end state the milestone list names.
  *
- * NO-PRIMING (prd property 3), which matters MOST on a messy DOM: the goal names
+ * NO-PRIMING (spec property 3), which matters MOST on a messy DOM: the goal names
  * ONLY the entry URL and a plain-language product kind to find ("a jacket"). It
  * carries NO selectors, NO step list, and NO URL beyond {@link ENTRY_URL}; the
  * HARNESS-side Luma locators below are never handed to the agent. The agent must
@@ -32,7 +32,7 @@ import type {VerbClient} from '../verb-client.js';
  * eval: a verb that regresses on a real DOM shows up as a milestone the unaided
  * agent could not reach.
  *
- * STABILITY / RATE-LIMIT FITNESS (task acceptance; prd user story 10). The
+ * STABILITY / RATE-LIMIT FITNESS (task acceptance; spec user story 10). The
  * Magento demo is FLAKIER than the sandbox tiers: it sits behind Cloudflare and
  * has been observed returning a Cloudflare 526 (origin SSL invalid) outage
  * across all paths (see `work/notes/findings/magento-demo-tier3-stability.md`).
@@ -42,7 +42,7 @@ import type {VerbClient} from '../verb-client.js';
  * INCONCLUSIVE (retried, never a capability FAIL). A capability FAIL is reserved
  * for a HEALTHY Magento the agent still could not drive.
  *
- * END STATE asserted BY THE HARNESS (prd property 2) via webhands read verbs,
+ * END STATE asserted BY THE HARNESS (spec property 2) via webhands read verbs,
  * never the agent's self-report:
  *  - precheck landmark: the Luma search box (`#search`) rendered on the entry
  *    page (a down/Cloudflare-blocked site has no such box -> INCONCLUSIVE);

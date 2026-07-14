@@ -1,5 +1,5 @@
 /**
- * The eval CONTRACT (prd `agent-capability-eval-harness`, user stories 2, 9, 17).
+ * The eval CONTRACT (spec `agent-capability-eval-harness`, user stories 2, 9, 17).
  *
  * An **eval** is the harness's unit: a typed `{goalPrompt, endStateAssertion,
  * milestones[]}` triple run against a real (preferably sandbox) site. One
@@ -16,7 +16,7 @@
 import type {VerbClient} from './verb-client.js';
 
 /**
- * Difficulty tier of a target site (prd user stories 6, 7, 8). Recorded on each
+ * Difficulty tier of a target site (spec user stories 6, 7, 8). Recorded on each
  * entry so the scoreboard is legible by difficulty; the foundation ships only a
  * `self-test` tier (the local-fixture machinery proof, never a capability pass).
  */
@@ -24,7 +24,7 @@ export type EvalTier = 'self-test' | 'tier-1' | 'tier-2' | 'tier-3';
 
 /**
  * A single end-state check the HARNESS makes via webhands' OWN read verbs
- * (prd property 2; user story 3). It is run AFTER the agent reports done and is
+ * (spec property 2; user story 3). It is run AFTER the agent reports done and is
  * what actually decides pass/fail; the agent's self-report only TRIGGERS it and
  * never substitutes for it.
  *
@@ -46,7 +46,7 @@ export interface EndStateCheck {
 
 /**
  * An ordered MILESTONE: a partial-credit checkpoint on the way to the goal
- * (prd user story 9). Each milestone is ITSELF a verb-checked end state, so a
+ * (spec user story 9). Each milestone is ITSELF a verb-checked end state, so a
  * near-miss ("reached cart but not checkout") is a useful capability signal and
  * not just a flat fail. Milestones are ordered: the scorer reports the longest
  * reached PREFIX, the natural reading of "how far did the agent get".
@@ -59,7 +59,7 @@ export interface Milestone {
 }
 
 /**
- * A best-effort post-PASS CLEANUP step (prd ## Resolved decisions D2.3/D2.4;
+ * A best-effort post-PASS CLEANUP step (spec ## Resolved decisions D2.3/D2.4;
  * task `eval-stateful-tier2`). TEARDOWN, never part of the verdict.
  *
  * D2's strict order: the harness asserts the end state + milestones FIRST, and
@@ -83,7 +83,7 @@ export interface EvalCleanup {
 }
 
 /**
- * A site-health PRECHECK probe (prd user story 10): a cheap reachability /
+ * A site-health PRECHECK probe (spec user story 10): a cheap reachability /
  * landmark read that decides FAIL vs INCONCLUSIVE. If the entry URL does not
  * load or an expected landmark is absent, the site is down / rate-limiting /
  * structurally changed, so a non-PASS is INCONCLUSIVE (retried), never a
@@ -133,7 +133,7 @@ export interface EvalEntry {
 	 */
 	readonly endState: readonly EndStateCheck[];
 	/**
-	 * OPTIONAL best-effort post-PASS cleanup (prd D2.3/D2.4). Run by the harness
+	 * OPTIONAL best-effort post-PASS cleanup (spec D2.3/D2.4). Run by the harness
 	 * ONLY after a clean PASS, AFTER the assertion, and never affecting the
 	 * verdict. Omitted by targets with no clean delete (e.g. ParaBank), which lean
 	 * on the nonce-tagged artifact instead.

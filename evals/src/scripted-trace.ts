@@ -5,7 +5,7 @@ import type {WebhandsCommand} from './verb-client.js';
 const run = promisify(execFile);
 
 /**
- * The DETERMINISTIC SCRIPTED-RUN self-test pseudo-agent (prd D3).
+ * The DETERMINISTIC SCRIPTED-RUN self-test pseudo-agent (spec D3).
  *
  * This is NOT an {@link ./agent-under-test.js#AgentUnderTest} adapter and NOT a
  * capability subject: it replays a FIXED, PRIMED sequence of `webhands <verb>`
@@ -17,7 +17,7 @@ const run = promisify(execFile);
  * It is PRIMED by construction (it is GIVEN the exact verb steps + selectors the
  * no-priming rule forbids a real agent), so a green scripted run is NEVER a
  * capability pass. Keeping it SEPARATE from the shell adapter is the whole point
- * (prd D3): the shell adapter launches a real agent; this replays a script.
+ * (spec D3): the shell adapter launches a real agent; this replays a script.
  */
 
 /** One step in a scripted trace: a webhands verb + its args (selectors allowed). */

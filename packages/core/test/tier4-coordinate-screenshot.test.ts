@@ -15,11 +15,11 @@ import {
 } from '../src/index.js';
 
 /**
- * The Tier-4 COORDINATE + SCREENSHOT verbs `mouse` / `screenshot` (prd
+ * The Tier-4 COORDINATE + SCREENSHOT verbs `mouse` / `screenshot` (spec
  * `broaden-agent-verb-surface`, R3; stories 17-19), exercised at the `core`
  * Driver/Transport seam against a REAL local Playwright (Chromium) browser
  * driving the LOCAL FIXTURE PAGES (deterministic, never a third-party site
- * whose DOM rots), per the prd "Testing Decisions".
+ * whose DOM rots), per the spec "Testing Decisions".
  *
  * What this locks down:
  * - `mouse` clicks/moves/presses at VIEWPORT CSS-pixels and runs the fixture

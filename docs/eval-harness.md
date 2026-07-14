@@ -159,7 +159,7 @@ change here.** Specifically:
   tool**, not a surface change.
 - It **DOES** become a note in **`work/notes/findings/`** per the work/ contract,
   carrying a **`source:`** that records how it was observed (which eval, on which
-  site, what failed), and **possibly the seed of a future surface PRD**.
+  site, what failed), and **possibly the seed of a future surface SPEC**.
 
 This keeps the scoreboard honest: the harness reports the gap; the gap is fixed
 (if at all) by a deliberate, separately-reviewed change to the **verb surface**,

@@ -6,7 +6,7 @@ import {join} from 'node:path';
  *
  * This is a SHARED/GLOBAL, per-user location: by default
  * `~/.webhands`. Profiles are dedicated browser user-data dirs
- * under `<root>/profiles/<name>` (PRD "Profile management"; ADR-0002: never the
+ * under `<root>/profiles/<name>` (SPEC "Profile management"; ADR-0002: never the
  * OS default Chrome profile). The endpoint file from ADR-0005 also lives under
  * this root, owned by a later task.
  *
@@ -32,7 +32,7 @@ export const PROFILES_DIRNAME = 'profiles';
 
 /**
  * The subdirectory under the home root where the `screenshot` verb MINTS its
- * PNG files (the Tier-4 managed screenshots dir, prd
+ * PNG files (the Tier-4 managed screenshots dir, spec
  * `broaden-agent-verb-surface`, R3). It lives BESIDE `profiles/` under the SAME
  * overridable home root, so the same `root`/`WEBHANDS_HOME` override that
  * isolates profiles in a test also isolates screenshots — nothing writes to the
@@ -103,7 +103,7 @@ export function resolveProfileLocation(
 
 /**
  * Resolve the managed SCREENSHOTS directory (`<homeRoot>/screenshots`) the
- * `screenshot` verb mints PNGs under (prd `broaden-agent-verb-surface`, R3).
+ * `screenshot` verb mints PNGs under (spec `broaden-agent-verb-surface`, R3).
  * Like {@link resolveProfileLocation} it is PURE (creates no directory) and
  * honours the same `root`/`WEBHANDS_HOME` precedence, so a test that points the
  * home root at a temp dir isolates screenshots there and the real

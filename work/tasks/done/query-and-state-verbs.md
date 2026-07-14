@@ -1,7 +1,7 @@
 ---
 title: Tier-1 `query` + state verbs (exists/count/isVisible/getAttribute)
 slug: query-and-state-verbs
-prd: broaden-agent-verb-surface
+spec: broaden-agent-verb-surface
 blockedBy: []
 covers: [1, 2, 3, 4, 5, 14]
 ---
@@ -90,7 +90,7 @@ R1).
 
 > Goal: add the Tier-1 extraction + state verbs (`query`, `exists`, `count`,
 > `isVisible`, `getAttribute`) to webhands' agent verb surface, as the first
-> deliverable of the prd `work/prds/tasked/broaden-agent-verb-surface.md`
+> deliverable of the prd `work/specs/tasked/broaden-agent-verb-surface.md`
 > (read its ## Resolved decisions R1, R2, R5 and ## Testing Decisions).
 >
 > FIRST check this task against current reality (it is a launch snapshot): does

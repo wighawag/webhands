@@ -1,7 +1,7 @@
 ---
 title: goto and wait verbs (navigate + settle, pace actions)
 slug: verb-goto-and-wait
-prd: browser-controller-cli
+spec: browser-controller-cli
 blockedBy: [playwright-launch-transport-and-profile]
 covers: [6, 10]
 ---
@@ -44,7 +44,7 @@ until the selector/navigation/timeout condition is met).
 ## Prompt
 
 > Goal: implement the `goto` and `wait` verbs. Read the prd
-> `work/prds/ready/browser-controller-cli.md` (User Stories 6 and 10) and
+> `work/specs/ready/browser-controller-cli.md` (User Stories 6 and 10) and
 > `CONTEXT.md` (`verb`, `driver/transport`). The verbs live in `core` behind the
 > transport seam (ADR-0003) — do not leak CDP/Playwright types into the public
 > verb surface.

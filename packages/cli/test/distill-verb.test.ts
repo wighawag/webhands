@@ -14,7 +14,7 @@ import {createCli} from '../src/index.js';
 
 /**
  * The `distill` verb wiring + its HARD TRUST INVARIANT (task
- * `distill-verb-emits-hand-scaffold`; prd `distill-session-into-hand`).
+ * `distill-verb-emits-hand-scaffold`; spec `distill-session-into-hand`).
  *
  * `distill` reads the just-driven session's verb trace over the read-only trace
  * route and EMITS a hand SCAFFOLD (a frozen ADR-0007 `Hand`) plus a notes

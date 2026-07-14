@@ -55,7 +55,7 @@ export interface SessionServerOptions extends ProfileLocationOptions {
 	readonly transport: Transport;
 	/**
 	 * Host to bind the HTTP listener to. Defaults to loopback (`127.0.0.1`): the
-	 * server is a LOCAL tool on the user's machine (PRD "Out of Scope": not a
+	 * server is a LOCAL tool on the user's machine (SPEC "Out of Scope": not a
 	 * hosted service), so it never listens on a public interface.
 	 */
 	readonly host?: string;

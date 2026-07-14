@@ -5,7 +5,7 @@ import {describe, expect, it} from 'vitest';
 
 /**
  * The bundled `use-webhands` skill's "handling sensitive info" rung (task
- * `env-placeholder-substitution-and-dotenv-loading`; prd
+ * `env-placeholder-substitution-and-dotenv-loading`; spec
  * `distill-session-into-hand`, stories 7-8).
  *
  * An unadvertised capability is an unused one, so the skill's advertisement of

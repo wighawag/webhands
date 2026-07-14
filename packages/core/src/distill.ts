@@ -2,7 +2,7 @@ import type {VerbTraceEntry} from './verb-trace.js';
 import {hasEnvPlaceholder} from './env-substitution.js';
 
 /**
- * The `distill` authoring core (prd `distill-session-into-hand`; task
+ * The `distill` authoring core (spec `distill-session-into-hand`; task
  * `distill-verb-emits-hand-scaffold`, covers stories 1, 2, 3, 4, 6, 10, 11,
  * 12).
  *
@@ -15,7 +15,7 @@ import {hasEnvPlaceholder} from './env-substitution.js';
  * enrichments, it EMITS two strings. It does NO I/O and, above all, it EMITS and
  * does NOT LOAD.
  *
- * HARD INVARIANT (load-bearing safety, prd + task): `distill` NEVER writes
+ * HARD INVARIANT (load-bearing safety, spec + task): `distill` NEVER writes
  * `hands.json` and NEVER `import()`s the emitted module. This module cannot: it
  * only builds strings. ADOPTING a hand (naming it in `hands.json`) stays the
  * human's explicit, operator-scoped trust act (ADR-0007: loading a hand ==
@@ -23,14 +23,14 @@ import {hasEnvPlaceholder} from './env-substitution.js';
  * seam that writes the files (the CLI `distill` verb): it asserts no config
  * write and no `import()`.
  *
- * FAITHFUL REPLAY + ANNOTATED TODOs (prd implementation decision). The emitted
+ * FAITHFUL REPLAY + ANNOTATED TODOs (spec implementation decision). The emitted
  * hand replays the discovered steps FAITHFULLY, in order, against
  * `ctx.pwPage` — the SAME steps the trace recorded. Turning that faithful
  * replay into a PARAMETERIZED hand (e.g. `checkout(itemId)`) is left as
  * annotated TODOs informed by `--summary`/`--session-file`, NOT auto-invented:
  * `distill` records what drove the page, it does not guess intent.
  *
- * NO LITERAL SECRETS (inherited, prd resolved decision #1). A typed credential
+ * NO LITERAL SECRETS (inherited, spec resolved decision #1). A typed credential
  * is already the `{ENV:NAME}` token by the time it reaches the trace (the
  * `type` verb substitutes downstream, in-process), so the scaffold and notes
  * carry only the token, never the resolved secret. The emitted hand types the
@@ -341,7 +341,7 @@ function describeStep(entry: VerbTraceEntry): DescribedStep {
 			// cookies), an `eval`/`script` escape hatch, or a dynamically-loaded
 			// hand verb: its faithful replay is not a single plain Playwright act,
 			// so leave it as an annotated TODO the human completes rather than
-			// auto-invent it (prd: faithful replay + annotated TODOs, not guessed
+			// auto-invent it (spec: faithful replay + annotated TODOs, not guessed
 			// intent).
 			return describeUnreplayable(entry);
 	}

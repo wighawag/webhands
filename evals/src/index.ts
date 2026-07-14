@@ -1,5 +1,5 @@
 /**
- * The agent-capability eval harness (prd `agent-capability-eval-harness`).
+ * The agent-capability eval harness (spec `agent-capability-eval-harness`).
  *
  * This is the FOUNDATION spine: a typed eval contract, a launch seam + generic
  * shell adapter (D1), the harness-owned serve lifecycle (ADR-0005), the

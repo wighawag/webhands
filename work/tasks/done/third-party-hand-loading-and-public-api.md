@@ -1,7 +1,7 @@
 ---
 title: Open the host to third-party hands — public API + explicit declarative loading (Phase 2)
 slug: third-party-hand-loading-and-public-api
-prd: hands-pluggable-page-capabilities
+spec: hands-pluggable-page-capabilities
 blockedBy: [hand-host-primitive-and-builtin-hands, phase1-internal-structure-adr]
 covers: [1, 3, 9]
 ---
@@ -74,7 +74,7 @@ public-API decision the Phase-1 internal ADR explicitly left to Phase 2).
 > Goal: open the Phase-1 internal hand-host to THIRD-PARTY hands by making the
 > `Hand`/`HandContext` contract public and adding an explicit, declarative,
 > pi-style loading mechanism. This is Phase 2 of the "hands" prd
-> (`work/prds/tasked/hands-pluggable-page-capabilities.md`).
+> (`work/specs/tasked/hands-pluggable-page-capabilities.md`).
 >
 > FIRST, check against reality: read the landed
 > `hand-host-primitive-and-builtin-hands` work — the internal hand-host and the

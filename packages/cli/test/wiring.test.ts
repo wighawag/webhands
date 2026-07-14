@@ -28,7 +28,7 @@ import {
 } from '../src/index.js';
 
 /**
- * CLI-LEVEL WIRING tests (PRD "Testing Decisions": CLI tests assert incur
+ * CLI-LEVEL WIRING tests (SPEC "Testing Decisions": CLI tests assert incur
  * wiring; story 12 envelope, 13 cta, 14 MCP/`--llms`, 17 actionable errors).
  *
  * They assert ONLY the wiring — the verb commands are present with declared
@@ -221,7 +221,7 @@ async function schemaOf(
 
 describe('incur CLI wiring', () => {
 	describe('commands + schemas (one per verb plus the mode commands)', () => {
-		// Page verbs + mode commands the prd mandates (story 12: each with a zod
+		// Page verbs + mode commands the spec mandates (story 12: each with a zod
 		// args/options/output schema).
 		const cases: {argv: string[]; wantArgs: boolean; outputKeys: string[]}[] = [
 			{argv: ['goto'], wantArgs: true, outputKeys: ['ok', 'verb', 'url']},
@@ -315,7 +315,7 @@ describe('incur CLI wiring', () => {
 		}
 	});
 
-	describe('Tier-1 query + state verb wiring (prd broaden-agent-verb-surface, R5)', () => {
+	describe('Tier-1 query + state verb wiring (spec broaden-agent-verb-surface, R5)', () => {
 		it('forwards REPEATABLE --attr/--prop/--pw flags (not comma-joined) into the seam query call', async () => {
 			const {provider, transport} = stubProvider();
 			const env = await runEnvelope(provider, [
@@ -454,7 +454,7 @@ describe('incur CLI wiring', () => {
 		});
 	});
 
-	describe('Tier-3 frame-scoped eval wiring (prd broaden-agent-verb-surface, R1/R5)', () => {
+	describe('Tier-3 frame-scoped eval wiring (spec broaden-agent-verb-surface, R1/R5)', () => {
 		it('eval WITHOUT --frame passes no options (backward compatible)', async () => {
 			const {provider, transport} = stubProvider();
 			await runEnvelope(provider, ['eval', '1 + 1']);
@@ -529,7 +529,7 @@ describe('incur CLI wiring', () => {
 		});
 	});
 
-	describe('Tier-2 input verb wiring (prd broaden-agent-verb-surface, R5)', () => {
+	describe('Tier-2 input verb wiring (spec broaden-agent-verb-surface, R5)', () => {
 		it('press forwards the key + optional --locator into the seam press call', async () => {
 			const {provider, transport} = stubProvider();
 			await runEnvelope(provider, [
@@ -672,7 +672,7 @@ describe('incur CLI wiring', () => {
 		});
 	});
 
-	describe('Tier-4 coordinate + screenshot verb wiring (prd broaden-agent-verb-surface, R3/R5)', () => {
+	describe('Tier-4 coordinate + screenshot verb wiring (spec broaden-agent-verb-surface, R3/R5)', () => {
 		it('mouse forwards --action/--x/--y/--button into the seam mouse call', async () => {
 			const {provider, transport} = stubProvider();
 			const env = await runEnvelope(provider, [

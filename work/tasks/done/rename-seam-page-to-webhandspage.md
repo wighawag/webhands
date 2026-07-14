@@ -1,7 +1,7 @@
 ---
 title: Rename the seam `Page` type to `WebHandsPage` and drop the `PwPage` aliases
 slug: rename-seam-page-to-webhandspage
-prd: rename-seam-page-to-webhandspage
+spec: rename-seam-page-to-webhandspage
 blockedBy: []
 covers: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 ---

@@ -1,25 +1,25 @@
 import type {EvalEntry} from '../eval-contract.js';
 
 /**
- * TIER-1 SauceDemo CORE-FLOW eval (prd `agent-capability-eval-harness`, user
+ * TIER-1 SauceDemo CORE-FLOW eval (spec `agent-capability-eval-harness`, user
  * story 6; task `eval-saucedemo-tier1`). The first REAL capability eval, on the
  * simplest, most stable, RESET-FREE target.
  *
  * SauceDemo (`saucedemo.com`) is a fixed public demo store with no persistent
  * server state, so this eval is trivially re-runnable and needs NO per-run
- * account hygiene (prd D2 is a Tier-2 contract, explicitly not SauceDemo). The
+ * account hygiene (spec D2 is a Tier-2 contract, explicitly not SauceDemo). The
  * store flow the agent must compose unaided is: log in, sort the products by
  * price, add the cheapest to the cart, and complete the multi-step checkout to
  * the order-complete confirmation.
  *
- * NO-PRIMING (prd property 3): the goal-prompt names the entry URL and the
+ * NO-PRIMING (spec property 3): the goal-prompt names the entry URL and the
  * fixed demo login ONLY (the login credentials are PUBLIC and shown on the entry
  * page itself, so naming them is login, NOT site-DOM selector-priming). It
  * carries no selectors, no step list, and no site URL beyond the entry point;
  * the HARNESS's own end-state Playwright locators below are never handed to the
  * agent.
  *
- * END STATE asserted BY THE HARNESS (prd property 2) via webhands read verbs,
+ * END STATE asserted BY THE HARNESS (spec property 2) via webhands read verbs,
  * never the agent's self-report:
  *  - precheck landmark: the login button (`#login-button`) is present;
  *  - milestone `reached-login`: the inventory list (`.inventory_list`) rendered;

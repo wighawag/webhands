@@ -9,7 +9,7 @@ want reassurance, not on every change.
 
 - It hits a **live third-party site** (Kayak) whose DOM, anti-bot challenges, and
   availability change without notice. Asserting on its markup would rot the suite
-  (PRD Testing Decisions).
+  (SPEC Testing Decisions).
 - It requires a **headed human login** in `setup-profile` (and possibly clearing
   a challenge), which CI cannot do.
 - Kayak is the smoke TARGET, not a feature. Automated behaviour coverage lives at

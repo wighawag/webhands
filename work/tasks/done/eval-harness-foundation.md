@@ -1,7 +1,7 @@
 ---
 title: Eval-harness foundation (contract, runner, launch seam + shell adapter, scripted self-test, non-gating home)
 slug: eval-harness-foundation
-prd: agent-capability-eval-harness
+spec: agent-capability-eval-harness
 blockedBy: []
 covers: [1, 2, 3, 4, 5, 9, 10, 12, 15, 16, 17]
 ---
@@ -45,7 +45,7 @@ This is the foundation only: the real-site evals (SauceDemo, the stateful tier, 
 
 ## Prompt
 
-> Goal: build the FOUNDATION of the agent capability eval harness from the prd `work/prds/tasked/agent-capability-eval-harness.md` (User Stories 1,2,3,4,5,9,10,12,15,16,17 and Resolved decisions D1, D3). This is the spine that runs ONE eval end to end against a real site and scores it, plus the deterministic self-test that proves the machinery without a real agent. The real-site evals and docs are SEPARATE dependent tasks.
+> Goal: build the FOUNDATION of the agent capability eval harness from the prd `work/specs/tasked/agent-capability-eval-harness.md` (User Stories 1,2,3,4,5,9,10,12,15,16,17 and Resolved decisions D1, D3). This is the spine that runs ONE eval end to end against a real site and scores it, plus the deterministic self-test that proves the machinery without a real agent. The real-site evals and docs are SEPARATE dependent tasks.
 >
 > READ FIRST: the prd (especially ## Resolved decisions D1/D2/D3, ## Solution's four load-bearing properties, and the User Stories; note the prd's ## Implementation Decisions / ## Testing Decisions were trimmed into these task files at tasking-time, so the build-level detail lives HERE in this task, not in the prd), `CONTEXT.md` (domain glossary: verb, profile, serve, the work/ contract), ADR-0005 (serve hosts the long-lived session; a verb with no live serve ERRORS and never auto-spawns, so the harness must own serve start/stop), ADR-0002 (real-session / personal-use scope), ADR-0009 (opt-in SOCKS proxy), and `tasks/done/docs-tos-humility-and-kayak-smoke.md` (the non-CI live-by-nature stance). For the launch-seam shape, read `~/dev/github/wighawag/dorfl` `packages/dorfl/src/harness.ts` (the `Harness` interface + the `null` GENERIC SHELL adapter: shells out to a configured `agentCmd` with `{model}` substitution, feeds the prompt on stdin, captures output; it is a REAL agent launcher, not a stub).
 >

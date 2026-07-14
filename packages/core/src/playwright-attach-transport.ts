@@ -17,7 +17,7 @@ import type {OpenTarget, Session, Transport} from './seam.js';
  * browser the USER already started with remote debugging enabled, and reuse the
  * user's EXISTING authenticated context — `browser.contexts()[0]`, never
  * `newContext()` — so the controller drives the live, logged-in tabs on the
- * user's real fingerprint and IP (PRD "Solution, attach"; ADR-0002).
+ * user's real fingerprint and IP (SPEC "Solution, attach"; ADR-0002).
  *
  * CDP-attach is Chromium-only (ADR-0003: Firefox attaches via a different
  * mechanism). That constraint is SURFACED as a typed `core` error
@@ -30,9 +30,9 @@ import type {OpenTarget, Session, Transport} from './seam.js';
  * here throws, because mixing the two open mechanisms in one transport is what
  * ADR-0003's seam exists to avoid.
  *
- * There is NO browser-relaunch helper: a settled PRD decision is that the user
+ * There is NO browser-relaunch helper: a settled SPEC decision is that the user
  * starts their own browser with `--remote-debugging-port` and supplies the
- * resulting endpoint (PRD "needsAnswers" #5). This transport only connects to a
+ * resulting endpoint (SPEC "needsAnswers" #5). This transport only connects to a
  * running one.
  */
 export class PlaywrightAttachTransport implements Transport {
@@ -90,7 +90,7 @@ export class PlaywrightAttachTransport implements Transport {
 
 			// Drive the context's existing active page; open one only if the
 			// browser exposes a context with no page yet (single active session in
-			// v1, PRD Out of Scope).
+			// v1, SPEC Out of Scope).
 			const pwPage = context.pages()[0] ?? (await context.newPage());
 			const screenshotsDir = resolveScreenshotsDir(this.#location);
 			return makeAttachedSession(browser, pwPage, this.#hands, screenshotsDir);
