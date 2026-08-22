@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="icon-title">
+	<title id="icon-title">webhands</title>
+
+	<!-- The favicon carries its own dark plate with light ink, because a
+	     transparent icon with dark ink disappears on a dark browser tab. The mark
+	     is otherwise unreduced: unlike a scene-style logo it is a single object
+	     already, so there is nothing to strip for small sizes. What DOES die below
+	     about 24px is the graticule inside the planet, which softens into a green
+	     disc. That is a graceful floor, not a break: the hand still reads. -->
+
+	<rect width="256" height="256" rx="48" fill="#12141a" />
+	<g style="color: #eef1f6">
+		<!-- MARK-BEGIN -->
+
+		<!-- The hand. Each finger is TWO segments with a 10px joint gap between them,
+		     and that gap is the whole bionic reading: a real hand has no seams. The
+		     gaps are holes in the mark, not dark fills, so the mark drops onto any
+		     background unchanged. Knuckle pins were tried in the gaps and dropped:
+		     they made the accent mean two unrelated things at once. -->
+		<g fill="currentColor">
+			<rect x="84" y="43" width="26" height="50" rx="13" />
+			<rect x="84" y="103" width="26" height="54" rx="13" />
+			<rect x="118" y="25" width="26" height="54" rx="13" />
+			<rect x="118" y="89" width="26" height="68" rx="13" />
+			<rect x="152" y="35" width="26" height="52" rx="13" />
+			<rect x="152" y="97" width="26" height="60" rx="13" />
+			<rect x="186" y="61" width="26" height="44" rx="13" />
+			<rect x="186" y="115" width="26" height="42" rx="13" />
+
+			<!-- Thumb: same two-segment rule, rotated off the palm. -->
+			<g transform="translate(92 179) rotate(-40)">
+				<rect x="-13" y="-84" width="26" height="42" rx="13" />
+				<rect x="-13" y="-32" width="26" height="44" rx="13" />
+			</g>
+
+			<rect x="76" y="135" width="144" height="70" rx="24" />
+
+			<!-- Wrist cuff: the join to something that is not an arm. -->
+			<rect x="104" y="213" width="88" height="18" rx="9" />
+		</g>
+
+		<!-- The web, held. Dead centre of the palm plate (148,170). The graticule is
+		     drawn in ink ON the disc rather than knocked out of it, so the planet
+		     needs no mask and survives on light and dark alike. Everything inside is
+		     clipped to the disc, so no bar corner can poke past the horizon. -->
+		<defs>
+			<clipPath id="globe">
+				<circle cx="148" cy="170" r="27" />
+			</clipPath>
+		</defs>
+		<circle cx="148" cy="170" r="27" fill="#3ddc84" />
+		<g clip-path="url(#globe)" fill="currentColor">
+			<rect x="119" y="167.5" width="58" height="5" />
+			<rect x="119" y="155" width="58" height="4" />
+			<rect x="119" y="181" width="58" height="4" />
+			<ellipse cx="148" cy="170" rx="12" ry="27" fill="none" stroke="currentColor" stroke-width="4.5" />
+		</g>
+		<!-- MARK-END -->
+	</g>
+</svg>

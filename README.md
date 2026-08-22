@@ -1,3 +1,11 @@
+<div align="center">
+<a href="https://github.com/wighawag/webhands#readme"><img alt="webhands" src="https://raw.githubusercontent.com/wighawag/webhands/main/media/preview.png" width="640" /></a>
+<hr/>
+
+<a href="https://npmjs.com/package/webhands"><img alt="Version" src="https://img.shields.io/npm/v/webhands" /></a>
+<a href="https://github.com/wighawag/webhands/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/wighawag/webhands" /></a>
+</div>
+
 # webhands
 
 **Let your AI agent drive a real, logged-in browser on your own machine.**
