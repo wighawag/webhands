@@ -10,13 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
+      # No `version:` here on purpose: pnpm/action-setup reads the version from
+      # the root package.json `packageManager` field, so CI and local dev agree.
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -24,11 +26,21 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # pnpm does not run dependency install scripts by default, so Playwright
+      # never downloads its browsers during `pnpm install`. The test suite
+      # drives a REAL Chromium, so fetch it (plus the OS libs it links against)
+      # explicitly. Only chromium: no test touches firefox/webkit.
+      - name: Install Playwright Chromium
+        run: pnpm --filter @webhands/core exec playwright install --with-deps chromium
+
       - name: Format check
         run: pnpm format:check
 
       - name: Build
         run: pnpm -r build
 
+      # Some tests launch HEADED (`setup-profile`, the headed-launch case), which
+      # needs an X display the runner does not have. xvfb-run supplies a virtual
+      # one; headless tests are unaffected.
       - name: Test
-        run: pnpm -r test
+        run: xvfb-run -a pnpm -r test
