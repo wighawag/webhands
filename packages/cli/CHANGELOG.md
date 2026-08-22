@@ -1,5 +1,13 @@
 # webhands
 
+## 0.5.1
+
+### Patch Changes
+
+- 4a2020a: Add brand assets in `media/` (logo, icon, 1280x640 social preview) and put the preview banner at the top of the README, referenced by absolute raw.githubusercontent.com URL so it renders on npm as well as GitHub. Docs and assets only; no code or CLI behaviour changes.
+- Updated dependencies [4a2020a]
+  - @webhands/core@0.7.1
+
 ## 0.5.0
 
 ### Minor Changes
