@@ -8,11 +8,11 @@ import {
 	isControllerError,
 	locator,
 	PlaywrightAttachTransport,
-	spawnRealChrome,
 	startFixtureServer,
 	type FixtureServer,
 	type Transport,
 } from '../src/index.js';
+import {spawnTestChrome} from './spawn-test-chrome.js';
 
 /**
  * These tests drive a REAL local Chromium that the test starts with a remote
@@ -64,11 +64,7 @@ describe('PlaywrightAttachTransport (real Chromium over CDP, local fixture)', ()
 		// A separate PROCESS, like a real user's browser (and like `--real-chrome`).
 		// Playwright's own bundled Chromium is the executable so the test needs no
 		// system Chrome install.
-		const chrome = await spawnRealChrome({
-			userDataDir,
-			executablePath: chromium.executablePath(),
-			headless: true,
-		});
+		const chrome = await spawnTestChrome({userDataDir});
 		// A second, test-owned connection standing in for the USER'S live handle on
 		// their own browser: it is how a test seeds/inspects the existing context the
 		// attach transport must reuse, and it must survive the transport detaching.

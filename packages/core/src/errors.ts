@@ -76,6 +76,17 @@ export class MissingBrowserBinaryError extends ControllerError {
 }
 
 /**
+ * The env var naming EXTRA command-line args for the spawned real Chrome.
+ *
+ * Declared HERE, in the module with no internal imports, purely so the error
+ * messages below can name it without creating an `errors` <-> `real-chrome` import
+ * cycle. `real-chrome.ts` re-exports it, and the rationale for the whole mechanism
+ * (an environment with no usable Chrome sandbox) lives there with the code that
+ * reads it.
+ */
+export const REAL_CHROME_ARGS_ENV = 'WEBHANDS_CHROME_ARGS';
+
+/**
  * A browser is already running against the requested profile dir, and the options
  * asked for can only be applied when a browser is SPAWNED.
  *
@@ -204,19 +215,33 @@ export class RealChromeStartError extends ControllerError {
 	readonly code = 'real-chrome-start-failed';
 	/** The executable that was spawned. */
 	readonly executablePath: string;
+	/** The tail of Chrome's own stderr, when it produced any. */
+	readonly stderr: string | undefined;
 
 	constructor(
 		executablePath: string,
 		reason: string,
-		options?: {cause?: unknown},
+		options?: {cause?: unknown; stderr?: string},
 	) {
+		const stderr =
+			options?.stderr !== undefined && options.stderr !== ''
+				? options.stderr
+				: undefined;
 		super(
 			`Could not start the real Chrome at ${executablePath}: ${reason}. ` +
 				`If a Chrome is already running against this profile directory, close ` +
-				`it (or use a different --profile) and try again.`,
-			options,
+				`it (or use a different --profile) and try again. In a container, a CI ` +
+				`runner or any environment without a usable Chrome sandbox, startup ` +
+				`aborts (often SIGABRT): set ${REAL_CHROME_ARGS_ENV}=--no-sandbox to ` +
+				`proceed there, and understand that it DISABLES the browser sandbox, so ` +
+				`only do it where that is acceptable.` +
+				// Chrome's own words, when it said anything. This is usually the whole
+				// answer, and omitting it is what made the CI failure a research project.
+				(stderr !== undefined ? `\n\nChrome said:\n${stderr}` : ''),
+			{...(options?.cause !== undefined ? {cause: options.cause} : {})},
 		);
 		this.executablePath = executablePath;
+		this.stderr = stderr;
 	}
 }
 

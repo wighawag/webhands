@@ -4,6 +4,7 @@ import {delimiter, join} from 'node:path';
 import {resolveCdpEndpoint} from './devtools-port.js';
 import {
 	ProxyAuthUnsupportedError,
+	REAL_CHROME_ARGS_ENV,
 	RealChromeNotFoundError,
 	RealChromeStartError,
 } from './errors.js';
@@ -74,6 +75,31 @@ const CANDIDATES: Readonly<Record<string, readonly string[]>> = {
  * always an escape hatch rather than a last resort.
  */
 export const REAL_CHROME_ENV = 'WEBHANDS_CHROME';
+
+/**
+ * The env var naming EXTRA command-line args for the spawned Chrome, split on
+ * whitespace and appended after webhands' own (so they can override ours, since
+ * Chromium honours the last occurrence of a repeated switch).
+ *
+ * Re-exported from `errors.ts`, which declares it to avoid an import cycle; the
+ * reasoning lives here, with {@link envArgs} that reads it.
+ *
+ * It exists for ONE real situation: an environment with no usable Chrome SANDBOX. In
+ * a container or on a CI runner a plainly-spawned Chrome aborts at startup (SIGABRT),
+ * and without an escape this entire mode would be unavailable there. Playwright's own
+ * launches never hit it because Playwright passes `--no-sandbox` by DEFAULT (its
+ * `chromiumSandbox !== true` branch), which is exactly why the symptom is so
+ * confusing from outside: the same binary works when Playwright starts it and dies
+ * when we do.
+ *
+ * Deliberately an ENV var rather than a CLI flag: arbitrary browser args are an
+ * operator-environment concern rather than a per-invocation one, and `--no-sandbox`
+ * genuinely weakens the browser's security boundary, so it should be set once by
+ * someone who has decided that is acceptable. webhands never adds it on any path,
+ * because this mode exists to BE the user's real browser and a real desktop Chrome is
+ * sandboxed.
+ */
+export {REAL_CHROME_ARGS_ENV} from './errors.js';
 
 /** Options for {@link spawnRealChrome}. */
 export interface SpawnRealChromeOptions {
@@ -290,9 +316,14 @@ export async function spawnRealChrome(
 	try {
 		child = spawn(executablePath, args, {
 			env,
-			// Ignore stdio: Chrome is chatty on stderr (GPU/dbus noise on Linux) and
-			// we must not let a full pipe buffer block the browser we are driving.
-			stdio: 'ignore',
+			// stdout ignored, stderr PIPED. Chrome is chatty on stderr (GPU/dbus noise on
+			// Linux), so we never surface it on success, but when startup FAILS it holds
+			// the only explanation: "it exited on signal SIGABRT" and nothing else told us
+			// nothing at all when a CI runner could not give Chrome a usable sandbox, and
+			// the cause had to be reverse-engineered out of Playwright's own bundle. The
+			// reader below drains the pipe continuously and keeps only a tail, so a chatty
+			// browser can neither block on a full pipe nor grow our memory.
+			stdio: ['ignore', 'ignore', 'pipe'],
 			// Keep it in our process group so an operator's Ctrl-C reaches it too.
 			detached: false,
 		});
@@ -301,6 +332,8 @@ export async function spawnRealChrome(
 			cause,
 		});
 	}
+
+	const stderrTail = captureTail(child, STDERR_TAIL_BYTES);
 
 	// Record an early exit so the port wait can abort instead of timing out: a
 	// Chrome that refuses the dir (e.g. already running against it) exits fast,
@@ -342,6 +375,10 @@ export async function spawnRealChrome(
 					: 'it did not publish a remote-debugging port in time';
 		throw new RealChromeStartError(executablePath, detail, {
 			...(spawnError !== undefined ? {cause: spawnError} : {}),
+			// Chrome's own words, drained before we quote them. Without this the CI
+			// failure said only "it exited on signal SIGABRT", and the real cause (no
+			// usable sandbox) had to be reverse-engineered from Playwright's bundle.
+			stderr: await stderrTail.read(),
 		});
 	}
 
@@ -393,6 +430,77 @@ async function terminate(child: ChildProcess): Promise<void> {
 		await raceWithTimeout(exited, SIGKILL_GRACE_MS);
 	}
 }
+
+/**
+ * Extra args from {@link REAL_CHROME_ARGS_ENV}, split on whitespace.
+ *
+ * Whitespace splitting means an arg containing a space cannot be expressed. That is
+ * accepted: the realistic content here is a handful of bare switches
+ * (`--no-sandbox --disable-dev-shm-usage`), and a quoting mini-language would be a
+ * worse trade than the limitation.
+ */
+function envArgs(env: NodeJS.ProcessEnv): string[] {
+	const raw = env[REAL_CHROME_ARGS_ENV];
+	return raw === undefined || raw.trim() === '' ? [] : raw.trim().split(/\s+/);
+}
+
+/** How much of Chrome's stderr to retain for a startup-failure message. */
+const STDERR_TAIL_BYTES = 2_000;
+
+/**
+ * Drain a child's stderr continuously, retaining only the last `maxBytes`.
+ *
+ * Both halves matter. Draining means a chatty browser cannot fill the pipe buffer
+ * and block (which is why this code first ignored stderr outright); retaining only a
+ * TAIL means a browser that logs for hours cannot grow our memory. The getter is
+ * read only on the failure path.
+ */
+function captureTail(
+	child: ChildProcess,
+	maxBytes: number,
+): {read: () => Promise<string>} {
+	let tail = '';
+	let ended = false;
+	const stderr = child.stderr;
+	stderr?.setEncoding('utf8');
+	stderr?.on('data', (chunk: string) => {
+		tail = (tail + chunk).slice(-maxBytes);
+	});
+	stderr?.once('end', () => {
+		ended = true;
+	});
+	// A read error on the pipe is not worth failing a browser start over.
+	stderr?.on('error', () => {
+		ended = true;
+	});
+
+	return {
+		/**
+		 * The tail, after giving the pipe a moment to finish.
+		 *
+		 * The wait IS the point. Node delivers a child's `exit` event before its stdio
+		 * streams have necessarily been drained, so reading synchronously at exit time
+		 * loses exactly the output we want: measured against a deliberately failing
+		 * executable, the error arrived with an EMPTY stderr until this wait existed.
+		 * Bounded tightly, because we are already on the failure path and a slow pipe
+		 * must not turn a clear error into a hang.
+		 */
+		async read(): Promise<string> {
+			if (stderr !== null && stderr !== undefined && !ended) {
+				await new Promise<void>((resolve) => {
+					const done = (): void => resolve();
+					stderr.once('end', done);
+					stderr.once('close', done);
+					setTimeout(done, STDERR_DRAIN_MS).unref();
+				});
+			}
+			return tail.trim();
+		},
+	};
+}
+
+/** How long to let Chrome's stderr finish before quoting it in an error. */
+const STDERR_DRAIN_MS = 250;
 
 /** How long a spawned browser gets to honour SIGTERM before SIGKILL. */
 const SIGTERM_GRACE_MS = 5_000;
@@ -451,6 +559,9 @@ export function buildRealChromeArgs(options: SpawnRealChromeOptions): string[] {
 		...(options.headless === true ? ['--headless=new'] : []),
 		...proxyArgs,
 		...(options.args ?? []),
+		// Operator env args LAST (before the URL), so they can override anything above:
+		// Chromium honours the last occurrence of a repeated switch.
+		...envArgs(options.env ?? process.env),
 		'about:blank',
 	];
 }

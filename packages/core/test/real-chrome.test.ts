@@ -13,6 +13,11 @@ import {
 	spawnRealChrome,
 	type RealChrome,
 } from '../src/index.js';
+import {
+	CI_SANDBOX_ARGS,
+	spawnTestChrome,
+	testChromeExecutable,
+} from './spawn-test-chrome.js';
 
 /**
  * {@link spawnRealChrome}: start the user's own Chrome with a debugging port so the
@@ -56,11 +61,7 @@ describe('spawnRealChrome (real process, Playwright Chromium as the system brows
 
 	/** Spawn headless (CI has no display) and register teardown. */
 	async function spawn(userDataDir: string): Promise<RealChrome> {
-		const chrome = await spawnRealChrome({
-			userDataDir,
-			executablePath: chromium.executablePath(),
-			headless: true,
-		});
+		const chrome = await spawnTestChrome({userDataDir});
 		spawned.push(chrome);
 		return chrome;
 	}
@@ -106,6 +107,7 @@ describe('spawnRealChrome (real process, Playwright Chromium as the system brows
 			userDataDir: await tempDir(),
 			executablePath: '/bin/true',
 			readyTimeoutMs: 10_000,
+			args: CI_SANDBOX_ARGS,
 		}).then(
 			() => {
 				throw new Error('expected spawnRealChrome to reject');
@@ -123,6 +125,39 @@ describe('spawnRealChrome (real process, Playwright Chromium as the system brows
 		expect(Date.now() - started).toBeLessThan(5_000);
 	});
 
+	it("QUOTES the browser's own stderr when startup fails", async () => {
+		// This test exists because of a real CI failure. Every spawn aborted with SIGABRT
+		// on the runner, the error said only "it exited on signal SIGABRT", and the actual
+		// cause (the runner cannot give Chrome a usable sandbox, which Playwright's own
+		// launches dodge by passing --no-sandbox by default) had to be reverse-engineered
+		// out of Playwright's bundle. Chrome had been saying so on stderr all along; we
+		// were ignoring the pipe.
+		//
+		// `/bin/sh` stands in for a browser that rejects our flags and complains: instant,
+		// deterministic, and it needs no way to break a real Chrome's sandbox.
+		const err = await spawnRealChrome({
+			userDataDir: await tempDir(),
+			executablePath: '/bin/sh',
+			readyTimeoutMs: 5_000,
+		}).then(
+			() => {
+				throw new Error('expected spawnRealChrome to reject');
+			},
+			(e: unknown) => e as RealChromeStartError,
+		);
+
+		// The child's words are captured. A NON-EMPTY capture is also what proves the
+		// drain-before-read: reading at exit time returned an empty string, because Node
+		// delivers `exit` before the stdio pipes have drained.
+		expect(err.stderr).toMatch(/Illegal option|unrecognized|invalid/i);
+		// ...and they are surfaced in the message, where a human or an agent reads them.
+		expect(err.message).toContain('Chrome said:');
+		expect(err.message).toContain(err.stderr!);
+		// The message also names the sandbox escape, which is the fix in the environment
+		// where this failure is most likely (a container or a CI runner).
+		expect(err.message).toMatch(/WEBHANDS_CHROME_ARGS=--no-sandbox/);
+	});
+
 	it('REFUSES to spawn over a browser already running on that profile dir', async () => {
 		// The subtle hazard this pins: a second Chrome on the same user-data dir does
 		// NOT fail loudly. It hands its URL to the running instance and exits 0,
@@ -135,9 +170,10 @@ describe('spawnRealChrome (real process, Playwright Chromium as the system brows
 
 		const err = await spawnRealChrome({
 			userDataDir: dir,
-			executablePath: chromium.executablePath(),
+			executablePath: testChromeExecutable(),
 			headless: true,
 			readyTimeoutMs: 8_000,
+			args: CI_SANDBOX_ARGS,
 		}).then(
 			() => {
 				throw new Error('expected spawnRealChrome to refuse');
@@ -246,6 +282,7 @@ describe('discoverChromeExecutable (no browser needed)', () => {
 			userDataDir: dir,
 			env: {PATH: ''},
 			platform: 'linux',
+			args: CI_SANDBOX_ARGS,
 		}).then(
 			() => {
 				throw new Error('expected spawnRealChrome to reject');

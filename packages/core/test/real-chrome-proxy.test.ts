@@ -18,6 +18,11 @@ import {
 	type Session,
 	type SpawnRealChromeOptions,
 } from '../src/index.js';
+import {
+	CI_SANDBOX_ARGS,
+	spawnTestChrome,
+	testChromeExecutable,
+} from './spawn-test-chrome.js';
 
 /**
  * Routing a SPAWNED real Chrome through a SOCKS proxy (`--real-chrome --proxy`).
@@ -191,10 +196,8 @@ describe('real Chrome through a live SOCKS5 proxy (end to end)', () => {
 		const userDataDir = await mkdtemp(join(tmpdir(), 'mbc-rc-proxy-'));
 		tempRoots.push(userDataDir);
 
-		const chrome = await spawnRealChrome({
+		const chrome = await spawnTestChrome({
 			userDataDir,
-			executablePath: chromium.executablePath(),
-			headless: true,
 			// `socks5://` (not socks5h) so Chromium may still resolve locally: the
 			// fixture is on 127.0.0.1, and the DNS catch-all would block the literal
 			// too on some platforms. The PROXY is what we are proving here.
@@ -232,10 +235,8 @@ describe('real Chrome through a live SOCKS5 proxy (end to end)', () => {
 		tempRoots.push(userDataDir);
 		const deadPort = await unusedPort();
 
-		const chrome = await spawnRealChrome({
+		const chrome = await spawnTestChrome({
 			userDataDir,
-			executablePath: chromium.executablePath(),
-			headless: true,
 			proxy: `socks5://127.0.0.1:${deadPort}`,
 			args: [PROXY_LOOPBACK_TOO],
 		});
@@ -273,10 +274,8 @@ describe('real Chrome through a live SOCKS5 proxy (end to end)', () => {
 		tempRoots.push(userDataDir);
 		const fixturePort = Number(new URL(fixture.url).port);
 
-		const chrome = await spawnRealChrome({
+		const chrome = await spawnTestChrome({
 			userDataDir,
-			executablePath: chromium.executablePath(),
-			headless: true,
 			// socks5h => noLeak => the DNS catch-all rides along. `EXCLUDE 127.0.0.1`
 			// covers reaching the proxy itself; `localhost` must go to the proxy by NAME.
 			proxy: `socks5h://127.0.0.1:${proxy.port}`,
@@ -311,9 +310,9 @@ describe('real Chrome through a live SOCKS5 proxy (end to end)', () => {
 		tempRoots.push(root);
 		const transport = new RealChromeTransport({root}, [], {
 			headless: true,
-			executablePath: chromium.executablePath(),
+			executablePath: testChromeExecutable(),
 			proxy: `socks5://127.0.0.1:${proxy.port}`,
-			args: [PROXY_LOOPBACK_TOO],
+			args: [...CI_SANDBOX_ARGS, PROXY_LOOPBACK_TOO],
 			spawn: async (o) => {
 				const chrome = await spawnRealChrome(o);
 				spawned.push(chrome);

@@ -284,7 +284,10 @@ Lifecycle + mode:
     `--proxy <socks-url>` DOES work in this mode (it is the only way to change the
     exit IP there), but WITHOUT credentials: Chrome supports no SOCKS5 auth, so a
     `user:pass@` URL is refused rather than silently sent unauthenticated. Use a
-    credential-free local relay (`ssh -D 1080`) and point `--proxy` at that.
+    credential-free local relay (`ssh -D 1080`) and point `--proxy` at that. It also
+    needs a working Chrome sandbox, so in a container or CI it aborts at startup
+    unless the operator sets `WEBHANDS_CHROME_ARGS=--no-sandbox`; the error says so
+    and quotes Chrome's own stderr.
   - `--expose-cdp` opens a remote-debugging port on a LAUNCHED browser so a separate
     Playwright client can drive the SAME page; OFF by default and you almost never
     want it (it is an automation tell, and counter-productive with `--stealth`).

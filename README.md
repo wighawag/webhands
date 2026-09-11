@@ -233,6 +233,22 @@ npx webhands serve --real-chrome --keep-browser
 WEBHANDS_CHROME=/opt/google/chrome/chrome npx webhands serve --real-chrome
 ```
 
+**It needs a working Chrome sandbox**, which a desktop has and a container or CI
+runner generally does not: there, a plainly-started Chrome aborts at startup
+(usually SIGABRT, and webhands quotes Chrome's own stderr back at you so you can
+see why). If you must run it in such an environment, `WEBHANDS_CHROME_ARGS`
+appends extra browser flags:
+
+```sh
+WEBHANDS_CHROME_ARGS='--no-sandbox --disable-dev-shm-usage' npx webhands serve --real-chrome
+```
+
+Understand what that buys and costs: it DISABLES the browser's sandbox, so only do
+it where that is acceptable. webhands never adds it for you, because this mode
+exists to be your real browser and a real desktop Chrome is sandboxed. (Playwright
+passes `--no-sandbox` by default for its own launches, which is why the bundled-
+Chromium paths work in CI while this one does not.)
+
 The equivalent by hand, which still works and is what `--real-chrome` automates:
 
 ```sh

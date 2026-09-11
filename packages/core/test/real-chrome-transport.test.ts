@@ -18,6 +18,11 @@ import {
 	type Session,
 	type SpawnRealChromeOptions,
 } from '../src/index.js';
+import {
+	CI_SANDBOX_ARGS,
+	spawnTestChrome,
+	testChromeExecutable,
+} from './spawn-test-chrome.js';
 
 /**
  * The `real-chrome` transport: spawn the USER'S OWN Chrome on a dedicated profile
@@ -96,7 +101,9 @@ describe('RealChromeTransport (spawn the user\u2019s own Chrome, then attach)', 
 		const transport = new RealChromeTransport({root}, [], {
 			...options,
 			headless: true,
-			executablePath: chromium.executablePath(),
+			executablePath: testChromeExecutable(),
+			// CI cannot sandbox a plainly-spawned Chrome (see spawn-test-chrome.ts).
+			args: CI_SANDBOX_ARGS,
 			spawn: async (o: SpawnRealChromeOptions) => {
 				const chrome = await spawnRealChrome(o);
 				spawns.push(chrome);
@@ -153,7 +160,8 @@ describe('RealChromeTransport (spawn the user\u2019s own Chrome, then attach)', 
 		let spawnedWithDir: string | undefined;
 		const transport = new RealChromeTransport({root}, [], {
 			headless: true,
-			executablePath: chromium.executablePath(),
+			executablePath: testChromeExecutable(),
+			args: CI_SANDBOX_ARGS,
 			spawn: async (o) => {
 				dirExistedAtSpawn = existsSync(o.userDataDir);
 				spawnedWithDir = o.userDataDir;
@@ -225,17 +233,14 @@ describe('RealChromeTransport (spawn the user\u2019s own Chrome, then attach)', 
 
 		// A browser already running on that profile dir (stands in for a previous
 		// --keep-browser session, or a controller that died without tearing down).
-		const existing = await spawnRealChrome({
-			userDataDir: loc.profileDir,
-			executablePath: chromium.executablePath(),
-			headless: true,
-		});
+		const existing = await spawnTestChrome({userDataDir: loc.profileDir});
 		strays.push(existing);
 
 		let spawnCalls = 0;
 		const transport = new RealChromeTransport({root}, [], {
 			headless: true,
-			executablePath: chromium.executablePath(),
+			executablePath: testChromeExecutable(),
+			args: CI_SANDBOX_ARGS,
 			proxy: 'socks5h://127.0.0.1:1080',
 			spawn: async (o) => {
 				spawnCalls++;
@@ -273,16 +278,13 @@ describe('RealChromeTransport (spawn the user\u2019s own Chrome, then attach)', 
 		const root = await tempRoot();
 		const loc = resolveProfileLocation('creds', {root});
 		await mkdir(loc.profileDir, {recursive: true});
-		const existing = await spawnRealChrome({
-			userDataDir: loc.profileDir,
-			executablePath: chromium.executablePath(),
-			headless: true,
-		});
+		const existing = await spawnTestChrome({userDataDir: loc.profileDir});
 		strays.push(existing);
 
 		const transport = new RealChromeTransport({root}, [], {
 			headless: true,
-			executablePath: chromium.executablePath(),
+			executablePath: testChromeExecutable(),
+			args: CI_SANDBOX_ARGS,
 			proxy: 'socks5h://user:secret@127.0.0.1:1080',
 		});
 
@@ -300,11 +302,7 @@ describe('RealChromeTransport (spawn the user\u2019s own Chrome, then attach)', 
 		const root = await tempRoot();
 		const loc = resolveProfileLocation('reused', {root});
 		await mkdir(loc.profileDir, {recursive: true});
-		const existing = await spawnRealChrome({
-			userDataDir: loc.profileDir,
-			executablePath: chromium.executablePath(),
-			headless: true,
-		});
+		const existing = await spawnTestChrome({userDataDir: loc.profileDir});
 		strays.push(existing);
 
 		let spawnCalls = 0;
@@ -383,7 +381,8 @@ describe('RealChromeTransport (spawn the user\u2019s own Chrome, then attach)', 
 		let spawnedChrome: RealChrome | undefined;
 		const transport = new RealChromeTransport({root}, [], {
 			headless: true,
-			executablePath: chromium.executablePath(),
+			executablePath: testChromeExecutable(),
+			args: CI_SANDBOX_ARGS,
 			spawn: async (o: SpawnRealChromeOptions) => {
 				const chrome = await spawnRealChrome(o);
 				spawnedChrome = chrome;
