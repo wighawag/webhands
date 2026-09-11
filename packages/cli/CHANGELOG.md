@@ -1,5 +1,101 @@
 # webhands
 
+## 0.6.0
+
+### Minor Changes
+
+- b88e30b: Add `cookies clear`: remove a NAMED SUBSET of the active session's cookies and report how many actually went.
+
+  Motivated by a live Akamai-protected site that flipped from serving to blocking part way through an authenticated session. That verdict is persisted in a handful of named cookies (`_abck`, `bm_sz`, `bm_sv`, `ak_bmsc`), so every dynamic endpoint 403s until they are gone, while the login lives in the site's own separate session cookies. Clearing just those names restores access and keeps the human signed in. Until now the `cookies` verb did export/import only, so the only way to do that was to drop into `script`.
+
+  New seam verb `clearCookies(filter)` (`names` / `domain` / `path` / `all`, exact-match strings, every field must match) available in-process and over the session RPC, plus `webhands cookies clear [--name <n>]… [--domain <d>] [--path <p>] [--all]` where `--name` is repeatable. It returns the number of cookies the browser actually removed, computed as a before/after difference, so `cleared: 0` visibly means "nothing matched" rather than silently passing.
+
+  The count is over the MATCHING cookies, not the whole jar, so a background XHR writing a cookie mid-clear cannot skew it (a jar-wide difference could under-report, report a successful clear as `0`, or even go negative).
+
+  An EMPTY filter is REFUSED at the CLI, in the page verb and again on the RPC server. Playwright's own `clearCookies()` reads no-filter as "clear everything", which aimed at a live logged-in session is an irreversible silent logout, so clearing everything has to be asked for with `--all` (and cannot be combined with a narrowing flag). `distill` replays a clear faithfully rather than leaving it as a TODO, since the filter carries no secrets, except a filterless entry, which becomes an annotated TODO rather than generated wipe-everything code. The bot-block recovery recipe is documented in the skill and deliberately NOT shipped as a vendor-specific preset flag; that boundary decision, and the empty-filter refusal, are recorded in `docs/adr/0016`.
+
+  New exports from `@webhands/core`: `CookieFilter` and `validateCookieFilter`.
+
+- b88e30b: **An explicit `--dom` escape for controls hidden behind styled labels, `--timeout` on the acting verbs, and `click` now reports HOW it clicked.**
+
+  Real sites hide radios and checkboxes behind styled labels constantly. Playwright is right to refuse to act on what a human could not reach, so the verb waits out its timeout even though the control is functional. `click` already had a fallback; the problem was everything around it.
+
+  - `--dom` on `click`, `type`, `press`, `hover` and `select` skips the actionability check and fires the event directly. Each verb documents exactly what it fires and how faithful that is: `click` dispatches a real click event (which still toggles a radio), `select` sets the value and fires `change`, `type` sets the value and fires `input`/`change` (no keystrokes, so masked inputs may differ), `press` fires `keydown`/`keypress`/`keyup` (handlers run, no text inserted), `hover` fires the pointer-enter events (no pointer position, so CSS `:hover` does not react). `drag` deliberately has NO `--dom`: a synthetic drag needs a `DataTransfer` that real drop targets often ignore, so it would fail quietly more often than it worked.
+  - It stays OPT-IN and the sibling defaults are unchanged (real auto-wait, fail-loud), because an invisible control a human cannot reach is sometimes a honeypot, and because the siblings' synthetic forms are approximations of a different action rather than "the same action without the check".
+  - `--timeout <ms>` on the acting verbs bounds the actionability wait. It changes how long you WAIT, never what is performed. Measured motivation: on a hidden element, `type`, `select` and `hover` each burned Playwright's full 30s default with no escape and no way to shorten it.
+  - `click` returns (and the CLI reports) `via: "click" | "dispatch"`, so the fallback is no longer silent: an agent can tell a real actionability-checked click from an event dispatched at something a user could not have clicked.
+
+  **Also fixes a latent bug in the existing fallback.** It called `dispatchEvent('click', {timeout})`, but Playwright's signature is `dispatchEvent(type, eventInit?, options?)`, so the bound was passed as an event FIELD and the 30s default silently applied. A locator matching nothing hung for 30.4s in the dispatch while the code comment above it promised fast failure. The bound now goes in the options argument, with a test pinning the failure under 10s so the 30s regression cannot return.
+
+  Note the resulting asymmetry, which is documented in the `--timeout` help and the skill: `click`'s default actionability budget is about 1s (short, so its fallback is reachable), while the other verbs keep Playwright's 30s. Pass `--timeout` when clicking something that becomes ready after a request.
+
+  `ActionOptions` gains `dom` and `timeoutMs`, carried over the session RPC in both directions. `WebHandsPage.click` returns `ClickResult` instead of `void`: **additive for callers** (an ignored return value), but **breaking for anyone IMPLEMENTING** `WebHandsPage`/`Transport` outside this repo, and for a `Hand` that wraps `click`, since the method must now return a result. New exports: `ClickResult`, `ClickVia`. The decision and its reasoning are recorded in `docs/adr/0015`.
+
+- b88e30b: **BREAKING for anyone relying on `serve` advertising a `cdpEndpoint` by default: pass `--expose-cdp` to restore it.**
+
+  **`serve` no longer opens a remote-debugging port unless asked.** CDP exposure was hard-coded ON in the `serve` wiring, so every launch appended `--remote-debugging-port=0`: a code-execution surface on your logged-in page AND an automation tell that anti-bot WAFs look for, added even under `--stealth`, where it partly undoes what Patchright is there for. It is now the opt-in `--expose-cdp` (default OFF), and `serve` reports a warning in its output envelope (not just stderr, so an agent caller sees it too) when `--stealth --expose-cdp` are combined. `cdpEndpoint` is present in the `serve` output only when exposed. The eval harness, which needs the shared driving surface for its Playwright-baseline leg, now asks for it explicitly.
+
+  **`setup-profile` accepts the same browser-selection flags as `launch`/`serve`** (`--stealth`, `--use-system-browser`, `--proxy`, `--no-viewport`), where it used to reject them as "Unknown flag". That mattered because `setup-profile` is what CREATES the profile directory, and a Chromium user-data dir is written by a specific browser build: setting a profile up with the bundled Chromium and then driving it with `serve --use-system-browser chrome` points a different build at the same dir, which is both a fingerprint discrepancy and a real risk of Chrome migrating or refusing a profile another build wrote. `core`'s `setupProfile` takes the policy as a `launch` option, and the verb now reports the `systemBrowser`/`stealth` it set the profile up with (and carries that selection into its suggested next command).
+
+  README's stealth guidance is corrected with measured evidence: against Akamai Bot Manager, a Playwright-launched browser was blocked identically with default launch, `--stealth`, `--stealth --use-system-browser chrome` and a fresh profile, while attaching to a user-started Chrome drove a nine-screen authenticated flow. `--stealth` is one tell removed, not the anti-bot answer.
+
+- b88e30b: **`--proxy` now works with `--real-chrome`**, routing the spawned browser's traffic and DNS through a SOCKS proxy via Chromium's own `--proxy-server` (plus the `--host-resolver-rules` no-leak catch-all for `socks5h`). It reuses the existing `parseSocksProxy`, so `socks5h` vs `socks5` means the same thing in both modes and a malformed value is still the typed `InvalidProxyError` rather than an unproxied browser. This matters more in this mode than on the launch path: `--real-chrome` exists to present a real browser to an anti-bot system, the exit IP is part of what such a system weighs, and a proxy is the only lever on it there. `serve` no longer warns that `--proxy` is inapplicable under `--real-chrome`, because it is not.
+
+  Three limits, taken from Chromium's `net/docs/proxy.md` and verified locally rather than assumed:
+
+  - **Credentials are REFUSED in this mode**, with a new typed `ProxyAuthUnsupportedError`. Chrome "supports no authentication methods for SOCKSv5" and "will not use any credentials embedded in the proxy settings", so passing a `user:pass@` URL through would fail every request, and stripping it silently would leave the user believing their traffic was authenticated and proxied. The fix command points at terminating auth locally (`ssh -D 1080`) and the message redacts the password. The default Playwright launch path still accepts credentials, since Playwright answers the auth challenge itself.
+  - **Loopback is never proxied** (Chromium's implicit bypass list), so "all traffic" means all non-loopback traffic. Left as-is, because nobody wants their local dev server proxied, and documented instead.
+  - **It fails closed**: an unreachable proxy means the navigation does not complete, rather than quietly leaving via the real IP.
+
+  Tested end to end against a real local SOCKS5 server that observes the browser's connections, so the claim asserted is "the page traffic went through the proxy", not merely "the flag was forwarded". A new pure `buildRealChromeArgs` makes the flag construction testable without spawning a browser.
+
+- b88e30b: **`script` accepts the module-style file a human actually writes.** The loader compiled the source by wrapping it in an expression position (`return (<source>)`), so a trailing semicolon failed with `Unexpected token ';'` and a top-level `const CONFIG = {...}` before the function failed with `Unexpected token 'const'`: messages that name the punctuation and never the cause. The ADR-0012 contract is unchanged (the file's VALUE is the function), but the compile now lives in `script-source.ts` and accepts top-level statements before the final function expression, a trailing semicolon, and a leading `export default`. ESM `import` and `module.exports` still cannot work, and both now arrive at `InvalidScriptSourceError`, which states the constraint, shows a correct minimal example and lists what IS tolerated.
+
+  A minor rather than a patch because it widens the set of accepted `script` sources, which is a new capability (documented as one in the skill and the verb's own help), not a bug fix.
+
+  Compile and invoke are separated so a RUNTIME `SyntaxError` in the caller's own script (`JSON.parse('{')`, `new RegExp('[')`, a nested `eval`) is no longer mistaken for a parse failure. Previously such a script was re-run from the top, so its side effects happened TWICE, and the author was then shown a shape complaint instead of their own parse error.
+
+  New exports from `@webhands/core`: `compileScriptSource`, `InvalidScriptSourceError`, `ScriptSourceBindings`.
+
+- b88e30b: **`serve --real-chrome`: drive the user's own Chrome, the mode that actually gets past a serious bot manager (ADR-0014).**
+
+  Measured in ONE session against Akamai Bot Manager on an authenticated booking site (one site, one vendor, one date, no committed artifact: enough to change which mode we recommend first, not enough to claim the mode defeats bot management in general): a Playwright-LAUNCHED browser was blocked identically in every configuration (default launch, `--stealth` with Patchright genuinely resolved, `--stealth --use-system-browser chrome`, a brand-new profile), while attaching to a Chrome the human started drove a nine-screen authenticated flow including login, seat selection and a payment page with no blocking. Attaching was already possible via `serve --endpoint`; what was missing was the boring half. `serve --real-chrome` now spawns the system Chrome with a remote-debugging port on the dedicated profile dir and attaches over CDP, in one command, with a visible window so the human can log in and take over. `--keep-browser` leaves that browser running after `stop`, and the next `--real-chrome` serve REUSES it (Chrome cannot open one user-data dir twice, so reuse is what makes the flag usable). `WEBHANDS_CHROME` names the executable when it is not on the usual path.
+
+  New in `core`: `spawnRealChrome` / `buildRealChromeArgs` / `assertUsableChromeProxy` / `discoverChromeExecutable` / `isLiveDevToolsEndpoint` / `readDevToolsPort` / `resolveCdpEndpoint` (no Playwright or CDP types: it spawns a process and hands back a plain loopback URL) and `RealChromeTransport`, which composes that spawn with the UNCHANGED attach transport and owns only the lifetime of a browser webhands started. New typed errors `RealChromeNotFoundError` / `RealChromeStartError` / `RealChromeReuseConflictError` map to fix commands that can actually work (install Chrome or name its path, not `npx playwright install`). `transportForPolicy` is exported from the CLI package so the browser-choice wiring is testable.
+
+  It refuses to spawn over a browser already running on that profile dir, because Chrome's second instance exits 0 and leaves the first one's port file behind, which would otherwise hand back a live endpoint belonging to a browser we do not own. Conversely an open REUSES such a browser (attaching, never killing it), except when `--proxy` was asked for: a running browser cannot acquire a proxy, and silently reusing would egress through the real IP while the user believed they were tunnelled, so that combination is a refusal.
+
+  `serve` warns rather than silently ignoring: the Playwright launch flags under `--real-chrome`, `--keep-browser` without it, and every bring-up flag when an explicit `--endpoint` overrides them.
+
+  Honest framing, pinned by a test: this is NOT a cloak. Chrome sets `navigator.webdriver = true` whenever a debugging port is enabled, verified before any client attaches, so the mode that WORKS is just as visible on that signal as the one that is blocked. The advantage is everything else about being a real browser.
+
+  **Also fixes two real defects in the attach path, found while building this.** Playwright's `browser.close()` over CDP intermittently blocks exactly 30s (measured 30008ms / 30229ms, versus 2 to 10ms normally), so `webhands stop` could hang for nothing: the detach is now bounded at 2s, after which the session is declared closed and the disconnect finishes in the background. And `connectOverCDP` now uses a 10s connect timeout instead of Playwright's 30s default, since the browser is already running and a slow connect means a wrong endpoint. As a side effect the attach test suite went from 184s with a pre-existing failure to 8.5s all green.
+
+### Patch Changes
+
+- b88e30b: **`--stealth` no longer silently disables `click`'s dispatch fallback.** The hidden-control escape, and the `eval --frame` "no iframe matched" message, branched on `cause instanceof pwErrors.TimeoutError`: a class-identity check against the `playwright` package. Under `--stealth` the page is driven by `patchright`, an API-compatible FORK that ships its own `TimeoutError` class, so the branch was false for every timeout it raised and `click` on a control hidden behind a styled label rethrew a raw timeout instead of dispatching. Verified against the installed packages: `playwright.errors.TimeoutError !== patchright.errors.TimeoutError`. Both sites now go through one structural `isTimeoutError` predicate that also matches on the error name, with a test that guards its own premise so it cannot quietly stop proving anything.
+- 14f9ac3: **`--real-chrome` now tells you WHY a browser failed to start, and offers an escape where there is no sandbox.**
+
+  Found by CI going red: every spawn aborted on the runner with nothing but `it exited on signal SIGABRT`. The cause is that a plainly-spawned Chrome needs a usable sandbox, and a CI runner or container has neither a setuid helper (the bundled `chrome_sandbox` is not setuid) nor permissive user namespaces. Playwright's own launches never hit it because Playwright passes `--no-sandbox` by default, which is exactly why the same binary works when Playwright starts it and dies when we do.
+
+  Two fixes:
+
+  - **Chrome's stderr is captured and quoted** in `RealChromeStartError` (drained before reading, because Node delivers `exit` before the stdio pipes finish, so an earlier synchronous read returned nothing). The browser had been explaining itself all along; we were ignoring the pipe. Also exposed as `error.stderr`.
+  - **`WEBHANDS_CHROME_ARGS`** appends extra browser flags, so `--real-chrome` is usable in a container with `WEBHANDS_CHROME_ARGS='--no-sandbox --disable-dev-shm-usage'`. webhands never adds those itself: the mode exists to BE the user's real browser, and a real desktop Chrome is sandboxed, so disabling it has to be a deliberate operator decision. The error message names the variable, so the fix is discoverable at the point of failure.
+
+  The tests route every spawned browser through one helper that applies the CI-only sandbox flags, so the concession lives in a single documented place rather than in four test files.
+
+- Updated dependencies [b88e30b]
+- Updated dependencies [cd6c499]
+- Updated dependencies [b88e30b]
+- Updated dependencies [b88e30b]
+- Updated dependencies [b88e30b]
+- Updated dependencies [b88e30b]
+- Updated dependencies [14f9ac3]
+- Updated dependencies [b88e30b]
+- Updated dependencies [b88e30b]
+  - @webhands/core@0.8.0
+
 ## 0.5.1
 
 ### Patch Changes
