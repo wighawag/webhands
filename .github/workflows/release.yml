@@ -29,6 +29,15 @@ name: release
 #     stage-only, and `changeset publish` does a DIRECT publish.
 #   * npm ties a trusted publisher to an EXISTING package, so a brand-new
 #     package's first publish is a one-time manual `pnpm release`.
+#
+# HOW TO TELL WHICH SIDE IS AT FAULT, from the log this workflow now produces:
+#   npm http fetch GET  https://...idtoken/...?audience=npm%3Aregistry.npmjs.org 200
+#   npm http fetch POST https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/<pkg> 404
+# A 200 on the GET means GitHub issued the OIDC token, so the workflow side is
+# fine. A 404 on the token-EXCHANGE POST is npm saying it has no trusted
+# publisher matching this repo/workflow FOR THAT PACKAGE: register it, nothing in
+# this file will help. The publish then proceeds unauthenticated and the final
+# `E404 ... PUT` is just that consequence, not the cause.
 on:
   push:
     branches: [main]
@@ -82,9 +91,13 @@ jobs:
           echo "npm:         $(npm --version)   (OIDC needs >= 11.5.1)"
           echo "pnpm:        $(pnpm --version)"
           echo "registry:    $(npm config get registry)"
-          echo "OIDC url set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}${ACTIONS_ID_TOKEN_REQUEST_URL:-no}"
-          echo "OIDC tok set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-no}"
-          echo "NPM_TOKEN set: ${NPM_TOKEN:+yes}${NPM_TOKEN:-no}"
+          # `${VAR:+yes}` alone, never `${VAR:-no}`: the latter prints the VALUE
+          # when the variable is set, which is the opposite of the intent and did
+          # echo the OIDC request URL into a public log once.
+          set_or_no() { [ -n "$1" ] && echo yes || echo no; }
+          echo "OIDC url set:  $(set_or_no "$ACTIONS_ID_TOKEN_REQUEST_URL")"
+          echo "OIDC tok set:  $(set_or_no "$ACTIONS_ID_TOKEN_REQUEST_TOKEN")"
+          echo "NPM_TOKEN set: $(set_or_no "$NPM_TOKEN")"
           echo "--- npmrc files in play ---"
           for f in "$HOME/.npmrc" "$GITHUB_WORKSPACE/.npmrc"; do
             [ -f "$f" ] && echo "$f:" && sed 's/=.*/=<redacted>/' "$f" || echo "$f: absent"
