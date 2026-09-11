@@ -7,13 +7,28 @@ name: release
 #   3. Merging that PR (which removes the changesets) makes this workflow run
 #      `changeset publish`, publishing the changed packages to npm.
 #
-# Auth is npm Trusted Publishing (OIDC): NO NPM_TOKEN secret. npm trusts this
-# repo + workflow (release.yml) once you register it as a trusted publisher on
-# the package's npmjs.com settings. The OIDC handshake needs `id-token: write`,
-# Node >= 22, and a recent pnpm; publishes are stamped with provenance.
-# NOTE: npm ties a trusted publisher to an existing package, so the FIRST
-# publish is a one-time manual `pnpm release` (see README / package notes);
-# every release after that goes through this tokenless OIDC flow.
+# AUTH. Primary path is npm Trusted Publishing (OIDC), so no long-lived token:
+# npm trusts this repo + workflow once it is registered as a trusted publisher in
+# each package's npmjs.com settings. It needs `id-token: write`, Node >= 22.14
+# and npm >= 11.5.1 (Node 24 ships one). `NPM_TOKEN` is also wired below as an
+# optional fallback: absent, the action uses OIDC exactly as before; present, it
+# authenticates with the token instead.
+#
+# CHECKLIST when a publish 404s (npm answers 404, not 403, for "not
+# authenticated / no permission", so the error looks like a missing package):
+#   * EVERY published package needs its OWN trusted-publisher entry. This is a
+#     monorepo: `webhands` AND `@webhands/core`. Registering one and forgetting
+#     the other produces a HALF release, which is worse than none, because the
+#     published CLI pins an exact core version that does not exist and installs
+#     fail with ETARGET.
+#   * Fields must match exactly: organization/user `wighawag`, repository
+#     `webhands`, workflow filename `release.yml`, environment name BLANK (this
+#     job declares none).
+#   * Allowed actions must include `npm publish`, not only `npm stage publish`.
+#     Per npm's docs, configurations created after 2026-09-03 default to
+#     stage-only, and `changeset publish` does a DIRECT publish.
+#   * npm ties a trusted publisher to an EXISTING package, so a brand-new
+#     package's first publish is a one-time manual `pnpm release`.
 on:
   push:
     branches: [main]
@@ -37,24 +52,61 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
 
+      # NOTE: deliberately NO `registry-url`. It makes setup-node write an
+      # .npmrc containing `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`,
+      # and with no token in the env that placeholder stays unresolved, which the
+      # failing run showed verbatim:
+      #   WARN Issue while reading ".npmrc". Failed to replace env in config:
+      #   ${NODE_AUTH_TOKEN}
+      # A publish carrying a garbage credential is a worse starting point than one
+      # carrying none, and the default registry is registry.npmjs.org anyway (each
+      # package's publishConfig sets its own access). When NPM_TOKEN is used
+      # instead, changesets/action writes its own .npmrc, so nothing here is
+      # needed for that path either.
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: 24 # >= 22 required for npm OIDC trusted publishing
+          node-version: 24 # >= 22.14 required for npm OIDC trusted publishing
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # Cheap facts, printed BEFORE the publish, so a failure is diagnosable from
+      # the log alone instead of by archaeology. The first 404 said only
+      # "E404 Not Found - PUT", which cost an hour to attribute. Nothing secret is
+      # printed: only whether the OIDC request variables EXIST, never their values.
+      - name: Publish preflight
+        run: |
+          echo "node:        $(node --version)"
+          echo "npm:         $(npm --version)   (OIDC needs >= 11.5.1)"
+          echo "pnpm:        $(pnpm --version)"
+          echo "registry:    $(npm config get registry)"
+          echo "OIDC url set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}${ACTIONS_ID_TOKEN_REQUEST_URL:-no}"
+          echo "OIDC tok set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-no}"
+          echo "NPM_TOKEN set: ${NPM_TOKEN:+yes}${NPM_TOKEN:-no}"
+          echo "--- npmrc files in play ---"
+          for f in "$HOME/.npmrc" "$GITHUB_WORKSPACE/.npmrc"; do
+            [ -f "$f" ] && echo "$f:" && sed 's/=.*/=<redacted>/' "$f" || echo "$f: absent"
+          done
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create Release PR or Publish
         uses: changesets/action@v1
         with:
           # release:ci builds + format-checks then runs `changeset publish`
           # (the action itself handles git commits/tags, so no git push here).
-          # No NPM_TOKEN: npm detects the OIDC environment and authenticates via
-          # the registered trusted publisher.
           publish: pnpm release:ci
           version: pnpm changeset version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional fallback. Unset => the action reports "No NPM_TOKEN found,
+          # but OIDC is available" and uses trusted publishing, which is the
+          # intended path. Set => it authenticates with the token.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # `http` surfaces npm's own request/response lines, which is what
+          # distinguishes "the OIDC exchange was refused" from "no credential was
+          # sent at all". npm scrubs authorization headers. Drop this line once a
+          # release has gone green.
+          NPM_CONFIG_LOGLEVEL: http
