@@ -12,7 +12,7 @@ also OWNS the `serve` session lifecycle around each eval: per ADR-0005 a verb
 with no live `serve` errors and never auto-spawns, so the harness shells out to
 the published `serve`/`stop` verbs against an ISOLATED `WEBHANDS_HOME` temp root
 (endpoint + profile + screenshots there, never the real `~/.webhands`),
-forwarding the existing `--profile`/`--proxy`/`--stealth` options unchanged.
+forwarding the existing `--profile`/`--proxy`/`--stealth` options unchanged, plus `--expose-cdp`. The harness MUST ask for that one (ADR-0014 made CDP exposure opt-in because a remote-debugging port is both a code-execution surface and an automation tell): the exposed endpoint is what lets a Playwright-only baseline agent `connectOverCDP` to the harness's EXISTING page, so the end-state assertion reads the page the agent actually drove. Without it the baseline leg silently loses its attach target.
 
 ## Considered Options
 

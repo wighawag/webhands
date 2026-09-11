@@ -102,6 +102,107 @@ const CLICK_TYPE = `<!doctype html>
 `;
 
 /**
+ * Real-site form controls HIDDEN BEHIND STYLED LABELS: the case the `--dom`
+ * escape exists for (finding
+ * `real-sites-hide-form-controls-behind-styled-labels`; ADR-0015).
+ *
+ * These are FUNCTIONAL controls a human operates by clicking the label, but the
+ * input itself can never satisfy Playwright's actionability check, so an
+ * actionability-checked verb waits out its timeout. Two hiding techniques are
+ * represented because both are common and they behave differently:
+ *
+ * - `#seat-window` / `#seat-aisle`: radios hidden with `opacity:0` + zero size
+ *   (still in the layout; the overwhelmingly common styled-radio pattern).
+ * - `#terms`: a checkbox hidden with `display:none` (removed from layout).
+ * - `#hidden-qty`: a `display:none` `<select>`, for `select --dom`.
+ * - `#hidden-note`: a `display:none` text input, for `type --dom`.
+ * - `#hidden-hotkey`: a `display:none` element with a KEY handler, for
+ *   `press --dom`.
+ * - `#hidden-menu-trigger`: a `display:none` element with a mouseover handler,
+ *   for `hover --dom`.
+ *
+ * Every control records its effect in a `#...-state` paragraph, so a test asserts
+ * the control ACTUALLY FIRED rather than that the verb did not throw. The radios
+ * and checkbox also record their `change` event, which is what proves a dispatched
+ * click ran the HTML activation behaviour and not just a listener.
+ */
+const LABEL_HIDDEN_CONTROLS = `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>label-hidden controls fixture</title>
+		<style>
+			.visually-hidden {
+				opacity: 0;
+				width: 0;
+				height: 0;
+				position: absolute;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Label-hidden controls</h1>
+
+		<!-- Styled radios: the input is invisible, the LABEL is what a human clicks. -->
+		<label for="seat-window">Window seat</label>
+		<input class="visually-hidden" type="radio" id="seat-window" name="seat" value="window" />
+		<label for="seat-aisle">Aisle seat</label>
+		<input class="visually-hidden" type="radio" id="seat-aisle" name="seat" value="aisle" />
+		<p id="seat-state">no-seat</p>
+
+		<!-- display:none checkbox (removed from layout entirely). -->
+		<label for="terms">Accept terms</label>
+		<input type="checkbox" id="terms" style="display: none" />
+		<p id="terms-state">unchecked</p>
+
+		<select id="hidden-qty" style="display: none">
+			<option value="1">One seat</option>
+			<option value="2">Two seats</option>
+		</select>
+		<p id="qty-state">qty-unset</p>
+
+		<input type="text" id="hidden-note" style="display: none" />
+		<p id="note-state">note-empty</p>
+
+		<div id="hidden-hotkey" style="display: none" tabindex="-1"></div>
+		<p id="hotkey-state">no-key</p>
+
+		<div id="hidden-menu-trigger" style="display: none"></div>
+		<p id="menu-state">menu-closed</p>
+
+		<script>
+			for (const id of ['seat-window', 'seat-aisle']) {
+				document.getElementById(id).addEventListener('change', function (e) {
+					// Records via the CHANGE event, so a passing test proves the control's
+					// activation behaviour ran, not merely that a listener fired.
+					document.getElementById('seat-state').textContent = e.target.value;
+				});
+			}
+			document.getElementById('terms').addEventListener('change', function (e) {
+				document.getElementById('terms-state').textContent = e.target.checked
+					? 'checked'
+					: 'unchecked';
+			});
+			document.getElementById('hidden-qty').addEventListener('change', function (e) {
+				document.getElementById('qty-state').textContent = 'qty=' + e.target.value;
+			});
+			document.getElementById('hidden-note').addEventListener('input', function (e) {
+				document.getElementById('note-state').textContent = 'note=' + e.target.value;
+			});
+			document.getElementById('hidden-hotkey').addEventListener('keydown', function (e) {
+				document.getElementById('hotkey-state').textContent = 'key=' + e.key;
+			});
+			document
+				.getElementById('hidden-menu-trigger')
+				.addEventListener('mouseover', function () {
+					document.getElementById('menu-state').textContent = 'menu-open';
+				});
+		</script>
+	</body>
+</html>
+`;
+
+/**
  * A page whose submit button triggers a SLOW navigation (SPEC story 8, the
  * "real submit button" path). Clicking `#slow-submit` navigates to
  * `index.html?delayMs=1500`; the fixture server holds that response back ~1.5s,
@@ -1196,6 +1297,7 @@ const REF_LIST = `<!doctype html>
 /** Map of request path (relative to root, no leading slash) to page markup. */
 export const FIXTURE_PAGES: Readonly<Record<string, string>> = {
 	'index.html': INDEX,
+	'label-hidden-controls.html': LABEL_HIDDEN_CONTROLS,
 	'click-type.html': CLICK_TYPE,
 	'delayed.html': DELAYED_CONTENT,
 	'slow-submit.html': SLOW_SUBMIT,

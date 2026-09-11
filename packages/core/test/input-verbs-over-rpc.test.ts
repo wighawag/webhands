@@ -42,20 +42,41 @@ describe('input-verb RPC dispatch (no browser)', () => {
 	} {
 		const calls: {verb: string; args: readonly unknown[]}[] = [];
 		const page = {
-			async press(key: string, target: unknown) {
-				calls.push({verb: 'press', args: [key, target]});
+			async press(key: string, target: unknown, options?: unknown) {
+				calls.push({
+					verb: 'press',
+					// Record the ActionOptions only when GIVEN, so the existing 1:1 arg
+					// assertions keep their shape and the `--dom`/`--timeout` forwarding is
+					// visible when it happens.
+					args: options !== undefined ? [key, target, options] : [key, target],
+				});
 			},
-			async hover(target: string) {
-				calls.push({verb: 'hover', args: [target]});
+			async hover(target: string, options?: unknown) {
+				calls.push({
+					verb: 'hover',
+					args: options !== undefined ? [target, options] : [target],
+				});
 			},
-			async select(target: string, choice: unknown) {
-				calls.push({verb: 'select', args: [target, choice]});
+			async select(target: string, choice: unknown, options?: unknown) {
+				calls.push({
+					verb: 'select',
+					args:
+						options !== undefined
+							? [target, choice, options]
+							: [target, choice],
+				});
 			},
 			async scroll(target: unknown) {
 				calls.push({verb: 'scroll', args: [target]});
 			},
-			async drag(source: string, target: string) {
-				calls.push({verb: 'drag', args: [source, target]});
+			async drag(source: string, target: string, options?: unknown) {
+				calls.push({
+					verb: 'drag',
+					args:
+						options !== undefined
+							? [source, target, options]
+							: [source, target],
+				});
 			},
 		} as unknown as WebHandsPage;
 		return {page, calls};
@@ -124,6 +145,93 @@ describe('input-verb RPC dispatch (no browser)', () => {
 			{verb: 'drag', source: 'a', target: 'b'},
 		]);
 	});
+
+	it("carries click's RESULT back across the wire (via), not just its request", async () => {
+		// The gap this closes, found in review: `session-rpc.ts` was changed from
+		// `await page.click(...); return undefined` to `return page.click(...)` so the
+		// {via} result crosses back, and NOTHING tested it. Reverting that one line left
+		// the whole suite green while `webhands click --dom` against a served session
+		// (the normal path) reported no `via` at all.
+		const calls: {verb: string; args: readonly unknown[]}[] = [];
+		const page = {
+			async click(target: string, options?: unknown) {
+				calls.push({verb: 'click', args: [target, options]});
+				return {via: 'dispatch'};
+			},
+		} as unknown as WebHandsPage;
+
+		const value = await applySessionRpc(page, {
+			verb: 'click',
+			locator: `page.locator('#hidden-radio')`,
+			options: {dom: true},
+		});
+		// The server hands the page's own result to the wire.
+		expect(value).toEqual({via: 'dispatch'});
+
+		// And the typed client returns it to the caller rather than swallowing it.
+		const client = makeRpcPage(async () => ({via: 'dispatch'}));
+		await expect(
+			client.click(`page.locator('#hidden-radio')` as never, {dom: true}),
+		).resolves.toEqual({via: 'dispatch'});
+	});
+
+	it('falls back to via:"click" when a server predates the result', async () => {
+		// Forward compatibility with a served session from an older version: no value
+		// comes back, and we must NOT invent a dispatch (which would tell the caller a
+		// human could not have clicked, the more alarming of the two readings).
+		const client = makeRpcPage(async () => undefined);
+		await expect(client.click('x' as never)).resolves.toEqual({via: 'click'});
+	});
+
+	it('carries the --dom / --timeout ActionOptions across the wire, both ways', async () => {
+		// The escape and the pacing bound are useless if they stop at the process
+		// boundary: every verb is a thin CLIENT of the served session, so the options
+		// have to travel. Asserted in both directions, like the other RPC pairs.
+		const {page, calls} = recordingPage();
+		await applySessionRpc(page, {
+			verb: 'hover',
+			locator: 'h',
+			options: {dom: true},
+		});
+		await applySessionRpc(page, {
+			verb: 'select',
+			locator: 's',
+			choice: {value: '2'},
+			options: {dom: true},
+		});
+		await applySessionRpc(page, {
+			verb: 'press',
+			key: 'Enter',
+			locator: 'k',
+			options: {dom: true},
+		});
+		await applySessionRpc(page, {
+			verb: 'drag',
+			source: 'a',
+			target: 'b',
+			options: {timeoutMs: 1234},
+		});
+		expect(calls).toEqual([
+			{verb: 'hover', args: ['h', {dom: true}]},
+			{verb: 'select', args: ['s', {value: '2'}, {dom: true}]},
+			{verb: 'press', args: ['Enter', 'k', {dom: true}]},
+			{verb: 'drag', args: ['a', 'b', {timeoutMs: 1234}]},
+		]);
+
+		const sent: SessionRpcRequest[] = [];
+		const client = makeRpcPage(async (request) => {
+			sent.push(request);
+			return undefined;
+		});
+		await client.hover('h' as never, {dom: true});
+		await client.press('Enter', 'k' as never, {timeoutMs: 50});
+		await client.drag('a' as never, 'b' as never, {timeoutMs: 50});
+		expect(sent).toEqual([
+			{verb: 'hover', locator: 'h', options: {dom: true}},
+			{verb: 'press', key: 'Enter', locator: 'k', options: {timeoutMs: 50}},
+			{verb: 'drag', source: 'a', target: 'b', options: {timeoutMs: 50}},
+		]);
+	});
 });
 
 describe('input verbs over a live served session (real browser, fixture)', () => {
@@ -185,6 +293,38 @@ describe('input verbs over a live served session (real browser, fixture)', () =>
 			await client.close();
 		}
 	}, 15_000);
+
+	it('click reports via "dispatch" over the wire for a label-hidden control', async () => {
+		// End to end, the path `webhands click` actually takes: a thin client drives the
+		// served page and learns HOW the click happened. The fixture's styled radio is
+		// functional but never actionable, so a real browser genuinely takes the escape.
+		const server = await startServer('input-rpc-click-via');
+		const client = connectRemoteSession(server.endpoint.url);
+		try {
+			await client.page.navigate(`${fixture.url}/label-hidden-controls.html`);
+
+			const hidden = await client.page.click(
+				`page.locator('#seat-window')` as never,
+			);
+			expect(hidden).toEqual({via: 'dispatch'});
+			// And it actually worked: the radio's change handler ran.
+			expect(
+				await client.page.eval(
+					`document.getElementById('seat-state').textContent`,
+				),
+			).toBe('window');
+
+			// A visible control on the same origin reports the real path, so the field
+			// discriminates rather than always saying the same thing.
+			await client.page.navigate(`${fixture.url}/click-type.html`);
+			const visible = await client.page.click(
+				`page.getByRole('button', { name: 'Search' })` as never,
+			);
+			expect(visible).toEqual({via: 'click'});
+		} finally {
+			await client.close();
+		}
+	}, 20_000);
 
 	it('drag fires the drop handler over the wire', async () => {
 		const server = await startServer('input-rpc-drag');

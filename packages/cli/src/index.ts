@@ -21,9 +21,11 @@ export {
 	CLI_NAME,
 	CTA_ENV_VAR,
 	DEFAULT_PROFILE,
+	transportForPolicy,
 	type CliDeps,
 	type LaunchPolicy,
 	type ServeSession,
+	type TransportFactories,
 } from './cli.js';
 
 export {

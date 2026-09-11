@@ -1,5 +1,6 @@
 import type {
 	ActionOptions,
+	ClickResult,
 	Cookie,
 	EvalOptions,
 	MouseInput,
@@ -79,7 +80,7 @@ export class StubTransport implements Transport {
 					content: '',
 				};
 			},
-			async click(t, options?: ActionOptions): Promise<void> {
+			async click(t, options?: ActionOptions): Promise<ClickResult> {
 				ensureOpen();
 				// Record the ActionOptions only when given, so a plain-locator click
 				// stays `[t]` (the existing seam assertions) and a `{byRef}` click
@@ -88,6 +89,10 @@ export class StubTransport implements Transport {
 					verb: 'click',
 					args: options !== undefined ? [t, options] : [t],
 				});
+				// The stub performs nothing, so it reports the path a REAL click would
+				// have taken for these options: a `dom` escape dispatches, anything else
+				// is a plain click. Wiring tests assert the recorded call, not this.
+				return {via: options?.dom === true ? 'dispatch' : 'click'};
 			},
 			async type(t, text, options?: ActionOptions): Promise<void> {
 				ensureOpen();
@@ -124,6 +129,13 @@ export class StubTransport implements Transport {
 				ensureOpen();
 				calls.push({verb: 'setCookies', args: [cookies]});
 			},
+			async clearCookies(filter): Promise<number> {
+				ensureOpen();
+				calls.push({verb: 'clearCookies', args: [filter]});
+				// A stub removes nothing, so it reports nothing removed: a wiring test
+				// asserts the RECORDED call, never a fabricated count.
+				return 0;
+			},
 			async query(t, options?: QueryOptions): Promise<QueryRow[]> {
 				ensureOpen();
 				calls.push({verb: 'query', args: [t, options]});
@@ -149,25 +161,45 @@ export class StubTransport implements Transport {
 				calls.push({verb: 'getAttribute', args: [t, name]});
 				return null;
 			},
-			async press(key: string, t): Promise<void> {
+			// The acting verbs record their optional ActionOptions (`byRef`/`dom`/
+			// `timeoutMs`) only when GIVEN, so an unflagged call keeps the exact arg shape
+			// the existing wiring assertions pin, and a flagged one makes the forwarding
+			// visible.
+			async press(key: string, t, options?: ActionOptions): Promise<void> {
 				ensureOpen();
-				calls.push({verb: 'press', args: [key, t]});
+				calls.push({
+					verb: 'press',
+					args: options !== undefined ? [key, t, options] : [key, t],
+				});
 			},
-			async hover(t): Promise<void> {
+			async hover(t, options?: ActionOptions): Promise<void> {
 				ensureOpen();
-				calls.push({verb: 'hover', args: [t]});
+				calls.push({
+					verb: 'hover',
+					args: options !== undefined ? [t, options] : [t],
+				});
 			},
-			async select(t, choice: SelectChoice): Promise<void> {
+			async select(
+				t,
+				choice: SelectChoice,
+				options?: ActionOptions,
+			): Promise<void> {
 				ensureOpen();
-				calls.push({verb: 'select', args: [t, choice]});
+				calls.push({
+					verb: 'select',
+					args: options !== undefined ? [t, choice, options] : [t, choice],
+				});
 			},
 			async scroll(t: ScrollTarget): Promise<void> {
 				ensureOpen();
 				calls.push({verb: 'scroll', args: [t]});
 			},
-			async drag(source, t): Promise<void> {
+			async drag(source, t, options?: ActionOptions): Promise<void> {
 				ensureOpen();
-				calls.push({verb: 'drag', args: [source, t]});
+				calls.push({
+					verb: 'drag',
+					args: options !== undefined ? [source, t, options] : [source, t],
+				});
 			},
 			async mouse(input: MouseInput): Promise<void> {
 				ensureOpen();

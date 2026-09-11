@@ -1,6 +1,6 @@
-import {readFile, stat} from 'node:fs/promises';
-import {join} from 'node:path';
+import {stat} from 'node:fs/promises';
 import {chromium, type BrowserContext, type Page} from 'playwright';
+import {resolveCdpEndpoint} from './devtools-port.js';
 import {
 	MissingBrowserBinaryError,
 	MissingProfileError,
@@ -445,35 +445,6 @@ export class PlaywrightLaunchTransport implements Transport {
 		}
 		return mod.chromium;
 	}
-}
-
-/**
- * Resolve the CDP / remote-debugging endpoint of a Chromium launched with
- * `--remote-debugging-port=0` by reading the port it chose from the
- * `DevToolsActivePort` file it writes into the user-data dir (the file's first
- * line is the port). Polls briefly because the file appears shortly AFTER the
- * persistent context resolves. Returns `http://127.0.0.1:<port>` (the loopback
- * endpoint a Playwright client passes to `connectOverCDP`), or `undefined` if
- * the file never appears in time (best-effort: never fail the launch over the
- * shared-surface endpoint).
- */
-async function resolveCdpEndpoint(
-	profileDir: string,
-): Promise<string | undefined> {
-	const portFile = join(profileDir, 'DevToolsActivePort');
-	for (let attempt = 0; attempt < 50; attempt++) {
-		try {
-			const raw = await readFile(portFile, 'utf8');
-			const port = raw.split('\n')[0]?.trim();
-			if (port !== undefined && port !== '') {
-				return `http://127.0.0.1:${port}`;
-			}
-		} catch {
-			// not written yet
-		}
-		await new Promise((resolve) => setTimeout(resolve, 20));
-	}
-	return undefined;
 }
 
 /** True iff `path` exists and is a directory. */

@@ -1,7 +1,10 @@
 export type {
 	ActionOptions,
 	BoundingBox,
+	ClickResult,
+	ClickVia,
 	Cookie,
+	CookieFilter,
 	Driver,
 	EvalOptions,
 	LocatorString,
@@ -26,7 +29,11 @@ export type {
 	Transport,
 	WaitCondition,
 } from './seam.js';
-export {locator, validateSnapshotOptions} from './seam.js';
+export {
+	locator,
+	validateCookieFilter,
+	validateSnapshotOptions,
+} from './seam.js';
 
 export {
 	substituteEnvPlaceholders,
@@ -94,9 +101,35 @@ export {
 	ScreenshotPathError,
 	StaleRefError,
 	UnresolvedEnvPlaceholderError,
+	RealChromeNotFoundError,
+	RealChromeStartError,
+	RealChromeReuseConflictError,
+	ProxyAuthUnsupportedError,
 	isControllerError,
 	type ControllerErrorCode,
 } from './errors.js';
+
+export {
+	RealChromeTransport,
+	type RealChromeTransportOptions,
+} from './real-chrome-transport.js';
+
+export {
+	spawnRealChrome,
+	buildRealChromeArgs,
+	assertUsableChromeProxy,
+	discoverChromeExecutable,
+	isLiveDevToolsEndpoint,
+	REAL_CHROME_ENV,
+	type RealChrome,
+	type SpawnRealChromeOptions,
+} from './real-chrome.js';
+
+export {
+	readDevToolsPort,
+	resolveCdpEndpoint,
+	type DevToolsPortOptions,
+} from './devtools-port.js';
 
 export {
 	resolveSessionEndpointPath,
@@ -123,6 +156,12 @@ export {
 } from './verb-trace.js';
 
 export {connectRemoteSession, readSessionTrace} from './remote-session.js';
+
+export {
+	compileScriptSource,
+	InvalidScriptSourceError,
+	type ScriptSourceBindings,
+} from './script-source.js';
 
 export {
 	distillTrace,

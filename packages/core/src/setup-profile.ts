@@ -1,5 +1,8 @@
 import {mkdir} from 'node:fs/promises';
-import {PlaywrightLaunchTransport} from './playwright-launch-transport.js';
+import {
+	PlaywrightLaunchTransport,
+	type PlaywrightLaunchTransportOptions,
+} from './playwright-launch-transport.js';
 import {
 	resolveProfileLocation,
 	type ProfileLocation,
@@ -62,6 +65,24 @@ export interface SetupProfileOptions extends ProfileLocationOptions {
 	 * mandates is reused rather than a parallel headed-open path.
 	 */
 	readonly transport?: Transport;
+	/**
+	 * Transport-construction policy for the headed open: the SAME knobs `launch`
+	 * and `serve` take (`stealth`, `systemBrowser`, `noViewport`, `proxy`, ...).
+	 *
+	 * Why `setup-profile` needs them at all: this flow is what CREATES the profile
+	 * directory, and a Chromium user-data dir is written by a SPECIFIC browser
+	 * build. Setting a profile up with the bundled Chromium and then driving it with
+	 * `serve --use-system-browser chrome` points a different build at the same dir,
+	 * which is both a fingerprint discrepancy (the profile's own prefs/state do not
+	 * match the browser presenting them) and a real risk of Chrome migrating or
+	 * refusing a profile another build wrote. The fix is to set the profile up with
+	 * the browser that will later drive it, which is only possible if this verb
+	 * accepts the same selection flags.
+	 *
+	 * Ignored when an explicit {@link transport} is injected (the caller then owns
+	 * construction). Omit for the bundled-Chromium, no-stealth default.
+	 */
+	readonly launch?: PlaywrightLaunchTransportOptions;
 }
 
 /** The result of {@link setupProfile}: the live headed session + where it is. */
@@ -88,7 +109,7 @@ export interface SetupProfileResult {
 export async function setupProfile(
 	options: SetupProfileOptions,
 ): Promise<SetupProfileResult> {
-	const {profile, onPrompt, transport, ...locationOptions} = options;
+	const {profile, onPrompt, transport, launch, ...locationOptions} = options;
 	const location = resolveProfileLocation(profile, locationOptions);
 
 	// Create the dedicated profile dir (idempotent). This is the ONE place a
@@ -96,7 +117,12 @@ export async function setupProfile(
 	// MissingProfileError precisely so `setup-profile` owns its creation.
 	await mkdir(location.profileDir, {recursive: true});
 
-	const driver = transport ?? new PlaywrightLaunchTransport(locationOptions);
+	// Build the default transport with the caller's launch policy, so the profile
+	// dir is created BY the browser that will later drive it (see
+	// SetupProfileOptions.launch). An injected transport wins untouched.
+	const driver =
+		transport ??
+		new PlaywrightLaunchTransport(locationOptions, [], launch ?? {});
 
 	// Open the profile HEADED (visible) so the human can interact with it.
 	const session = await driver.open({

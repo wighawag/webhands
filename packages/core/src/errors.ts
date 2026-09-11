@@ -28,7 +28,11 @@ export type ControllerErrorCode =
 	| 'cross-origin-frame'
 	| 'screenshot-path-outside-managed-dir'
 	| 'stale-ref'
-	| 'unresolved-env-placeholder';
+	| 'unresolved-env-placeholder'
+	| 'real-chrome-not-found'
+	| 'real-chrome-start-failed'
+	| 'real-chrome-reuse-conflict'
+	| 'proxy-auth-unsupported';
 
 /**
  * Base class for every identifiable `core` error. Branch on {@link code}.
@@ -68,6 +72,151 @@ export class MissingBrowserBinaryError extends ControllerError {
 	) {
 		super(message, options);
 		this.browser = browser;
+	}
+}
+
+/**
+ * A browser is already running against the requested profile dir, and the options
+ * asked for can only be applied when a browser is SPAWNED.
+ *
+ * `--real-chrome` reuses a browser already live on the profile (Chrome cannot open
+ * one user-data dir twice, and a previous `--keep-browser` run or a crashed
+ * controller can leave one up). Reuse is normally exactly what the caller wanted,
+ * but a proxy, an executable path, a headless mode and extra args are all
+ * command-line facts of a process that is ALREADY UP: a running browser cannot
+ * retroactively acquire them.
+ *
+ * So we refuse instead of reusing. The `proxy` case is why this is an error rather
+ * than a warning: silently reusing would egress through the user's real IP while
+ * they believed they were tunnelled, which is the one mistake this tool must never
+ * make quietly.
+ */
+export class RealChromeReuseConflictError extends ControllerError {
+	readonly code = 'real-chrome-reuse-conflict';
+	/** The profile dir whose browser is already running. */
+	readonly profileDir: string;
+	/** That browser's debugging endpoint (so a caller can attach deliberately). */
+	readonly endpoint: string;
+	/** The option names that cannot be honoured by reusing it. */
+	readonly unhonourableOptions: readonly string[];
+
+	constructor(
+		profileDir: string,
+		endpoint: string,
+		unhonourableOptions: readonly string[],
+	) {
+		super(
+			`A browser is already running against ${profileDir} (${endpoint}), and ` +
+				`${unhonourableOptions.join(', ')} can only be applied to a browser ` +
+				`webhands STARTS. Reusing it would hand you a browser that differs from ` +
+				`the one you asked for, silently. Close that browser (or use a different ` +
+				`profile) and retry, or drop those options to attach to it as-is.`,
+		);
+		this.profileDir = profileDir;
+		this.endpoint = endpoint;
+		this.unhonourableOptions = unhonourableOptions;
+	}
+}
+
+/**
+ * A `--proxy` URL carried `user:pass@` credentials in a mode that cannot use
+ * them: the spawned-real-Chrome path, which configures the proxy through
+ * Chromium's own `--proxy-server` flag.
+ *
+ * This is a REFUSAL, not a limitation we work around silently, because the silent
+ * outcomes are all bad. Chromium's `net/docs/proxy.md` states plainly that "no
+ * authentication methods are supported for SOCKSv5 in Chrome" and that Chrome
+ * "will not use any credentials embedded in the proxy settings". So passing the
+ * URL through would strip the credentials and fail every request with
+ * `ERR_PROXY_CONNECTION_FAILED`, and dropping them quietly would leave the user
+ * believing their traffic was authenticated and proxied when it was not. On a tool
+ * whose whole point is knowing exactly whose IP you are using, that is the worst
+ * possible failure mode.
+ *
+ * The Playwright LAUNCH path DOES support credentials (Playwright answers the
+ * proxy auth challenge itself instead of handing them to Chrome), which is why
+ * this is specific to the real-Chrome mode rather than a property of `--proxy`.
+ */
+export class ProxyAuthUnsupportedError extends ControllerError {
+	readonly code = 'proxy-auth-unsupported';
+
+	constructor(proxy: string) {
+		super(
+			`The proxy URL carries credentials, which Chrome cannot use: it ` +
+				`supports no SOCKSv5 authentication and ignores credentials embedded in ` +
+				`proxy settings, so --real-chrome refuses rather than silently sending ` +
+				`your traffic unauthenticated. Use a credential-free local SOCKS relay ` +
+				`(e.g. \`ssh -D 1080\`, or a local relay that adds the upstream auth) and ` +
+				`point --proxy at that, or use the Playwright launch path, which can ` +
+				`carry credentials. Proxy: ${redactProxyCredentials(proxy)}`,
+		);
+	}
+}
+
+/**
+ * Replace a proxy URL's userinfo with `***` for an error message.
+ *
+ * The message has to name WHICH proxy was rejected to be useful, and must not echo
+ * the password while doing it.
+ */
+function redactProxyCredentials(proxy: string): string {
+	return proxy.replace(/\/\/[^@/]*@/, '//***@');
+}
+
+/**
+ * `--real-chrome` was requested but no Chrome-family browser could be found to
+ * spawn.
+ *
+ * Distinct from {@link MissingBrowserBinaryError} on purpose: that one is about
+ * Playwright's OWN bundled browsers, whose fix is `npx playwright install`. Here
+ * the missing thing is the user's real, everyday Chrome, which Playwright cannot
+ * install and which is the entire point of the mode, so the fix is to install
+ * Chrome or to name its path. Mapping both to one code would hand the user a fix
+ * command that cannot work.
+ */
+export class RealChromeNotFoundError extends ControllerError {
+	readonly code = 'real-chrome-not-found';
+	/** The executables that were looked for, in the order tried. */
+	readonly candidates: readonly string[];
+	/** The env var that overrides the search (so the message can name it). */
+	readonly envVar: string;
+
+	constructor(candidates: readonly string[], envVar: string) {
+		super(
+			`No Chrome-family browser was found to spawn for --real-chrome. Looked ` +
+				`for: ${candidates.join(', ')}. Install Google Chrome, or point ` +
+				`${envVar} at the executable.`,
+		);
+		this.candidates = candidates;
+		this.envVar = envVar;
+	}
+}
+
+/**
+ * A real Chrome was found but could not be brought up as an attachable browser:
+ * it failed to spawn, exited immediately, or never published a debugging port.
+ *
+ * The most likely cause in practice is the profile dir already being in use by a
+ * running Chrome (Chrome refuses to open a user-data dir twice), which is why the
+ * reason is carried verbatim rather than flattened into one generic message.
+ */
+export class RealChromeStartError extends ControllerError {
+	readonly code = 'real-chrome-start-failed';
+	/** The executable that was spawned. */
+	readonly executablePath: string;
+
+	constructor(
+		executablePath: string,
+		reason: string,
+		options?: {cause?: unknown},
+	) {
+		super(
+			`Could not start the real Chrome at ${executablePath}: ${reason}. ` +
+				`If a Chrome is already running against this profile directory, close ` +
+				`it (or use a different --profile) and try again.`,
+			options,
+		);
+		this.executablePath = executablePath;
 	}
 }
 

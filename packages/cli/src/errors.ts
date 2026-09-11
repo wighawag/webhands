@@ -11,6 +11,10 @@ import {
 	CrossOriginFrameError,
 	ScreenshotPathError,
 	StaleRefError,
+	REAL_CHROME_ENV,
+	type RealChromeReuseConflictError,
+	// (ProxyAuthUnsupportedError needs no runtime import: the fix command is
+	// composed from the binary name alone, and the code is matched as a string.)
 	type ControllerError,
 	type ControllerErrorCode,
 } from '@webhands/core';
@@ -108,6 +112,28 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// the RPC this usually surfaces as a plain message; this case covers an
 			// in-process caller that catches the typed error directly.)
 			return `printf 'NAME=<value>\\n' >> .env.local  # then retry: ${binary} type '<locator>' '{ENV:NAME}' (webhands loads .env/.env.local at serve startup)`;
+		case 'real-chrome-reuse-conflict':
+			// A browser is already up on that profile and cannot retroactively take the
+			// requested spawn-time options (a proxy above all). Either give this run its
+			// own profile, or attach to the running browser deliberately via its endpoint.
+			return `${binary} serve --real-chrome --profile <other-name>  # or attach to the running one as-is: ${binary} serve --endpoint ${(error as RealChromeReuseConflictError).endpoint}`;
+		case 'proxy-auth-unsupported':
+			// Chrome cannot use proxy credentials at all, so the fix is to terminate the
+			// auth LOCALLY (an `ssh -D` tunnel or any local relay that adds the upstream
+			// credentials) and point --proxy at that credential-free local endpoint.
+			return `ssh -D 1080 <your-host>  # then: ${binary} serve --real-chrome --proxy socks5h://127.0.0.1:1080`;
+		case 'real-chrome-not-found':
+			// The missing browser is the user's OWN everyday Chrome, which Playwright
+			// cannot install (contrast `missing-browser-binary`, whose fix is `npx
+			// playwright install`). So the fix is to install Chrome or name its path,
+			// and failing that to fall back to the plain attach recipe, which needs no
+			// discovery at all.
+			return `${REAL_CHROME_ENV}=/path/to/google-chrome ${binary} serve --real-chrome (or install Google Chrome; or start it yourself and use ${binary} serve --endpoint http://127.0.0.1:9222)`;
+		case 'real-chrome-start-failed':
+			// Overwhelmingly the cause is the profile dir already being open in a
+			// running Chrome (Chrome refuses a user-data dir twice), so the fix names
+			// both ways out: stop the session holding it, or use another profile.
+			return `${binary} stop  # then retry, or use a different profile: ${binary} serve --real-chrome --profile <name>`;
 		default: {
 			// Exhaustiveness guard: a new ControllerErrorCode must add a fix command
 			// here rather than silently fall through to a generic message.

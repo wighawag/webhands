@@ -8,7 +8,30 @@ import {InvalidProxyError} from './errors.js';
  * Playwright forwards, plus the extra command-line arg that forces DNS through
  * the proxy (no DNS leak). Keeping the brittle parsing + Chromium-flag knowledge
  * in one module mirrors how the launch transport confines its other
- * Playwright/Chromium details.
+ * Playwright/Chromium details. The SPAWNED real-Chrome path
+ * (`buildRealChromeArgs`) reuses this same parser, so `socks5h` vs `socks5` means
+ * exactly the same thing in both modes.
+ *
+ * TWO LIMITS worth knowing, both Chromium's rather than ours (see its
+ * `net/docs/proxy.md`):
+ *
+ * 1. **Loopback: the two paths genuinely DIFFER, so do not assume one from the
+ *    other.** On the SPAWNED real-Chrome path, "all traffic" excludes loopback:
+ *    Chromium's implicit proxy bypass list exempts `localhost`/`127.0.0.1`, and
+ *    webhands does not override it (a user does not want their local dev server
+ *    proxied). On the Playwright LAUNCH path, Playwright itself appends
+ *    `--proxy-bypass-list=<-loopback>` when no bypass is configured, so loopback IS
+ *    proxied there. Verified by reading `shouldProxyLoopback` in the installed
+ *    playwright-core 1.61.1.
+ * 2. **SOCKSv5 carries TCP only.** UDP (notably WebRTC) cannot traverse a SOCKS
+ *    proxy, so WebRTC can still reveal a local/real address. A caller who cares
+ *    disables WebRTC in the profile they drive.
+ *
+ * Credentials are honoured ONLY on the Playwright launch path, which answers the
+ * proxy auth challenge itself. Chrome ignores credentials embedded in proxy
+ * settings and implements no SOCKSv5 auth at all, so the spawned real-Chrome path
+ * REFUSES a credentialled URL (`ProxyAuthUnsupportedError`) instead of launching
+ * something that would silently go unauthenticated.
  */
 export interface ParsedSocksProxy {
 	/**

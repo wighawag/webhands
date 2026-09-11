@@ -3,3 +3,6 @@
 
 # node modules
 node_modules/
+
+# subagent run artifacts (review/worker scratch dirs, not project state)
+.pi-subagents/

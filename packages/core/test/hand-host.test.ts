@@ -177,6 +177,7 @@ describe('hand-host composition primitive (no browser)', () => {
 			'wait',
 			'cookies',
 			'setCookies',
+			'clearCookies',
 			'query',
 			'count',
 			'exists',
@@ -221,6 +222,9 @@ function restOfVerbsHand(): Hand {
 				return [];
 			},
 			async setCookies() {},
+			async clearCookies() {
+				return 0;
+			},
 			async query() {
 				return [];
 			},

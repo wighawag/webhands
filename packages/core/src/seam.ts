@@ -62,6 +62,36 @@ export type OpenTarget =
 			readonly endpoint: string;
 	  };
 
+/**
+ * WHICH cookies a {@link WebHandsPage.clearCookies} call removes.
+ *
+ * Every supplied field must match for a cookie to be removed (AND, not OR), and
+ * an EMPTY filter is rejected by the verb rather than silently meaning "all":
+ * wiping a live session's cookies is exactly the irreversible mistake this type
+ * exists to make impossible to make by accident. Pass `{all: true}` to say it
+ * deliberately.
+ *
+ * Matching is by EXACT string (no regex, no glob): the transport-neutral surface
+ * stays a plain value, and a pattern language would invite a typo that clears
+ * more than intended.
+ */
+export interface CookieFilter {
+	/**
+	 * Cookie NAMES to remove. A cookie matches if its name equals ANY entry (the
+	 * one OR in this type, because "clear these four" is the actual use case).
+	 */
+	readonly names?: readonly string[];
+	/** Only remove cookies whose domain equals this value. */
+	readonly domain?: string;
+	/** Only remove cookies whose path equals this value. */
+	readonly path?: string;
+	/**
+	 * Remove EVERY cookie in the session. Required to be explicit: an empty filter
+	 * is an error, not a wildcard. Mutually exclusive with the other fields.
+	 */
+	readonly all?: boolean;
+}
+
 /** A single browser cookie, in transport-neutral terms. */
 export interface Cookie {
 	readonly name: string;
@@ -340,6 +370,73 @@ export function validateSnapshotOptions(
 }
 
 /**
+ * Validate a {@link CookieFilter} at a verb entry point, the SINGLE source of
+ * truth shared by the in-process host and the RPC server dispatch so neither path
+ * can clear the wrong set (mirrors {@link validateSnapshotOptions}).
+ *
+ * The load-bearing rule: an EMPTY or all-absent filter REJECTS. Playwright's own
+ * `clearCookies()` reads no-filter as "clear everything", which is the wrong
+ * default for a verb pointed at a live logged-in session: a forgotten `--name`
+ * would silently log the user out of every site in the profile. Clearing
+ * everything stays possible, but only as `{all: true}`, and it may not be
+ * combined with a narrowing field (which would read as "all, but only some").
+ *
+ * Returns the validated filter unchanged so it can wrap a call site inline.
+ */
+export function validateCookieFilter(filter: CookieFilter): CookieFilter {
+	if (typeof filter !== 'object' || filter === null) {
+		throw new Error(
+			`cookies clear: filter must be an object like { names: ['_abck'] }, got ${typeof filter}`,
+		);
+	}
+	const allowed = new Set(['names', 'domain', 'path', 'all']);
+	const unknownKeys = Object.keys(filter).filter((key) => !allowed.has(key));
+	if (unknownKeys.length > 0) {
+		const named = unknownKeys.map((key) => `"${key}"`).join(', ');
+		throw new Error(
+			`cookies clear: unknown filter option ${named} ` +
+				`(expected names, domain, path or all)`,
+		);
+	}
+	if (filter.names !== undefined) {
+		if (
+			!Array.isArray(filter.names) ||
+			filter.names.some((name) => typeof name !== 'string' || name === '')
+		) {
+			throw new Error(
+				`cookies clear: "names" must be an array of non-empty cookie names`,
+			);
+		}
+	}
+	for (const key of ['domain', 'path'] as const) {
+		const value = filter[key];
+		if (value !== undefined && (typeof value !== 'string' || value === '')) {
+			throw new Error(
+				`cookies clear: "${key}" must be a non-empty string when given`,
+			);
+		}
+	}
+	const narrowing =
+		(filter.names !== undefined && filter.names.length > 0) ||
+		filter.domain !== undefined ||
+		filter.path !== undefined;
+	if (filter.all === true && narrowing) {
+		throw new Error(
+			`cookies clear: { all: true } cannot be combined with names/domain/path ` +
+				`(drop "all" to clear just the matches, or drop the others to clear everything)`,
+		);
+	}
+	if (filter.all !== true && !narrowing) {
+		throw new Error(
+			`cookies clear: refusing to clear with an empty filter. Name what to ` +
+				`remove (e.g. { names: ['_abck'] } or { domain: 'example.com' }), or ` +
+				`pass { all: true } to clear EVERY cookie in this session on purpose.`,
+		);
+	}
+	return filter;
+}
+
+/**
  * A structured, token-cheap view of the current page with stable element refs.
  *
  * In the default `'accessibility'` view, {@link Snapshot.content} is the
@@ -514,6 +611,63 @@ export interface QueryRow {
  */
 export interface ActionOptions {
 	readonly byRef?: boolean;
+	/**
+	 * Skip the actionability check and fire the DOM event(s) directly, for a control
+	 * that is FUNCTIONAL but can never become actionable: the classic case is a
+	 * radio or checkbox hidden behind a styled `<label>`, which real sites use
+	 * constantly. Playwright correctly refuses to click what a user could not click,
+	 * so without this the verb waits out its timeout and fails.
+	 *
+	 * OPT-IN, and it is a real trade, not a free upgrade:
+	 *
+	 * - It bypasses the check that normally protects you. An invisible control a
+	 *   human could NOT reach is sometimes a honeypot (anti-bot forms use exactly
+	 *   that), so `--dom` can "successfully" fill a trap. The default stays
+	 *   fail-loud for that reason.
+	 * - The event it fires is SYNTHETIC and per-verb faithful to a different degree.
+	 *   `click` dispatches a real `click` event, which is what the page listens for
+	 *   anyway (and which still toggles a radio/checkbox, per the HTML activation
+	 *   behaviour). `type` sets the value and fires `input` + `change`, which skips
+	 *   keystroke handling, so a field that keys off `keydown` (masked inputs, some
+	 *   autocompletes) may behave differently. Each verb documents its own.
+	 *
+	 * Because a hidden control never becomes actionable, a `--dom` call uses a SHORT
+	 * wait rather than the full timeout: there is nothing to wait for.
+	 */
+	readonly dom?: boolean;
+	/**
+	 * Override how long the ACTIONABILITY wait may take, in ms, before the verb
+	 * fails. It changes how long you WAIT, never what action is performed, so unlike
+	 * {@link dom} it carries no semantic risk.
+	 *
+	 * Why it exists: Playwright's 30s default is the right budget for an element
+	 * that is about to become ready (late hydration, an enable-after-XHR button),
+	 * and far too long when you already know the locator is wrong or the control is
+	 * hidden. Omitted keeps each verb's existing default (30s for the Playwright
+	 * actions; `click`'s own short actionability budget is separate, see its docs).
+	 */
+	readonly timeoutMs?: number;
+}
+
+/**
+ * How a {@link WebHandsPage.click} was actually performed.
+ *
+ * `'click'` is a real, actionability-checked click: the element was visible,
+ * stable and hit-testable, exactly as a user's click. `'dispatch'` means the
+ * element never became actionable and a `click` EVENT was dispatched at it
+ * instead, which runs the page's handler but proves nothing about whether a human
+ * could have clicked it.
+ *
+ * The verb RETURNS this because the escape path used to be silent, and the
+ * difference matters to the caller: "I clicked the button" and "I poked an
+ * invisible node that may be a honeypot" are not the same claim, and an agent
+ * deciding what to do next deserves to know which one happened.
+ */
+export type ClickVia = 'click' | 'dispatch';
+
+/** The result of {@link WebHandsPage.click}: HOW the click was performed. */
+export interface ClickResult {
+	readonly via: ClickVia;
 }
 
 /**
@@ -540,8 +694,14 @@ export interface WebHandsPage {
 	 * {@link StaleRefError} (resolve-to-zero / resolve-to-many) — the loud-stale
 	 * guarantee that makes a ref strictly safer than a positional `.nth(i)`. The
 	 * options object is additive (R1); omitted keeps today's plain-locator click.
+	 *
+	 * A normal click AUTO-WAITS for actionability on a SHORT budget and, if the
+	 * element never becomes actionable (a control hidden behind a styled label),
+	 * falls back to dispatching a `click` event. The {@link ClickResult} says which
+	 * happened, so the fallback is no longer silent; `{dom: true}` goes straight to
+	 * the dispatch when you already know the control is hidden.
 	 */
-	click(target: LocatorString, options?: ActionOptions): Promise<void>;
+	click(target: LocatorString, options?: ActionOptions): Promise<ClickResult>;
 	/**
 	 * Type text into the element addressed by a raw Playwright locator string.
 	 *
@@ -622,7 +782,12 @@ export interface WebHandsPage {
 	 * `async (page) => { await page.fill('#user', 'u'); await page.click('#go');
 	 * return await page.locator('.list').count(); }` (a sync function is fine too;
 	 * its return is awaited). The function is invoked with the live page and its
-	 * (awaited) return value is the result. `script` does NOT supersede `eval`:
+	 * (awaited) return value is the result. The source may be spelled the
+	 * module-ish way a human reaches for first: TOP-LEVEL STATEMENTS before the
+	 * final function expression, a trailing semicolon, a leading `export default`
+	 * (see `compileScriptSource`). A source that cannot be a function of the page
+	 * rejects with a message that STATES that constraint and shows a correct
+	 * example, rather than only echoing the parser's token. `script` does NOT supersede `eval`:
 	 * the name + this contract signal you get the FULL Playwright `page` (DRIVER
 	 * context), not a bigger page-world `eval`.
 	 *
@@ -653,6 +818,26 @@ export interface WebHandsPage {
 	cookies(): Promise<readonly Cookie[]>;
 	/** Seed the session's cookies. */
 	setCookies(cookies: readonly Cookie[]): Promise<void>;
+	/**
+	 * Remove the session's cookies MATCHED by a {@link CookieFilter}, returning how
+	 * many were removed.
+	 *
+	 * The third cookie direction, beside reading and seeding. It exists because a
+	 * WAF's bot verdict lives in a handful of named cookies (Akamai persists one in
+	 * `_abck`, with `bm_sz`/`bm_sv`/`ak_bmsc` alongside): once tripped, every
+	 * dynamic endpoint 403s, including ones that worked seconds earlier, and it
+	 * persists until those names are gone. Clearing JUST them restores access while
+	 * leaving the login session intact, because the login lives in different cookies
+	 * entirely. Without this verb the only way to do that was to drop into `script`.
+	 *
+	 * SAFETY: an EMPTY filter REJECTS (it is never read as "all"), and clearing
+	 * everything requires `{all: true}` — clearing a live session's cookies is not
+	 * undoable, so the wide action has to be asked for by name. The COUNT is
+	 * returned (not `void`) so the caller can tell "removed 4" from "matched
+	 * nothing", which is the difference between a recovery that happened and one
+	 * that silently did not.
+	 */
+	clearCookies(filter: CookieFilter): Promise<number>;
 	/**
 	 * Read STRUCTURED data out of the element(s) addressed by a raw Playwright
 	 * locator string (ADR-0004; already frame-capable for same-origin frames via
@@ -707,22 +892,45 @@ export interface WebHandsPage {
 	 * focused first, the `locator.press` semantics); WITHOUT it, the key is sent to
 	 * the page's currently focused element (`keyboard.press`). `target` is an
 	 * optional trailing arg so a future `frame?` stays additive (R1).
+	 *
+	 * {@link ActionOptions.timeoutMs} bounds the actionability wait;
+	 * {@link ActionOptions.dom} dispatches the key events instead (a weaker,
+	 * documented escape: handlers run, but no text is inserted). Both are ignored for
+	 * the no-`target` focused-element form, which waits for nothing.
 	 */
-	press(key: string, target?: LocatorString): Promise<void>;
+	press(
+		key: string,
+		target?: LocatorString,
+		options?: ActionOptions,
+	): Promise<void>;
 	/**
 	 * Hover the pointer over the element a locator addresses (spec
 	 * `broaden-agent-verb-surface`, Tier-2, story 9), to reveal a hover menu /
 	 * on-hover control `click` cannot surface (`locator.hover`).
+	 *
+	 * {@link ActionOptions.timeoutMs} bounds the actionability wait;
+	 * {@link ActionOptions.dom} dispatches the pointer-enter events instead (a weaker
+	 * escape: JS handlers run, but there is no pointer POSITION, so CSS `:hover` and
+	 * coordinate-driven menus do not react).
 	 */
-	hover(target: LocatorString): Promise<void>;
+	hover(target: LocatorString, options?: ActionOptions): Promise<void>;
 	/**
 	 * Choose an option in the native `<select>` a locator addresses (spec
 	 * `broaden-agent-verb-surface`, Tier-2, story 10), by `value` OR by `label`
 	 * (EXACTLY ONE; see {@link SelectChoice}). Maps to Playwright
 	 * `locator.selectOption`; the chosen option is reflected in the element's live
 	 * state (its `value` / `selectedIndex`).
+	 *
+	 * {@link ActionOptions.timeoutMs} bounds the actionability wait;
+	 * {@link ActionOptions.dom} sets the value and fires `input`/`change` instead
+	 * (the most faithful of the escapes after `click`, since choosing an option IS
+	 * setting the value). A `label` with no matching option fails LOUD either way.
 	 */
-	select(target: LocatorString, choice: SelectChoice): Promise<void>;
+	select(
+		target: LocatorString,
+		choice: SelectChoice,
+		options?: ActionOptions,
+	): Promise<void>;
 	/**
 	 * Scroll the page, either TO an element a locator addresses or BY a pixel
 	 * delta (spec `broaden-agent-verb-surface`, Tier-2, story 11; EXACTLY ONE form,
@@ -736,8 +944,17 @@ export interface WebHandsPage {
 	 * `broaden-agent-verb-surface`, Tier-2, story 12), for drag-reorder UIs and
 	 * drag-slider challenges (`locator.dragTo`). Both are raw locator EXPRESSIONS
 	 * resolved through the SAME resolver as `click`/`type` (ADR-0004).
+	 *
+	 * {@link ActionOptions.timeoutMs} bounds the wait. There is deliberately NO
+	 * {@link ActionOptions.dom} escape for drag: a synthetic drag sequence needs a
+	 * populated `DataTransfer` that real HTML5 drop targets frequently ignore, so it
+	 * would fail quietly more often than it worked.
 	 */
-	drag(source: LocatorString, target: LocatorString): Promise<void>;
+	drag(
+		source: LocatorString,
+		target: LocatorString,
+		options?: ActionOptions,
+	): Promise<void>;
 	/**
 	 * Coordinate mouse input at VIEWPORT CSS-pixels (spec
 	 * `broaden-agent-verb-surface`, Tier-4, R3, story 17): click / move / press /

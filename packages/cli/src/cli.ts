@@ -7,7 +7,11 @@ import {
 	locator,
 	PlaywrightAttachTransport,
 	PlaywrightLaunchTransport,
+	RealChromeTransport,
+	REAL_CHROME_ENV,
 	loadWebhandsEnv,
+	type PlaywrightLaunchTransportOptions,
+	type RealChromeTransportOptions,
 	connectRemoteSession,
 	distillTrace,
 	readSessionEndpoint,
@@ -16,7 +20,10 @@ import {
 	NoLiveServerError,
 	SessionAlreadyActiveError,
 	startSessionServer,
+	validateCookieFilter,
+	type ActionOptions,
 	type Cookie,
+	type CookieFilter,
 	type MouseInput,
 	type OpenTarget,
 	type RunningSessionServer,
@@ -129,6 +136,30 @@ export interface LaunchPolicy {
 	 * DNS too (no leak); `socks5` allows local DNS. Omit for a direct connection.
 	 */
 	readonly proxy?: string;
+	/**
+	 * Expose the launched browser's Chromium CDP / remote-debugging endpoint, so a
+	 * SEPARATE Playwright client can `connectOverCDP` and drive the SAME live page
+	 * (the shared driving surface the eval baseline needs). OPT-IN and default OFF:
+	 * a remote-debugging port is both a code-execution surface on the logged-in page
+	 * and an automation tell, so `serve` must not open one unless asked. Ignored for
+	 * attach (the user's browser already has its own endpoint).
+	 */
+	readonly exposeCdp?: boolean;
+	/**
+	 * Drive the USER'S OWN Chrome: spawn the system Chrome with a remote-debugging
+	 * port on the dedicated profile dir, then attach to it over CDP (ADR-0014).
+	 *
+	 * This is the mode that empirically gets through a serious bot manager, where
+	 * every Playwright-LAUNCHED variant (including `--stealth` and
+	 * `--use-system-browser chrome`) was blocked. It makes the launch-side policy
+	 * flags moot: there is no Playwright launch to harden.
+	 */
+	readonly realChrome?: boolean;
+	/**
+	 * With {@link realChrome}, leave the spawned browser running after `stop`
+	 * instead of terminating it (the next `serve --real-chrome` re-attaches to it).
+	 */
+	readonly keepBrowser?: boolean;
 }
 
 // --- shared schema fragments ----------------------------------------------
@@ -192,7 +223,11 @@ const stealthOptions = z.object({
 		.describe(
 			'Route ALL traffic and DNS through a SOCKS proxy. Give a SOCKS URL: ' +
 				'socks5h://host:1080 tunnels DNS through the proxy too (no leak), ' +
-				'socks5://host:1080 allows local DNS. A user:pass@ prefix is allowed.',
+				'socks5://host:1080 allows local DNS. A user:pass@ prefix works on the ' +
+				'default launch path, but NOT with --real-chrome (Chrome supports no ' +
+				'SOCKS5 auth and ignores embedded credentials, so it is refused rather ' +
+				'than silently sent unauthenticated): use a credential-free local relay ' +
+				'such as `ssh -D 1080` there.',
 		),
 	// Modelled as a `viewport` boolean so incur's `--no-<flag>` negation gives the
 	// task-mandated `--no-viewport`: passing `--no-viewport` sets `viewport=false`
@@ -210,14 +245,72 @@ const stealthOptions = z.object({
 		),
 });
 
+/**
+ * The `--real-chrome` mode and its lifetime flag: spawn the user's own Chrome and
+ * attach to it (ADR-0014). `serve`-only, because it is a browser-BRING-UP policy and
+ * a one-shot `launch` never brings the long-lived session up.
+ */
+const realChromeOptions = z.object({
+	'real-chrome': z
+		.boolean()
+		.default(false)
+		.describe(
+			'Drive YOUR OWN Chrome: start the system Chrome (or Chromium/Edge) with a ' +
+				'remote-debugging port on the dedicated profile dir and attach to it, in ' +
+				'one command. Measured ONCE against Akamai on an authenticated site, a ' +
+				'Playwright-LAUNCHED browser was blocked in every configuration tried ' +
+				'(including --stealth --use-system-browser chrome) while this worked. It is ' +
+				'NOT a cloak: navigator.webdriver is still true here, because Chrome sets ' +
+				'it whenever a debugging port is enabled. The advantage is simply BEING a ' +
+				'real browser: no launch-hardening flags, a real profile and window, your ' +
+				'own IP. Implies a VISIBLE window so you can log in and take over. Point ' +
+				`${REAL_CHROME_ENV} at the executable if it is not on the usual path.`,
+		),
+	'keep-browser': z
+		.boolean()
+		.default(false)
+		.describe(
+			'With --real-chrome, leave the browser RUNNING when the session stops ' +
+				'(default: webhands started it, so webhands stops it). Your tabs survive ' +
+				'`stop`, and the next --real-chrome serve re-attaches to them.',
+		),
+});
+
+/**
+ * The CDP-exposure opt-in, a `serve`-only option (it describes the SERVED browser's
+ * shared driving surface, which a one-shot `launch` has no use for). Kept as its own
+ * fragment rather than folded into {@link stealthOptions} because it is the OPPOSITE
+ * of hardening: see the flag's own description.
+ */
+const exposeCdpOptions = z.object({
+	'expose-cdp': z
+		.boolean()
+		.default(false)
+		.describe(
+			"Expose the served browser's Chromium remote-debugging endpoint so a " +
+				'separate Playwright client can connectOverCDP and drive the SAME live ' +
+				'page (loopback-only). Default: OFF. It is a code-execution surface on ' +
+				'your logged-in page AND an automation tell anti-bot WAFs look for, so ' +
+				'only enable it when you actually need the shared surface (e.g. the eval ' +
+				'harness baseline). Counter-productive with --stealth.',
+		),
+});
+
 /** Resolve the {@link LaunchPolicy} from the shared stealth option fields. */
 function launchPolicyFrom(options: {
 	stealth?: boolean;
 	'use-system-browser'?: string;
 	viewport?: boolean;
 	proxy?: string;
+	'expose-cdp'?: boolean;
+	'real-chrome'?: boolean;
+	'keep-browser'?: boolean;
 }): LaunchPolicy {
 	return {
+		// Opt-in only: absent flag => no remote-debugging port is opened at all.
+		...(options['expose-cdp'] === true ? {exposeCdp: true} : {}),
+		...(options['real-chrome'] === true ? {realChrome: true} : {}),
+		...(options['keep-browser'] === true ? {keepBrowser: true} : {}),
 		stealth: options.stealth === true,
 		systemBrowser:
 			options['use-system-browser'] !== undefined &&
@@ -234,6 +327,64 @@ function launchPolicyFrom(options: {
 			? {proxy: options.proxy}
 			: {}),
 	};
+}
+
+/**
+ * The two ESCAPE/PACING options shared by the acting verbs (`click`, `type`,
+ * `press`, `hover`, `select`, `drag`).
+ *
+ * They are deliberately different in kind, and the wording keeps that visible:
+ * `--timeout` only changes how long you WAIT, while `--dom` changes WHAT IS
+ * PERFORMED (a synthetic event instead of a real interaction), which is why it is
+ * opt-in, per-verb documented, and absent from `drag` entirely.
+ */
+const actionEscapeOptions = z.object({
+	dom: z
+		.boolean()
+		.default(false)
+		.describe(
+			'ESCAPE HATCH: skip the actionability check and fire the DOM event(s) ' +
+				'directly, for a control that WORKS but can never be actionable (the ' +
+				'classic case: a radio/checkbox hidden behind a styled <label>). The ' +
+				'event is SYNTHETIC: click dispatches a real click event (and still ' +
+				'toggles a radio), type sets the value and fires input+change (so NO ' +
+				'keystrokes: masked inputs may differ), press fires keydown/keypress/keyup ' +
+				'(handlers run but no text is inserted), hover fires pointer/mouse enter ' +
+				'events (no pointer POSITION, so CSS :hover does not react), select sets ' +
+				'the value and fires change. Keep it OPT-IN: the check it skips is what ' +
+				'stops you "successfully" filling an invisible honeypot field.',
+		),
+	timeout: z
+		.number()
+		.int()
+		.positive()
+		.optional()
+		.describe(
+			'How long to wait for the element to become actionable, in ms. Changes ' +
+				'only the WAIT, never the action. Omitted keeps the verb default: about ' +
+				'1s for `click` (which then fires a dispatched click, see its `via` ' +
+				"output), Playwright's 30s for the others. Raise it for an element that " +
+				'becomes ready after a request; lower it when you already suspect the ' +
+				'locator is wrong. Must be positive: 0 would mean "wait forever" to ' +
+				'Playwright, which is never what a user means by a timeout.',
+		),
+});
+
+/**
+ * Build the seam {@link ActionOptions} from the shared flags, carrying ONLY the
+ * keys the user actually gave so an unflagged verb call is byte-identical to what
+ * it sent before these flags existed.
+ */
+function actionOptionsFrom(
+	options: {dom?: boolean; timeout?: number},
+	byRef = false,
+): ActionOptions | undefined {
+	const resolved: ActionOptions = {
+		...(byRef ? {byRef: true} : {}),
+		...(options.dom === true ? {dom: true} : {}),
+		...(options.timeout !== undefined ? {timeoutMs: options.timeout} : {}),
+	};
+	return Object.keys(resolved).length > 0 ? resolved : undefined;
 }
 
 /** The structured output schema shared by verbs that act on a page but return no data. */
@@ -436,6 +587,13 @@ export function createCli(deps: CliDeps = {}) {
 				.string()
 				.default(DEFAULT_PROFILE)
 				.describe('Name of the dedicated profile to set up.'),
+			// The SAME browser-selection flags `launch`/`serve` take. A profile dir is
+			// written by a specific browser build, so it must be set up with the
+			// browser that will later drive it; accepting these here is what makes
+			// `setup-profile --use-system-browser chrome` then `serve
+			// --use-system-browser chrome` a consistent pair instead of an "Unknown
+			// flag" followed by a mismatched profile.
+			...stealthOptions.shape,
 			...ctaOptions.shape,
 		}),
 		output: z.object({
@@ -443,12 +601,38 @@ export function createCli(deps: CliDeps = {}) {
 			profileDir: z
 				.string()
 				.describe('Its dedicated user-data directory on disk.'),
+			systemBrowser: z
+				.string()
+				.optional()
+				.describe(
+					'The system browser the profile was set up WITH, when one was named. ' +
+						'Drive it later with the SAME --use-system-browser value.',
+				),
+			stealth: z
+				.boolean()
+				.describe('Whether the profile was set up via the stealth engine.'),
 		}),
 		async run(c) {
 			try {
+				const policy = launchPolicyFrom(c.options);
 				const {session, location} = await runSetupProfile({
 					profile: c.options.profile,
 					...(deps.home ?? {}),
+					// Create the profile WITH the selected browser/engine, so the dir a
+					// later `launch`/`serve` reuses was written by that same build. Only
+					// the fields actually given are forwarded, so the default stays
+					// bundled-Chromium, no stealth. `exposeCdp` is deliberately NOT
+					// forwarded: setup-profile serves no RPC and needs no shared surface.
+					launch: {
+						...(policy.stealth === true ? {stealth: true} : {}),
+						...(policy.systemBrowser !== undefined
+							? {systemBrowser: policy.systemBrowser}
+							: {}),
+						...(policy.noViewport !== undefined
+							? {noViewport: policy.noViewport}
+							: {}),
+						...(policy.proxy !== undefined ? {proxy: policy.proxy} : {}),
+					},
 				});
 				// `setup-profile` HOLDS the headed window open for the human's login:
 				// block until the user closes the browser (or it otherwise ends),
@@ -458,13 +642,32 @@ export function createCli(deps: CliDeps = {}) {
 				// the profile is set up and `launch` is the right next step.
 				await session.waitForClose();
 				return c.ok(
-					{profile: location.profile, profileDir: location.profileDir},
+					{
+						profile: location.profile,
+						profileDir: location.profileDir,
+						// Report the browser identity the profile was written by, so the
+						// caller can drive it later with the SAME selection.
+						...(policy.systemBrowser !== undefined
+							? {systemBrowser: policy.systemBrowser}
+							: {}),
+						stealth: policy.stealth === true,
+					},
 					ctaMeta(c, [
 						{
 							command: 'launch',
-							options: {profile: location.profile},
+							options: {
+								profile: location.profile,
+								// Carry the browser selection into the suggested next command:
+								// driving this profile with a DIFFERENT build is the mismatch
+								// this flag pair exists to avoid.
+								...(policy.systemBrowser !== undefined
+									? {'use-system-browser': policy.systemBrowser}
+									: {}),
+								...(policy.stealth === true ? {stealth: true} : {}),
+							},
 							description:
-								'Launch this profile headless now that it is set up.',
+								'Launch this profile headless now that it is set up (keep the ' +
+								'same browser selection it was set up with).',
 						},
 					]),
 				);
@@ -551,8 +754,13 @@ export function createCli(deps: CliDeps = {}) {
 			headed: z
 				.boolean()
 				.default(false)
-				.describe('Show the browser window (default: headless).'),
+				.describe(
+					'Show the browser window (default: headless). Ignored under ' +
+						'--real-chrome, which is always visible so you can take the browser over.',
+				),
 			...stealthOptions.shape,
+			...realChromeOptions.shape,
+			...exposeCdpOptions.shape,
 			...ctaOptions.shape,
 		}),
 		output: z.object({
@@ -566,9 +774,18 @@ export function createCli(deps: CliDeps = {}) {
 				.string()
 				.optional()
 				.describe(
-					'The Chromium CDP / remote-debugging endpoint of the served browser ' +
-						'(launch sessions only), for a separate Playwright client to ' +
-						'connectOverCDP and drive the SAME live page. Loopback-only.',
+					'The Chromium CDP / remote-debugging endpoint of the served browser, ' +
+						'present ONLY with --expose-cdp on a launch session, for a separate ' +
+						'Playwright client to connectOverCDP and drive the SAME live page. ' +
+						'Loopback-only.',
+				),
+			warnings: z
+				.array(z.string())
+				.optional()
+				.describe(
+					'Self-defeating option combinations detected at startup, in the ' +
+						'structured envelope so an AGENT sees them too (a stderr-only warning ' +
+						'would be invisible to the caller that chose the flags).',
 				),
 		}),
 		async run(c) {
@@ -586,11 +803,77 @@ export function createCli(deps: CliDeps = {}) {
 								profile: c.options.profile,
 								headed: c.options.headed,
 							};
-				const server = await serveSession(
-					target,
-					home,
-					launchPolicyFrom(c.options),
-				);
+				const policy = launchPolicyFrom(c.options);
+				// `--stealth --expose-cdp` is self-defeating: Patchright exists to remove
+				// the CDP automation tell, and a remote-debugging port re-adds an
+				// automation surface on the same browser. We do NOT refuse it (a baseline
+				// comparison legitimately wants both), but it must not pass silently, so
+				// it rides in the ENVELOPE where the caller that chose the flags can see
+				// it. Collected before the browser comes up so the reply is complete.
+				const warnings: string[] = [];
+				// `--real-chrome` makes the Playwright LAUNCH-hardening flags moot: there
+				// is no Playwright launch to harden, so silently ignoring them would let a
+				// user believe stealth is active when the browser is a plain Chrome.
+				if (policy.realChrome === true) {
+					// `--proxy` is deliberately NOT in this list: it maps onto Chromium's own
+					// --proxy-server flag, so it DOES apply to a spawned real Chrome, and it
+					// is the only way to change the exit IP in this mode.
+					const moot = [
+						...(policy.stealth === true ? ['--stealth'] : []),
+						...(policy.systemBrowser !== undefined
+							? ['--use-system-browser']
+							: []),
+						// Name the flag the user actually typed: `--viewport` arrives here as
+						// noViewport=false, and warning them about `--no-viewport` would point
+						// at a flag they never passed.
+						...(policy.noViewport === true ? ['--no-viewport'] : []),
+						...(policy.noViewport === false ? ['--viewport'] : []),
+					];
+					if (moot.length > 0) {
+						warnings.push(
+							`--real-chrome spawns your own Chrome and attaches to it, so ` +
+								`${moot.join(', ')} (Playwright launch options) do not apply.`,
+						);
+					}
+				}
+				if (policy.keepBrowser === true && policy.realChrome !== true) {
+					warnings.push(
+						'--keep-browser only applies to --real-chrome (a browser webhands ' +
+							'spawned); it has no effect here.',
+					);
+				}
+				// `--endpoint` wins over every browser-bring-up flag, because naming a
+				// browser you started yourself is the more specific request. That is the
+				// right precedence, but it must not be silent: `--proxy` in particular
+				// would leave the user believing they were tunnelled while the attached
+				// browser egresses through their real IP.
+				if (target.mode === 'attach') {
+					const overridden = [
+						...(policy.realChrome === true ? ['--real-chrome'] : []),
+						...(policy.keepBrowser === true ? ['--keep-browser'] : []),
+						...(policy.proxy !== undefined ? ['--proxy'] : []),
+						...(policy.stealth === true ? ['--stealth'] : []),
+						...(policy.systemBrowser !== undefined
+							? ['--use-system-browser']
+							: []),
+					];
+					if (overridden.length > 0) {
+						warnings.push(
+							`--endpoint attaches to a browser YOU already started, so ` +
+								`${overridden.join(', ')} do not apply (they configure a browser ` +
+								`webhands brings up). Drop --endpoint to use them.`,
+						);
+					}
+				}
+				if (policy.stealth === true && policy.exposeCdp === true) {
+					warnings.push(
+						'--expose-cdp re-opens a remote-debugging surface on the same ' +
+							'browser --stealth is hardening; anti-bot WAFs look for exactly ' +
+							'that. Drop --expose-cdp unless you specifically need the shared ' +
+							'driving surface.',
+					);
+				}
+				const server = await serveSession(target, home, policy);
 				// Explicit teardown on signal: closing the browser + clearing the
 				// endpoint file is the server's `stop`. We DO NOT auto-spawn and we DO
 				// NOT auto-teardown on anything but an explicit stop/signal (ADR-0005).
@@ -608,6 +891,7 @@ export function createCli(deps: CliDeps = {}) {
 						...(server.endpoint.cdpEndpoint !== undefined
 							? {cdpEndpoint: server.endpoint.cdpEndpoint}
 							: {}),
+						...(warnings.length > 0 ? {warnings} : {}),
 					},
 					ctaMeta(c, [
 						{
@@ -796,17 +1080,30 @@ export function createCli(deps: CliDeps = {}) {
 						'LOUD (stale-ref) if it now matches zero or more than one element, instead of ' +
 						'silently clicking the wrong one.',
 				),
+			...actionEscapeOptions.shape,
 		}),
-		output: actionOutput.extend({verb: z.literal('click')}),
+		output: actionOutput.extend({
+			verb: z.literal('click'),
+			via: z
+				.enum(['click', 'dispatch'])
+				.describe(
+					'HOW the click happened. "click" is a real actionability-checked click ' +
+						'(visible, stable, hit-testable, like a user). "dispatch" means the ' +
+						'element never became actionable and a click EVENT was fired at it ' +
+						'instead: the handler ran, but a human could not have clicked it, so ' +
+						'treat the success with care (invisible controls are sometimes ' +
+						'honeypots).',
+				),
+		}),
 		async run(c) {
 			try {
 				return await withSession(provider, targetFrom(c.options), async (s) => {
-					await s.page.click(
+					const {via} = await s.page.click(
 						locator(c.args.locator),
-						c.options['by-ref'] ? {byRef: true} : undefined,
+						actionOptionsFrom(c.options, c.options['by-ref']),
 					);
 					return c.ok(
-						{ok: true as const, verb: 'click' as const},
+						{ok: true as const, verb: 'click' as const, via},
 						ctaMeta(c, [nextSnapshot()]),
 					);
 				});
@@ -855,6 +1152,7 @@ export function createCli(deps: CliDeps = {}) {
 						'LOUD (stale-ref) if it now matches zero or more than one element, instead of ' +
 						'silently typing into the wrong one.',
 				),
+			...actionEscapeOptions.shape,
 		}),
 		output: actionOutput.extend({verb: z.literal('type')}),
 		async run(c) {
@@ -863,7 +1161,7 @@ export function createCli(deps: CliDeps = {}) {
 					await s.page.type(
 						locator(c.args.locator),
 						c.args.text,
-						c.options['by-ref'] ? {byRef: true} : undefined,
+						actionOptionsFrom(c.options, c.options['by-ref']),
 					);
 					return c.ok(
 						{ok: true as const, verb: 'type' as const},
@@ -933,18 +1231,21 @@ export function createCli(deps: CliDeps = {}) {
 			'Run a DRIVER-CONTEXT script with the FULL live Playwright page against the ' +
 			'served session, in ONE call: locate + act + auto-wait + read a whole ' +
 			'sub-flow and return its serializable result. Pass a PATH to a JS file ' +
-			'(e.g. "npx webhands script ./flow.js"); the file is JS evaluating to a ' +
-			'function of the page, e.g. "async (page) => { await page.click(...); ' +
-			'return await page.locator(...).count(); }". NOT a bigger eval: eval runs a ' +
+			'(e.g. "npx webhands script ./flow.js"); the file must END with an ' +
+			'EXPRESSION that is the function, e.g. "async (page) => { await page.click(...); ' +
+			'return await page.locator(...).count(); }". Top-level statements before it ' +
+			'(e.g. a `const CONFIG = {...}`), a trailing semicolon and a leading ' +
+			'`export default` are all fine; ESM `import` is not. ' +
+			'NOT a bigger eval: eval runs a ' +
 			'page-world expression; script drives the real page. Same code-execution ' +
 			'surface as eval (caller JS, loopback-only), not hand loading.',
 		args: z.object({
 			path: z
 				.string()
 				.describe(
-					'Path to a JS file holding the script source: JS that evaluates to a ' +
-						'function of the page (e.g. async (page) => { ... }). The file is ' +
-						'read and run; e.g. npx webhands script ./flow.js.',
+					'Path to a JS file whose LAST expression is a function of the page ' +
+						'(e.g. async (page) => { ... }); top-level statements before it are ' +
+						'allowed. The file is read and run; e.g. npx webhands script ./flow.js.',
 				),
 		}),
 		env: ctaEnv,
@@ -1476,6 +1777,7 @@ export function createCli(deps: CliDeps = {}) {
 					'A raw Playwright locator expression to press the key at (focuses it ' +
 						'first). Omit to press at the focused element.',
 				),
+			...actionEscapeOptions.shape,
 		}),
 		output: actionOutput.extend({verb: z.literal('press')}),
 		async run(c) {
@@ -1485,7 +1787,7 @@ export function createCli(deps: CliDeps = {}) {
 						c.options.locator !== undefined && c.options.locator !== ''
 							? locator(c.options.locator)
 							: undefined;
-					await s.page.press(c.args.key, target);
+					await s.page.press(c.args.key, target, actionOptionsFrom(c.options));
 					return c.ok(
 						{ok: true as const, verb: 'press' as const},
 						ctaMeta(c, [nextSnapshot()]),
@@ -1505,12 +1807,18 @@ export function createCli(deps: CliDeps = {}) {
 			locator: z.string().describe('A raw Playwright locator expression.'),
 		}),
 		env: ctaEnv,
-		options: connectionOptions.extend(ctaOptions.shape),
+		options: connectionOptions.extend({
+			...ctaOptions.shape,
+			...actionEscapeOptions.shape,
+		}),
 		output: actionOutput.extend({verb: z.literal('hover')}),
 		async run(c) {
 			try {
 				return await withSession(provider, targetFrom(c.options), async (s) => {
-					await s.page.hover(locator(c.args.locator));
+					await s.page.hover(
+						locator(c.args.locator),
+						actionOptionsFrom(c.options),
+					);
 					return c.ok(
 						{ok: true as const, verb: 'hover' as const},
 						ctaMeta(c, [nextSnapshot()]),
@@ -1542,6 +1850,7 @@ export function createCli(deps: CliDeps = {}) {
 				.string()
 				.optional()
 				.describe("Match the option's visible label text (label form)."),
+			...actionEscapeOptions.shape,
 		}),
 		output: actionOutput.extend({
 			verb: z.literal('select'),
@@ -1557,7 +1866,11 @@ export function createCli(deps: CliDeps = {}) {
 			}
 			try {
 				return await withSession(provider, targetFrom(c.options), async (s) => {
-					await s.page.select(locator(c.args.locator), choice);
+					await s.page.select(
+						locator(c.args.locator),
+						choice,
+						actionOptionsFrom(c.options),
+					);
 					return c.ok(
 						{
 							ok: true as const,
@@ -1638,12 +1951,22 @@ export function createCli(deps: CliDeps = {}) {
 				.describe('A raw Playwright locator expression for the drop target.'),
 		}),
 		env: ctaEnv,
-		options: connectionOptions.extend(ctaOptions.shape),
+		options: connectionOptions.extend({
+			...ctaOptions.shape,
+			// `drag` takes --timeout but NOT --dom: a synthetic drag sequence needs a
+			// DataTransfer real drop targets often ignore, so it would fail quietly more
+			// often than it worked. Better to have no escape than a deceptive one.
+			timeout: actionEscapeOptions.shape.timeout,
+		}),
 		output: actionOutput.extend({verb: z.literal('drag')}),
 		async run(c) {
 			try {
 				return await withSession(provider, targetFrom(c.options), async (s) => {
-					await s.page.drag(locator(c.args.source), locator(c.args.target));
+					await s.page.drag(
+						locator(c.args.source),
+						locator(c.args.target),
+						actionOptionsFrom(c.options),
+					);
 					return c.ok(
 						{ok: true as const, verb: 'drag' as const},
 						ctaMeta(c, [nextSnapshot()]),
@@ -1832,10 +2155,11 @@ export function createCli(deps: CliDeps = {}) {
 		},
 	});
 
-	// `cookies` is a group (export/import), mirroring the verb's two directions.
+	// `cookies` is a group (export/import/clear), mirroring the verb's directions.
 	const cookies = Cli.create('cookies', {
 		description:
-			'Export or import the active session cookies (move/back up/seed a session).',
+			'Export, import or selectively CLEAR the active session cookies ' +
+			'(move/back up/seed a session, or drop a specific set by name/domain).',
 	});
 	cookies.command('export', {
 		description: 'Write the active session cookies to a file.',
@@ -1896,6 +2220,101 @@ export function createCli(deps: CliDeps = {}) {
 			}
 		},
 	});
+	cookies.command('clear', {
+		description:
+			'Remove SPECIFIC cookies from the active session and report how many went. ' +
+			'Name them with --name (repeatable) and/or narrow with --domain/--path; ' +
+			'every given field must match. Use this to recover from an anti-bot block: a ' +
+			'WAF typically keeps its verdict in a few named cookies (Akamai uses _abck, ' +
+			"bm_sz, bm_sv, ak_bmsc) while the login usually lives in the site's own " +
+			'session cookies, so clearing just those names can restore access without ' +
+			'signing you out. Usually, NOT always: some sites tie the session to the WAF ' +
+			'cookie, so export first if losing the login would be expensive, and clear ' +
+			'ONCE rather than in a loop. An EMPTY filter is refused; pass --all to clear ' +
+			'everything on purpose (that DOES log the session out).',
+		options: connectionOptions.extend({
+			name: z
+				.array(z.string())
+				.optional()
+				.describe(
+					'Cookie name to remove; repeat for several ' +
+						'(e.g. --name _abck --name bm_sz). Matched EXACTLY, no patterns.',
+				),
+			domain: z
+				.string()
+				.optional()
+				.describe('Only remove cookies whose domain matches this exactly.'),
+			path: z
+				.string()
+				.optional()
+				.describe('Only remove cookies whose path matches this exactly.'),
+			all: z
+				.boolean()
+				.default(false)
+				.describe(
+					'Clear EVERY cookie in the session (logs it out). Required to be ' +
+						'explicit: an empty filter is an error, never a wildcard. Cannot be ' +
+						'combined with --name/--domain/--path.',
+				),
+		}),
+		output: z.object({
+			ok: z.literal(true),
+			verb: z.literal('cookies clear'),
+			cleared: z
+				.number()
+				.describe(
+					'How many cookies the browser actually removed (0 means nothing ' +
+						'matched — check the names).',
+				),
+			remaining: z
+				.number()
+				.describe('How many cookies the session still holds afterwards.'),
+		}),
+		async run(c) {
+			try {
+				// Build the seam filter from the flags, carrying a field ONLY when given
+				// so the shared validator sees a genuinely empty filter as empty (and
+				// refuses it) rather than as a set of empty strings.
+				const names = (c.options.name ?? []).filter((n) => n !== '');
+				const filter: CookieFilter = {
+					...(names.length > 0 ? {names} : {}),
+					...(c.options.domain !== undefined && c.options.domain !== ''
+						? {domain: c.options.domain}
+						: {}),
+					...(c.options.path !== undefined && c.options.path !== ''
+						? {path: c.options.path}
+						: {}),
+					...(c.options.all ? {all: true} : {}),
+				};
+				// Validate BEFORE touching a session, through the SAME shared seam
+				// validator the page and the RPC server run. Doing it here (not only
+				// deeper down) means a bare `cookies clear` is refused for EVERY
+				// transport, including one whose page does not validate, and refused
+				// without opening anything. Reported as its own `invalid-cookie-filter`
+				// code, mirroring `invalid-wait`/`invalid-scroll`.
+				try {
+					validateCookieFilter(filter);
+				} catch (cause) {
+					return c.error({
+						code: 'invalid-cookie-filter',
+						message: cause instanceof Error ? cause.message : String(cause),
+					});
+				}
+				return await withSession(provider, targetFrom(c.options), async (s) => {
+					const cleared = await s.page.clearCookies(filter);
+					const remaining = (await s.page.cookies()).length;
+					return c.ok({
+						ok: true as const,
+						verb: 'cookies clear' as const,
+						cleared,
+						remaining,
+					});
+				});
+			} catch (cause) {
+				return fail(c, cause, binary);
+			}
+		},
+	});
 	cli.command(cookies);
 
 	return cli;
@@ -1915,6 +2334,8 @@ async function defaultServeSession(
 	home: {root?: string; env?: NodeJS.ProcessEnv},
 	launchPolicy: LaunchPolicy = {},
 ): Promise<RunningSessionServer> {
+	// (The transport choice is `transportForPolicy`, exported so a test can assert
+	// WHICH browser a policy brings up without starting a server or a browser.)
 	// Load `.env` / `.env.local` / `.env.<mode>` into THIS long-lived `serve`
 	// process's env BEFORE the browser opens (task
 	// `env-placeholder-substitution-and-dotenv-loading`). This is the process that
@@ -1927,41 +2348,130 @@ async function defaultServeSession(
 	// never reads the developer's real cwd `.env`.
 	loadWebhandsEnv();
 
+	const {transport, cdpEndpoint} = transportForPolicy(home, launchPolicy);
+	const options: SessionServerOptions = {
+		...home,
+		transport,
+		// Present only when the policy actually has an endpoint to advertise (see
+		// `transportForPolicy`); resolved AFTER open, when the transport knows it.
+		...(cdpEndpoint !== undefined ? {cdpEndpoint} : {}),
+	};
+	return startSessionServer(target, options);
+}
+
+/**
+ * Choose the TRANSPORT a launch policy implies, plus the optional resolver for the
+ * CDP endpoint to advertise.
+ *
+ * Split out of {@link defaultServeSession} and exported so the one genuinely
+ * branchy decision in the CLI (which BROWSER does this policy bring up, with which
+ * options) is assertable without starting an HTTP server or a browser. It was
+ * previously inline, which left `serve --real-chrome` exercised only as a flag: its
+ * transport wiring, `--keep-browser` and `--proxy` forwarding had no test at all.
+ *
+ * `transports` is an INTERNAL test seam mirroring the `spawn` seam on the
+ * real-Chrome transport: tests inject recording factories to assert the options a
+ * policy produces. Production passes nothing and gets the real transports.
+ */
+export function transportForPolicy(
+	home: {root?: string; env?: NodeJS.ProcessEnv},
+	launchPolicy: LaunchPolicy,
+	transports: TransportFactories = {},
+): {transport: Transport; cdpEndpoint?: () => string | undefined} {
+	const makeRealChrome = transports.realChrome ?? defaultRealChromeFactory;
+	const makeLaunch = transports.launch ?? defaultLaunchFactory;
+	const makeAttach = transports.attach ?? defaultAttachFactory;
+
+	// attach ALWAYS reuses the user's own browser, so it is built for every policy:
+	// an explicit `--endpoint` is the more specific request and must win, even under
+	// `--real-chrome` (we never spawn a second browser, nor adopt the lifetime of
+	// one the user started). The `serve` command warns when that makes other flags
+	// moot.
+	const attach = makeAttach(home);
+
+	// `--real-chrome`: the LAUNCH half becomes the real-Chrome transport (spawn the
+	// user's own Chrome + attach over CDP, ADR-0014) instead of a Playwright launch.
+	// Chosen HERE, in the one place a browser is brought up (ADR-0005), so the verb
+	// surface and the session server are identical either way.
+	if (launchPolicy.realChrome === true) {
+		const realChrome = makeRealChrome(home, {
+			...(launchPolicy.keepBrowser === true ? {keepBrowser: true} : {}),
+			// The proxy DOES apply here (Chromium's own --proxy-server), and is the only
+			// lever on this mode's exit IP.
+			...(launchPolicy.proxy !== undefined ? {proxy: launchPolicy.proxy} : {}),
+		});
+		return {
+			transport: {
+				open(t: OpenTarget): Promise<Session> {
+					return t.mode === 'attach' ? attach.open(t) : realChrome.open(t);
+				},
+			},
+			// This mode's browser always HAS a debugging port (it is how we attach), so
+			// advertising it is purely about whether the caller asked to know. Without
+			// `--expose-cdp` we hand back no shared driving surface they did not request.
+			...(launchPolicy.exposeCdp === true
+				? {cdpEndpoint: () => realChrome.cdpEndpoint()}
+				: {}),
+		};
+	}
+
 	// The launch transport is the ONE place the stealth policy takes effect
 	// (ADR-0005: serve is the one place a browser is launched). attach reuses the
 	// user's own browser, so the policy does not apply there.
-	const launch = new PlaywrightLaunchTransport(home, [], {
+	const launch = makeLaunch(home, {
 		stealth: launchPolicy.stealth,
 		systemBrowser: launchPolicy.systemBrowser,
 		...(launchPolicy.noViewport !== undefined
 			? {noViewport: launchPolicy.noViewport}
 			: {}),
 		...(launchPolicy.proxy !== undefined ? {proxy: launchPolicy.proxy} : {}),
-		// `serve` always exposes a Chromium CDP endpoint for a LAUNCH session, so a
-		// separate Playwright client can connectOverCDP and drive the SAME live page
-		// the server holds (the SHARED driving surface the eval baseline needs). It
-		// is loopback-only (CONTEXT.md), like the serve RPC endpoint itself. An
-		// attach session has no harness-owned debugging port, so the resolver below
-		// just yields undefined there.
-		exposeCdp: true,
+		// CDP exposure is OPT-IN (`--expose-cdp`). It used to be hard-coded ON here,
+		// which meant every `serve` launch appended `--remote-debugging-port=0`: a
+		// code-execution surface on the logged-in page AND an automation tell, added
+		// even under `--stealth`, where it partly undoes what Patchright is for. A
+		// caller that wants the shared driving surface (the eval baseline) now asks.
+		exposeCdp: launchPolicy.exposeCdp === true,
 	});
-	// attach reuses the user's browser, but the managed screenshots dir still
-	// honours the home-root override so a test isolates screenshot output.
-	const attach = new PlaywrightAttachTransport([], home);
-	const transport: Transport = {
-		open(t: OpenTarget): Promise<Session> {
-			return t.mode === 'attach' ? attach.open(t) : launch.open(t);
+	return {
+		transport: {
+			open(t: OpenTarget): Promise<Session> {
+				return t.mode === 'attach' ? attach.open(t) : launch.open(t);
+			},
 		},
-	};
-	const options: SessionServerOptions = {
-		...home,
-		transport,
-		// After open, read the CDP endpoint the launch transport resolved (undefined
-		// for an attach target, which never went through the launch transport).
+		// Resolved AFTER open, when the transport has its debugging port; undefined
+		// for an attach target, which never went through the launch transport.
 		cdpEndpoint: () => launch.cdpEndpoint(),
 	};
-	return startSessionServer(target, options);
 }
+
+/** The transport constructors {@link transportForPolicy} uses (a test seam). */
+export interface TransportFactories {
+	readonly realChrome?: (
+		home: {root?: string; env?: NodeJS.ProcessEnv},
+		options: RealChromeTransportOptions,
+	) => Pick<RealChromeTransport, 'open' | 'cdpEndpoint'>;
+	readonly launch?: (
+		home: {root?: string; env?: NodeJS.ProcessEnv},
+		options: PlaywrightLaunchTransportOptions,
+	) => Pick<PlaywrightLaunchTransport, 'open' | 'cdpEndpoint'>;
+	readonly attach?: (home: {
+		root?: string;
+		env?: NodeJS.ProcessEnv;
+	}) => Pick<PlaywrightAttachTransport, 'open'>;
+}
+
+const defaultRealChromeFactory: NonNullable<
+	TransportFactories['realChrome']
+> = (home, options) => new RealChromeTransport(home, [], options);
+
+const defaultLaunchFactory: NonNullable<TransportFactories['launch']> = (
+	home,
+	options,
+) => new PlaywrightLaunchTransport(home, [], options);
+
+const defaultAttachFactory: NonNullable<TransportFactories['attach']> = (
+	home,
+) => new PlaywrightAttachTransport([], home);
 
 /**
  * Turn the three `wait` option forms into the seam's {@link WaitCondition}, or

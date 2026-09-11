@@ -202,7 +202,12 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 	const serveSession = await startServe({
 		webhands: opts.webhands,
 		home,
-		launch: opts.serve,
+		// The harness OPTS IN to the shared driving surface (`--expose-cdp`), because
+		// it is how a Playwright-only baseline agent drives the SAME page the harness
+		// later asserts on. `serve` does not open a remote-debugging port by default
+		// any more, so a run that did not ask would silently lose the baseline leg's
+		// attach target. A caller can still turn it off explicitly.
+		launch: {...opts.serve, exposeCdp: opts.serve?.exposeCdp ?? true},
 		...(opts.env !== undefined ? {env: opts.env} : {}),
 	});
 

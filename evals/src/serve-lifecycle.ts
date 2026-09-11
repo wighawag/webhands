@@ -33,6 +33,20 @@ export interface ServeLaunchOptions {
 	readonly systemBrowser?: string;
 	/** Show the browser window (default headless). */
 	readonly headed?: boolean;
+	/**
+	 * Ask `serve` to expose the browser's CDP / remote-debugging endpoint
+	 * (`--expose-cdp`), which is what gives the harness a SHARED DRIVING SURFACE:
+	 * the Playwright-only baseline agent `connectOverCDP`-s to the harness's
+	 * EXISTING page, so the end-state assertion reads the page the agent actually
+	 * drove (finding
+	 * `baseline-comparison-needs-a-shared-driving-surface-not-two-browsers`).
+	 *
+	 * Must be asked for explicitly: `serve` no longer opens a remote-debugging port
+	 * by default (it is a code-execution surface on the logged-in page and an
+	 * automation tell). The harness opts IN because the shared surface is its
+	 * measurement mechanism and it runs against local fixtures on an isolated home.
+	 */
+	readonly exposeCdp?: boolean;
 }
 
 /** Config to start a harness-owned serve session. */
@@ -83,7 +97,8 @@ interface Endpoint {
  * long-lived child (pinning `WEBHANDS_HOME`), polls for the endpoint file, and
  * returns a {@link ServeSession} whose `stop()` runs the published `stop` verb
  * and reaps the child. Forwards the existing `--profile`/`--proxy`/`--stealth`/
- * `--use-system-browser`/`--headed` flags untouched (no new option).
+ * `--use-system-browser`/`--headed` flags untouched, plus `--expose-cdp` when the
+ * caller asks for the shared driving surface.
  */
 export async function startServe(
 	opts: StartServeOptions,
@@ -177,6 +192,9 @@ function serveFlags(launch: ServeLaunchOptions | undefined): string[] {
 		flags.push('--use-system-browser', launch.systemBrowser);
 	}
 	if (launch.headed === true) flags.push('--headed');
+	// Opt-in shared driving surface: without this flag `serve` advertises no
+	// cdpEndpoint, and the Playwright-baseline leg has no page to attach to.
+	if (launch.exposeCdp === true) flags.push('--expose-cdp');
 	return flags;
 }
 

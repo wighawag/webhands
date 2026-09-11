@@ -117,6 +117,24 @@ page, the way a Playwright user writes a script by hand:
 npx webhands script ./flow.js --format json
 ```
 
+The file must END with an EXPRESSION that IS the function. Top-level statements
+BEFORE it are fine, so the natural module-style layout works:
+
+```js
+const SEAT = 'window';
+
+async (page) => {
+  await page.click(`input[value="${SEAT}"]`);
+  return await page.title();
+};
+```
+
+A trailing semicolon is fine, and so is a leading `export default`. What does NOT
+work is a real ESM `import` (hoist the value into a top-level `const` instead) or
+`module.exports = ...`: the file is loaded as a source that evaluates to a
+function, not as a module. If it cannot, the error states that constraint and
+shows a correct example.
+
 The source is a FILE PATH: `script` takes a path to a JS file, reads it, and runs
 it (there is no inline-string, no `--file` flag, and no stdin form). The script
 gets the FULL Playwright `page` (real locators + actions +
@@ -158,20 +176,40 @@ Results often arrive after navigation via background requests. If a snapshot is
 empty or sparse, the page is still loading — `webhands wait --ms 6000-9000` (or
 `wait --navigation`) before snapshotting. This is normal, not a failure.
 
-## The anti-bot wall and the headed fallback (learned the hard way)
+## The anti-bot wall: what actually works (measured)
 
-Anti-bot sites (Kayak being the canonical example) fingerprint headless browsers.
-A headless `goto` can land on a bot-block page (e.g. Kayak's "we think you are a
-bot" page) instead of results — the snapshot will say so plainly.
+Anti-bot sites fingerprint automated browsers. A headless `goto` can land on a
+bot-block page instead of results, and the snapshot usually says so plainly.
 
-When that happens, the fix is NOT a trick — it is to put a human in the loop:
+**Read the symptom carefully, because it lies.** Against a serious bot manager the
+static, edge-cached top page renders FINE while every DYNAMIC endpoint returns a
+bare "Access Denied". So "the page loaded" is not evidence you are through; check
+an endpoint that does real work.
 
-1. `webhands stop`, then restart with `webhands serve --headed` so the window is
-   visible.
-2. `webhands goto <url>` — the human accepts cookies / clears the challenge in the
-   visible window. (Equivalently, do this once via `setup-profile`; clearance then
-   persists for later headless runs.)
-3. Tell the human what you need cleared, WAIT for their go-ahead, then `snapshot`.
+The escalation ladder, cheapest first:
+
+1. **Headed plus a human in the loop.** `webhands stop`, restart with
+   `webhands serve --headed`, `goto`, and let the human accept cookies / clear the
+   challenge in the visible window. Tell them what you need, WAIT for their
+   go-ahead, then `snapshot`. (Equivalently do it once via `setup-profile`, so the
+   clearance persists.)
+2. **Drive their real Chrome: `webhands serve --real-chrome`.** This is the one that
+   beat Akamai on an authenticated booking site, where a Playwright-launched browser
+   was blocked in EVERY configuration, `--stealth` and
+   `--stealth --use-system-browser chrome` included. It starts the user's own Chrome
+   with a debugging port on the dedicated profile and attaches, in one command,
+   visible so the human can log in and take over. Equivalent by hand:
+   `google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/scratch` then
+   `webhands serve --endpoint http://127.0.0.1:9222`.
+3. **If you get blocked MID-session, clear the verdict cookies** (see the recovery
+   section below) rather than restarting everything.
+
+Do NOT reach for `--stealth` as the anti-bot answer: it removes ONE tell (the CDP
+`Runtime.enable` leak) and was not sufficient against a real bot manager. And do not
+read `--real-chrome` as a cloak: Chrome reports `navigator.webdriver = true` whenever
+a debugging port is on, in that mode too. It wins on everything else about being a
+real browser (no launch-hardening flags, a warm profile, a real window, the human's
+own IP).
 
 webhands ships NO captcha solver and NO provider key, and it does not bypass
 logins. For an ordinary anti-bot wall the simplest path is the human-in-the-loop
@@ -230,11 +268,26 @@ separate `--frame <css>` flag.
 
 Lifecycle + mode:
 
-- `setup-profile [--profile <name>]` — one-time HEADED login / challenge-clear;
-  HOLDS the window open until you close it, then persists the profile state.
-- `serve [--headed] [--profile <name>] [--endpoint <url>] [--stealth] [--use-system-browser <ch>] [--proxy <socks-url>] [--no-viewport]`
+- `setup-profile [--profile <name>] [--stealth] [--use-system-browser <ch>] [--proxy <socks-url>] [--no-viewport]`
+  — one-time HEADED login / challenge-clear; HOLDS the window open until you close
+  it, then persists the profile state. It takes the SAME browser-selection flags as
+  `serve`, and you should pass the same ones: the profile dir is written by that
+  specific browser build, so setting it up with bundled Chromium and then driving
+  it with `--use-system-browser chrome` is a mismatch.
+- `serve [--headed] [--profile <name>] [--endpoint <url>] [--real-chrome] [--keep-browser] [--stealth] [--use-system-browser <ch>] [--proxy <socks-url>] [--no-viewport] [--expose-cdp]`
   — start & HOLD the one browser (headless default). The session it holds is what
   every later verb drives. Blocks; background it (see above).
+  - `--real-chrome` spawns the USER'S own Chrome with a debugging port on the
+    dedicated profile and attaches to it (visible window). Reach for this when a
+    site blocks you; it is what worked against Akamai. `--keep-browser` leaves that
+    browser running after `stop` (the next `--real-chrome` serve re-attaches).
+    `--proxy <socks-url>` DOES work in this mode (it is the only way to change the
+    exit IP there), but WITHOUT credentials: Chrome supports no SOCKS5 auth, so a
+    `user:pass@` URL is refused rather than silently sent unauthenticated. Use a
+    credential-free local relay (`ssh -D 1080`) and point `--proxy` at that.
+  - `--expose-cdp` opens a remote-debugging port on a LAUNCHED browser so a separate
+    Playwright client can drive the SAME page; OFF by default and you almost never
+    want it (it is an automation tell, and counter-productive with `--stealth`).
 - `attach --endpoint <url>` — alternative to a `serve`-launch: connect to a
   Chromium the USER already started with remote debugging, reusing live tabs
   (Chromium-only).
@@ -277,6 +330,54 @@ Act:
   — coordinate mouse input at VIEWPORT CSS-pixels (a viewport-screenshot pixel
   maps directly to these coordinates).
 
+The five element-acting verbs (`click`, `type`, `press`, `hover`, `select`) plus
+`drag` take `--timeout <ms>`, which changes only how long you WAIT, never what is
+performed. All of those except `drag` also take `--dom`. `goto`, `scroll` and
+`mouse` take neither.
+
+**`--dom`: the hidden-control escape.** Real sites hide radios and checkboxes
+behind styled labels. Playwright correctly refuses to act on what a human could not
+reach, so the verb waits out its timeout even though the control works. `--dom`
+skips the actionability check and fires the event directly:
+
+```sh
+# A radio hidden behind its label (opacity:0, or display:none):
+npx webhands click "page.locator('#seat-window')" --dom
+```
+
+For `click` you usually do not even need it: `click` already falls back to a
+dispatched event automatically, and REPORTS which path it took as `via` in its
+output (`"click"` = a real actionability-checked click, `"dispatch"` = the element
+did not become actionable and an event was fired at it instead). Passing `--dom`
+explicitly just skips the wait when you already know.
+
+**`click` waits only about 1 second** for actionability before dispatching (the
+other verbs keep Playwright's 30s). So if you are clicking something that becomes
+ready after a request (a late-hydrated row, a button enabled by an XHR), `wait`
+first or pass `--timeout 10000`; otherwise you get `via: "dispatch"` at a
+not-yet-ready element and an `ok: true` that did nothing useful.
+
+**Read the `via` field, and read it correctly.** `"dispatch"` means the element was
+not actionable within the budget. That covers a genuinely hidden control AND one
+that was merely slow or briefly covered, so it is not proof of a honeypot: it is a
+prompt to VERIFY the effect (snapshot, or read the control's state) rather than
+trusting `ok: true`. It does mean a real user could not have clicked it at that
+moment, and invisible controls are sometimes anti-bot honeypots, so never treat a
+`dispatch` on a form field as routine.
+
+The escape is per-verb faithful to different degrees, so know what you are firing:
+`click` dispatches a real click event (and still toggles a radio/checkbox); `select`
+sets the value and fires `change`; `type` sets the value and fires `input`/`change`,
+so there are NO keystrokes (a masked input or a keydown-driven autocomplete may
+behave differently); `press` fires `keydown`/`keypress`/`keyup` (handlers run, but no
+text is inserted); `hover` fires the pointer/mouse enter events (no pointer
+POSITION, so CSS `:hover` does not react). `drag` has NO `--dom` on purpose: a
+synthetic drag needs a `DataTransfer` that real drop targets often ignore, so it
+would fail quietly more often than it worked.
+
+Keep it opt-in. If a verb fails on a visible element, the answer is `wait` or a
+better locator, not `--dom`.
+
 Read structured data:
 
 - `query <locator> [--attr <a>]… [--prop <p>]… [--pw visible|bbox]… [--limit <n>] [--with-refs]`
@@ -296,6 +397,48 @@ Capture + session:
   needs `--locator`.
 - `cookies export <file>` / `cookies import <file>` — move/back up/seed the active
   session cookies.
+- `cookies clear [--name <n>]… [--domain <d>] [--path <p>] [--all]` — remove a
+  NAMED SUBSET of the session cookies and report how many went. `--name` is
+  REPEATABLE; every given field must match. A bare `cookies clear` is REFUSED (it
+  is never read as "all"); `--all` clears everything and logs the session out.
+
+## Recovering from a mid-session bot block
+
+A WAF can flip from serving you to blocking you PART WAY THROUGH a session, after
+enough fast automated navigation (one observed trip: ~15 rapid flows in 40
+minutes). The tell is specific and easy to misread: the static, edge-cached top
+page still renders fine, while every DYNAMIC endpoint returns a bare "Access
+Denied" page, including ones that worked seconds earlier. So "the site loaded"
+is NOT evidence you are unblocked; check an endpoint that actually does work.
+
+The verdict is stored in COOKIES, so it survives a reload and keeps 403-ing until
+those cookies are gone. Clearing just them restored access immediately in the one
+session this was measured on (Akamai in front of an ASP.NET app), where the login
+lived in entirely different cookies and survived. Treat that as the common shape,
+NOT a guarantee: some sites bind the session to the WAF cookie, and then this logs
+the human out. If losing the login would be expensive, `cookies export` to a path
+the human names first, so you can `cookies import` it back.
+
+```sh
+# Akamai keeps its verdict in these four; other WAFs use their own names.
+npx webhands cookies clear --name _abck --name bm_sz --name bm_sv --name ak_bmsc
+```
+
+`cleared: 0` means nothing matched, so check the names. `cookies export` would show
+them, but it writes the human's FULL session including auth cookies to disk in
+plaintext: do not dump that into a shared temp dir as a casual diagnostic. If you
+need it, write it to a path the human names and delete it immediately after.
+
+Then SLOW DOWN: pace with `wait` between flows rather than firing verbs
+back-to-back. Do NOT clear everything (`--all`) as a reflex: that logs the human out
+for no reason.
+
+**Clear ONCE.** This is not evading a protection: you are clearing cookies in the
+human's own browser, exactly as they could from Chrome's own UI, so the WAF
+re-evaluates the real logged-in user. It STOPS being that if you loop it. If the
+block returns after a clear, stop, tell the human what happened, and let them
+decide. Repeatedly wiping the verdict to keep automating is the evasion this tool
+does not do (`docs/adr/0002`, `docs/adr/0016`).
 
 ## Minimal worked example (headed, reading live prices)
 

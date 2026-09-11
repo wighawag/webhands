@@ -13,6 +13,37 @@ import {
 import type {OpenTarget, Session, Transport} from './seam.js';
 
 /**
+ * How long to wait for the CDP connection to tear down in {@link Session.close}
+ * before giving up on the WAIT (not on the teardown) and declaring the session
+ * closed.
+ *
+ * Why a bound is needed at all: Playwright's `browser.close()` on a
+ * `connectOverCDP` connection INTERMITTENTLY blocks for exactly 30 seconds.
+ * Measured repeatedly against a separate-process Chromium here: most detaches
+ * finish in 2 to 10ms, and some take 30008ms / 30229ms, i.e. a 30s internal
+ * timeout being waited out rather than real work. Nothing in the result differs;
+ * only the waiting does.
+ *
+ * Since the CDP connection carries no unflushed state we own (the BROWSER owns the
+ * profile, and it keeps running either way, ADR-0002), waiting longer buys
+ * nothing, while blocking `stop` for 30s is a visibly broken tool. So we bound the
+ * wait and return; the underlying disconnect continues in the background and the
+ * socket closes with it (or with the process, which is about to exit anyway).
+ */
+const DETACH_TIMEOUT_MS = 2_000;
+
+/**
+ * How long to wait for `connectOverCDP` to reach the endpoint before failing.
+ *
+ * Playwright's default is 30s, which is the wrong budget here: the browser we are
+ * attaching to is ALREADY RUNNING (the user started it, or `--real-chrome` just
+ * confirmed its debugging port is live), so a connection that has not landed in a
+ * few seconds is a wrong endpoint, not a slow one. Waiting 30s to say "that port
+ * is not a browser" trains the user to think the tool is hung.
+ */
+const CONNECT_TIMEOUT_MS = 10_000;
+
+/**
  * The `attach` concrete transport: connect (`chromium.connectOverCDP`) to a
  * browser the USER already started with remote debugging enabled, and reuse the
  * user's EXISTING authenticated context — `browser.contexts()[0]`, never
@@ -70,7 +101,9 @@ export class PlaywrightAttachTransport implements Transport {
 		// `endpoint` is the opaque, transport-resolved remote-debugging endpoint
 		// (e.g. `http://127.0.0.1:9222`). The seam keeps it a plain string so no
 		// CDP type leaks (ADR-0003); this transport interprets it as a CDP URL.
-		const browser = await chromium.connectOverCDP(target.endpoint);
+		const browser = await chromium.connectOverCDP(target.endpoint, {
+			timeout: CONNECT_TIMEOUT_MS,
+		});
 
 		try {
 			// CDP-attach is Chromium-only. If the reached engine is not Chromium,
@@ -119,6 +152,33 @@ export class PlaywrightAttachTransport implements Transport {
  * process, ADR-0002) — the opposite of the launch transport, which kills the
  * browser it spawned.
  */
+/**
+ * Await `work`, but give up WAITING after `ms` (the work itself continues).
+ *
+ * The timer is always cleared, which matters more than it looks: an uncancelled
+ * `setTimeout` inside a `Promise.race` keeps the Node event loop alive for its full
+ * duration after the fast path has already won. The `serve` CLI never noticed (its
+ * signal handler calls `process.exit`), but every in-process consumer (the eval
+ * harness, the test suite, any library user) would sit idle for the remainder of the
+ * bound after a perfectly clean close.
+ */
+async function raceWithTimeout(
+	work: Promise<unknown>,
+	ms: number,
+): Promise<void> {
+	let timer: NodeJS.Timeout | undefined;
+	try {
+		await Promise.race([
+			work,
+			new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, ms);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
+
 function makeAttachedSession(
 	browser: Browser,
 	pwPage: Page,
@@ -168,11 +228,25 @@ function makeAttachedSession(
 			if (closed) {
 				return;
 			}
+			// Claim the close BEFORE awaiting anything: the guard above reads a flag that
+			// used to be set only at the END, so two concurrent `close()` calls both
+			// disposed the hands and both detached. The bounded detach below widened that
+			// window to a deterministic 2s, so the race stopped being theoretical.
+			closed = true;
 			// Dispose the hands first (their in-process resources), THEN detach from
 			// the user's browser without terminating it. browser.close() fires
 			// 'disconnected', which runs markClosed.
 			await disposeHands();
-			await browser.close();
+			// BOUNDED: the detach is fire-and-mostly-forget because Playwright's CDP
+			// close intermittently blocks 30s (see DETACH_TIMEOUT_MS). We still await
+			// the common fast path, so an orderly disconnect stays orderly.
+			await raceWithTimeout(
+				browser.close().catch(() => {
+					// A failed disconnect is not a failed close: the session is over for
+					// this controller either way, and the user's browser is untouched.
+				}),
+				DETACH_TIMEOUT_MS,
+			);
 			markClosed();
 		},
 		waitForClose(): Promise<void> {

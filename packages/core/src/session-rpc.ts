@@ -1,8 +1,11 @@
 import {
 	locator,
+	validateCookieFilter,
 	validateSnapshotOptions,
 	type ActionOptions,
+	type ClickResult,
 	type Cookie,
+	type CookieFilter,
 	type EvalOptions,
 	type MouseInput,
 	type QueryOptions,
@@ -136,6 +139,16 @@ export type SessionRpcBuiltInRequest =
 	| {readonly verb: 'cookies'}
 	| {readonly verb: 'setCookies'; readonly cookies: readonly Cookie[]}
 	| {
+			readonly verb: 'clearCookies';
+			/**
+			 * WHICH cookies to remove. Plain JSON (names/domain/path/all); the server
+			 * re-validates it with the SHARED {@link validateCookieFilter} so an empty
+			 * filter from ANY client (not just the typed proxy) is refused rather than
+			 * read as "clear everything".
+			 */
+			readonly filter: CookieFilter;
+	  }
+	| {
 			readonly verb: 'query';
 			readonly locator: string;
 			readonly options?: QueryOptions;
@@ -152,18 +165,25 @@ export type SessionRpcBuiltInRequest =
 			readonly verb: 'press';
 			readonly key: string;
 			readonly locator?: string;
+			readonly options?: ActionOptions;
 	  }
-	| {readonly verb: 'hover'; readonly locator: string}
+	| {
+			readonly verb: 'hover';
+			readonly locator: string;
+			readonly options?: ActionOptions;
+	  }
 	| {
 			readonly verb: 'select';
 			readonly locator: string;
 			readonly choice: SelectChoice;
+			readonly options?: ActionOptions;
 	  }
 	| {readonly verb: 'scroll'; readonly target: ScrollTarget}
 	| {
 			readonly verb: 'drag';
 			readonly source: string;
 			readonly target: string;
+			readonly options?: ActionOptions;
 	  }
 	| {readonly verb: 'mouse'; readonly input: MouseInput}
 	| {
@@ -259,12 +279,13 @@ async function dispatchSessionRpc(
 			return page.snapshot(snapshotOptionsFromRequest(request));
 		case 'click':
 			// Forward the optional ActionOptions only when given, so a plain-locator
-			// click stays `click(target)` (the byRef path is opt-in).
-			await page.click(
+			// click stays `click(target)` (the byRef path is opt-in). The RESULT (how the
+			// click was performed: real vs dispatched) is what the wire carries back, so
+			// a thin client learns the same thing an in-process caller does.
+			return page.click(
 				locator(request.locator),
 				request.options !== undefined ? request.options : undefined,
 			);
-			return undefined;
 		case 'type':
 			await page.type(
 				locator(request.locator),
@@ -295,6 +316,12 @@ async function dispatchSessionRpc(
 		case 'setCookies':
 			await page.setCookies(request.cookies);
 			return undefined;
+		case 'clearCookies':
+			// Validate on the SERVER side too (like `snapshot`): a raw client could
+			// POST `{verb: 'clearCookies', filter: {}}`, and an empty filter must
+			// REFUSE rather than wipe the live session's whole cookie jar. Returns the
+			// number actually removed, which is what the wire carries back.
+			return page.clearCookies(validateCookieFilter(request.filter));
 		case 'query':
 			return page.query(locator(request.locator), request.options);
 		case 'count':
@@ -309,19 +336,28 @@ async function dispatchSessionRpc(
 			await page.press(
 				request.key,
 				request.locator !== undefined ? locator(request.locator) : undefined,
+				request.options,
 			);
 			return undefined;
 		case 'hover':
-			await page.hover(locator(request.locator));
+			await page.hover(locator(request.locator), request.options);
 			return undefined;
 		case 'select':
-			await page.select(locator(request.locator), request.choice);
+			await page.select(
+				locator(request.locator),
+				request.choice,
+				request.options,
+			);
 			return undefined;
 		case 'scroll':
 			await page.scroll(rebrandScroll(request.target));
 			return undefined;
 		case 'drag':
-			await page.drag(locator(request.source), locator(request.target));
+			await page.drag(
+				locator(request.source),
+				locator(request.target),
+				request.options,
+			);
 			return undefined;
 		case 'mouse':
 			await page.mouse(request.input);
@@ -424,11 +460,15 @@ export function makeRpcPage(
 		async click(target, options) {
 			// Carry the optional ActionOptions only when given, so a plain click sends
 			// no `options` key (mirrors `eval`'s optional frame).
-			await send({
+			const value = await send({
 				verb: 'click',
 				locator: target,
 				...(options !== undefined ? {options} : {}),
 			});
+			// Tolerate a server that predates the result (it replied with no value):
+			// report the actionability-checked path rather than inventing a dispatch.
+			const via = (value as ClickResult | undefined)?.via;
+			return {via: via === 'dispatch' ? 'dispatch' : 'click'};
 		},
 		async type(target, text, options) {
 			await send({
@@ -467,6 +507,13 @@ export function makeRpcPage(
 		async setCookies(cookies) {
 			await send({verb: 'setCookies', cookies});
 		},
+		async clearCookies(filter) {
+			// Fail fast on the client too, so a caller's empty/misshapen filter is
+			// caught before a round-trip; the server re-validates as the load-bearing
+			// check for untyped clients (mirrors `snapshot`).
+			validateCookieFilter(filter);
+			return (await send({verb: 'clearCookies', filter})) as number;
+		},
 		async query(target, options) {
 			return (await send({
 				verb: 'query',
@@ -490,26 +537,41 @@ export function makeRpcPage(
 				name,
 			})) as string | null;
 		},
-		async press(key, target) {
+		async press(key, target, options) {
 			// Forward the optional locator only when given, so the wire request stays
 			// minimal (the focused-element form carries no locator key).
 			await send({
 				verb: 'press',
 				key,
 				...(target !== undefined ? {locator: target} : {}),
+				...(options !== undefined ? {options} : {}),
 			});
 		},
-		async hover(target) {
-			await send({verb: 'hover', locator: target});
+		async hover(target, options) {
+			await send({
+				verb: 'hover',
+				locator: target,
+				...(options !== undefined ? {options} : {}),
+			});
 		},
-		async select(target, choice) {
-			await send({verb: 'select', locator: target, choice});
+		async select(target, choice, options) {
+			await send({
+				verb: 'select',
+				locator: target,
+				choice,
+				...(options !== undefined ? {options} : {}),
+			});
 		},
 		async scroll(target) {
 			await send({verb: 'scroll', target});
 		},
-		async drag(source, target) {
-			await send({verb: 'drag', source, target});
+		async drag(source, target, options) {
+			await send({
+				verb: 'drag',
+				source,
+				target,
+				...(options !== undefined ? {options} : {}),
+			});
 		},
 		async mouse(input) {
 			await send({verb: 'mouse', input});

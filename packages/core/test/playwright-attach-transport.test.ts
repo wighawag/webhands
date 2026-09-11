@@ -1,4 +1,4 @@
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {chromium, type BrowserContext} from 'playwright';
@@ -8,6 +8,7 @@ import {
 	isControllerError,
 	locator,
 	PlaywrightAttachTransport,
+	spawnRealChrome,
 	startFixtureServer,
 	type FixtureServer,
 	type Transport,
@@ -20,9 +21,15 @@ import {
  * endpoint. They assert at the `core` Driver/Transport seam against the local
  * fixture page (deterministic, never a third-party site).
  *
- * The "user's running browser" is modelled with `launchPersistentContext` so it
- * exposes an existing authenticated context (`contexts()[0]`) the attach
- * transport must REUSE rather than open a fresh one.
+ * The "user's running browser" is a SEPARATE OS PROCESS, spawned through the same
+ * {@link spawnRealChrome} primitive `--real-chrome` uses, because that is what a
+ * user's browser actually is. It used to be modelled with
+ * `launchPersistentContext` IN THIS PROCESS, which was both less faithful and
+ * quietly broken: `browser.close()` on a `connectOverCDP` connection whose target
+ * was launched by Playwright in the SAME process blocks for 30s (measured: 30.2s,
+ * versus 20ms against a separate process), so every case here paid ~30s and the
+ * detach case, which closes twice, blew its 60s budget and FAILED on `main`. See
+ * `work/notes/findings/attach-close-hangs-30s-against-an-in-process-launched-target.md`.
  */
 describe('PlaywrightAttachTransport (real Chromium over CDP, local fixture)', () => {
 	let server: FixtureServer;
@@ -54,19 +61,33 @@ describe('PlaywrightAttachTransport (real Chromium over CDP, local fixture)', ()
 		context: BrowserContext;
 	}> {
 		const userDataDir = await mkdtemp(join(tmpdir(), 'mbc-attach-'));
-		const context = await chromium.launchPersistentContext(userDataDir, {
+		// A separate PROCESS, like a real user's browser (and like `--real-chrome`).
+		// Playwright's own bundled Chromium is the executable so the test needs no
+		// system Chrome install.
+		const chrome = await spawnRealChrome({
+			userDataDir,
+			executablePath: chromium.executablePath(),
 			headless: true,
-			args: ['--remote-debugging-port=0'],
 		});
+		// A second, test-owned connection standing in for the USER'S live handle on
+		// their own browser: it is how a test seeds/inspects the existing context the
+		// attach transport must reuse, and it must survive the transport detaching.
+		const userHandle = await chromium.connectOverCDP(chrome.endpoint);
+		const context = userHandle.contexts()[0]!;
 		cleanups.push(async () => {
-			await context.close().catch(() => {});
+			// The test-owned handle's close is BOUNDED for the same measured reason the
+			// transport's is (Playwright's CDP close intermittently waits out a 30s
+			// internal timeout; observed here as 30008ms / 30229ms on ~2 of 5 cases).
+			// The browser is terminated on the next line regardless, so waiting longer
+			// would only slow the suite down.
+			await Promise.race([
+				userHandle.close().catch(() => {}),
+				new Promise((resolve) => setTimeout(resolve, 2_000)),
+			]);
+			await chrome.close();
 			await rm(userDataDir, {recursive: true, force: true});
 		});
-
-		// Chromium writes the chosen port to `DevToolsActivePort` (first line) in
-		// the user-data dir once the debugging server is up.
-		const port = await readDevToolsPort(userDataDir);
-		return {endpoint: `http://127.0.0.1:${port}`, context};
+		return {endpoint: chrome.endpoint, context};
 	}
 
 	it('attaches over CDP, reuses the existing context, and drives the fixture through the seam', async () => {
@@ -191,22 +212,6 @@ describe('AttachNotChromiumError (Chromium-only constraint, typed shape)', () =>
 	});
 });
 
-/**
- * Read the remote-debugging port Chromium chose, from the `DevToolsActivePort`
- * file it writes (first line is the port) into the user-data dir. Polls briefly
- * because the file appears shortly after the context resolves.
- */
-async function readDevToolsPort(userDataDir: string): Promise<string> {
-	const portFile = join(userDataDir, 'DevToolsActivePort');
-	for (let attempt = 0; attempt < 50; attempt++) {
-		try {
-			const raw = await readFile(portFile, 'utf8');
-			const port = raw.split('\n')[0]?.trim();
-			if (port) return port;
-		} catch {
-			// not written yet
-		}
-		await new Promise((resolve) => setTimeout(resolve, 20));
-	}
-	throw new Error('Chromium did not report a remote-debugging port');
-}
+// (The local DevToolsActivePort poller this file used to carry is gone: the port
+// read lives in `src/devtools-port.ts` and is reached through `spawnRealChrome`,
+// so there is ONE implementation rather than a test copy that can drift.)

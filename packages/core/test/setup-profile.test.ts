@@ -2,7 +2,7 @@ import {existsSync} from 'node:fs';
 import {mkdtemp, rm, stat} from 'node:fs/promises';
 import {homedir, tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
+import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from 'vitest';
 import {
 	DEFAULT_HOME_DIRNAME,
 	PlaywrightLaunchTransport,
@@ -164,6 +164,54 @@ describe('setupProfile (real headed browser, local fixture)', () => {
 		]);
 		// The dir is still created even with an injected transport (creation is
 		// setup-profile's job, not the transport's).
+		expect((await stat(location.profileDir)).isDirectory()).toBe(true);
+	});
+
+	it('creates the profile WITH the selected system browser (policy reaches the transport)', async () => {
+		// Why this matters: the profile DIR is written by whichever browser build
+		// opens it. Setting it up with the bundled Chromium and then driving it with
+		// `serve --use-system-browser chrome` points a different build at the same
+		// user-data dir. So the selection must reach the DEFAULT transport, not just
+		// `launch`/`serve`.
+		//
+		// Asserted HERMETICALLY (no browser, no Chrome install) through the launch
+		// transport's own stealth-import seam: the injected launcher records the
+		// options the DEFAULT transport was constructed with, so we see the forwarded
+		// `systemBrowser` arrive as Playwright's `channel` alongside the headed open.
+		const root = await makeTempRoot();
+		const launchSpy = vi.fn(
+			async () =>
+				({
+					pages: () => [{} as never],
+					newPage: async () => ({}) as never,
+					on: () => {},
+				}) as never,
+		);
+
+		const {location} = await setupProfile({
+			profile: 'policy-forwarded',
+			root,
+			onPrompt: () => {},
+			launch: {
+				stealth: true,
+				systemBrowser: 'chrome',
+				importStealthChromium: async () => ({
+					chromium: {launchPersistentContext: launchSpy as never},
+				}),
+			},
+		});
+
+		expect(launchSpy).toHaveBeenCalledTimes(1);
+		const [profileDir, options] = launchSpy.mock.calls[0]! as unknown as [
+			string,
+			Record<string, unknown>,
+		];
+		// The profile dir being set up is the one that was opened...
+		expect(profileDir).toBe(location.profileDir);
+		// ...by the SELECTED browser, HEADED (the human has to see the window).
+		expect(options).toMatchObject({channel: 'chrome', headless: false});
+		// And the dir really exists, so a later launch/serve with the SAME selection
+		// reuses a dir that browser wrote.
 		expect((await stat(location.profileDir)).isDirectory()).toBe(true);
 	});
 

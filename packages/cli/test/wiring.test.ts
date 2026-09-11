@@ -1,7 +1,7 @@
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {describe, expect, it} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {
 	StubTransport,
 	MissingBrowserBinaryError,
@@ -15,6 +15,10 @@ import {
 	CrossOriginFrameError,
 	ScreenshotPathError,
 	StaleRefError,
+	RealChromeNotFoundError,
+	RealChromeStartError,
+	RealChromeReuseConflictError,
+	ProxyAuthUnsupportedError,
 	type OpenTarget,
 	type RunningSessionServer,
 	type Session,
@@ -122,7 +126,15 @@ function screenshotRejectingProvider(error: unknown): SessionProvider {
  * and returns a canned running server, so `serve` wiring is exercised with no
  * real browser and no real HTTP listener.
  */
-function fakeServe(): {
+function fakeServe(
+	/**
+	 * The CDP endpoint the fake server advertises, if any. DEFAULT NONE, matching the
+	 * real behaviour now that CDP exposure is opt-in: a plain `serve` opens no
+	 * remote-debugging port, so a fake that always advertised one would let tests
+	 * assert an envelope field the product no longer produces.
+	 */
+	cdpEndpoint?: string,
+): {
 	serve: ServeSession;
 	targets: OpenTarget[];
 	policies: (LaunchPolicy | undefined)[];
@@ -136,13 +148,14 @@ function fakeServe(): {
 		policies.push(launchPolicy);
 		const index = stopped.push(false) - 1;
 		const server: RunningSessionServer = {
-			// A launch serve advertises a shared-driving-surface CDP endpoint; the
-			// wiring surfaces it in the serve output (the harness reads it to hand a
-			// Playwright-only agent the SAME live page).
+			// With `--expose-cdp` a launch serve advertises a shared-driving-surface CDP
+			// endpoint, and the wiring surfaces it in the serve output (the harness reads
+			// it to hand a Playwright-only agent the SAME live page). Without it there is
+			// nothing to advertise.
 			endpoint: {
 				url: 'http://127.0.0.1:51999',
 				pid: 4242,
-				cdpEndpoint: 'http://127.0.0.1:9555',
+				...(cdpEndpoint !== undefined ? {cdpEndpoint} : {}),
 			},
 			async stop() {
 				stopped[index] = true;
@@ -220,6 +233,35 @@ async function schemaOf(
 }
 
 describe('incur CLI wiring', () => {
+	// `serve` registers a SIGINT + SIGTERM handler per invocation (its teardown hook)
+	// and never removes them, so the many serve wiring tests here push Node past its
+	// 10-listener warning threshold. The accumulated handlers also retain each fake
+	// server and would `process.exit(0)` from a stale closure if a real signal arrived
+	// mid-run. Snapshot the listeners and remove only the ones a test added.
+	let signalListenersBefore: Map<string, unknown[]>;
+	beforeEach(() => {
+		signalListenersBefore = new Map(
+			(['SIGINT', 'SIGTERM'] as const).map((signal) => [
+				signal,
+				[...process.listeners(signal)],
+			]),
+		);
+	});
+	afterEach(() => {
+		for (const [signal, before] of signalListenersBefore) {
+			for (const listener of process.listeners(
+				signal as 'SIGINT' | 'SIGTERM',
+			)) {
+				if (!before.includes(listener)) {
+					process.removeListener(
+						signal as 'SIGINT' | 'SIGTERM',
+						listener as () => void,
+					);
+				}
+			}
+		}
+	});
+
 	describe('commands + schemas (one per verb plus the mode commands)', () => {
 		// Page verbs + mode commands the spec mandates (story 12: each with a zod
 		// args/options/output schema).
@@ -230,7 +272,9 @@ describe('incur CLI wiring', () => {
 				wantArgs: false,
 				outputKeys: ['url', 'view', 'content'],
 			},
-			{argv: ['click'], wantArgs: true, outputKeys: ['ok', 'verb']},
+			// `via` is pinned because its whole purpose is agent discoverability through
+			// the MCP tool schema: dropping it from the output would otherwise go unnoticed.
+			{argv: ['click'], wantArgs: true, outputKeys: ['ok', 'verb', 'via']},
 			{argv: ['type'], wantArgs: true, outputKeys: ['ok', 'verb']},
 			{argv: ['eval'], wantArgs: true, outputKeys: ['ok', 'verb', 'result']},
 			{argv: ['script'], wantArgs: true, outputKeys: ['ok', 'verb', 'result']},
@@ -289,6 +333,14 @@ describe('incur CLI wiring', () => {
 				wantArgs: true,
 				outputKeys: ['ok', 'verb', 'file', 'count'],
 			},
+			{
+				// `cookies clear` takes no positional: WHAT to clear is named by flags
+				// (--name/--domain/--path/--all), so a bare invocation cannot be read as
+				// "clear everything".
+				argv: ['cookies', 'clear'],
+				wantArgs: false,
+				outputKeys: ['ok', 'verb', 'cleared', 'remaining'],
+			},
 		];
 
 		for (const {argv, wantArgs, outputKeys} of cases) {
@@ -313,6 +365,217 @@ describe('incur CLI wiring', () => {
 				}
 			});
 		}
+	});
+
+	describe('--dom escape + --timeout wiring (acting verbs)', () => {
+		it('forwards --dom and --timeout as seam ActionOptions', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'click',
+				`page.locator('#seat-window')`,
+				'--dom',
+				'--timeout',
+				'2500',
+			]);
+			const call = transport.calls.find((c) => c.verb === 'click');
+			expect(call?.args[1]).toEqual({dom: true, timeoutMs: 2500});
+		});
+
+		it('sends NO options at all when neither flag is given (byte-identical default)', async () => {
+			// The escape must be invisible when unused: an unflagged verb call has to
+			// reach the seam exactly as it did before these flags existed.
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, ['click', `page.locator('#go')`]);
+			const call = transport.calls.find((c) => c.verb === 'click');
+			expect(call?.args).toEqual([`page.locator('#go')`]);
+		});
+
+		it('combines --dom with --by-ref in ONE options object', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, ['click', 'e7', '--by-ref', '--dom']);
+			const call = transport.calls.find((c) => c.verb === 'click');
+			expect(call?.args[1]).toEqual({byRef: true, dom: true});
+		});
+
+		it('reports HOW the click happened in the envelope (via)', async () => {
+			// The fallback used to be silent. An agent needs to know whether it clicked
+			// a button or poked an invisible node (which may be a honeypot).
+			const {provider} = stubProvider();
+			const plain = await runEnvelope(provider, [
+				'click',
+				`page.locator('#go')`,
+			]);
+			expect(plain.data).toMatchObject({verb: 'click', via: 'click'});
+
+			const {provider: p2} = stubProvider();
+			const dom = await runEnvelope(p2, [
+				'click',
+				`page.locator('#hidden')`,
+				'--dom',
+			]);
+			expect(dom.data).toMatchObject({verb: 'click', via: 'dispatch'});
+		});
+
+		it('forwards the options for type/press/hover/select too', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'type',
+				`page.locator('#note')`,
+				'hello',
+				'--dom',
+			]);
+			await runEnvelope(provider, [
+				'press',
+				'Enter',
+				'--locator',
+				`page.locator('#k')`,
+				'--dom',
+			]);
+			await runEnvelope(provider, ['hover', `page.locator('#m')`, '--dom']);
+			await runEnvelope(provider, [
+				'select',
+				`page.locator('#qty')`,
+				'--value',
+				'2',
+				'--dom',
+			]);
+
+			expect(transport.calls.find((c) => c.verb === 'type')?.args[2]).toEqual({
+				dom: true,
+			});
+			expect(transport.calls.find((c) => c.verb === 'press')?.args[2]).toEqual({
+				dom: true,
+			});
+			expect(transport.calls.find((c) => c.verb === 'hover')?.args[1]).toEqual({
+				dom: true,
+			});
+			expect(transport.calls.find((c) => c.verb === 'select')?.args[2]).toEqual(
+				{dom: true},
+			);
+		});
+
+		it('drag takes --timeout but NOT --dom (no deceptive escape)', async () => {
+			// A synthetic drag needs a DataTransfer real drop targets often ignore, so a
+			// `--dom` drag would fail quietly more often than it worked. Better no escape
+			// than a misleading one: the flag must not exist.
+			const schema = (await schemaOf(['drag'])) as {
+				options?: {properties?: Record<string, unknown>};
+			};
+			const keys = Object.keys(schema.options?.properties ?? {});
+			expect(keys).toContain('timeout');
+			expect(keys).not.toContain('dom');
+
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, [
+				'drag',
+				`page.locator('#a')`,
+				`page.locator('#b')`,
+				'--timeout',
+				'900',
+			]);
+			expect(transport.calls.find((c) => c.verb === 'drag')?.args[2]).toEqual({
+				timeoutMs: 900,
+			});
+		});
+
+		it('warns in --dom’s own help text that it skips the protective check', async () => {
+			// The honeypot risk has to be where the user reads the flag, not only in an
+			// ADR: this escape can "successfully" fill an invisible trap field.
+			const {stdout} = await run(stubProvider().provider, ['click', '--help']);
+			expect(stdout).toMatch(/honeypot/i);
+		});
+	});
+
+	describe('cookies clear wiring (targeted cookie removal / bot-block recovery)', () => {
+		it('maps repeated --name (and --domain) onto ONE seam filter', async () => {
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'cookies',
+				'clear',
+				'--name',
+				'_abck',
+				'--name',
+				'bm_sz',
+				'--domain',
+				'eki-net.com',
+			]);
+			expect(env.ok).toBe(true);
+			expect(env.data).toMatchObject({verb: 'cookies clear'});
+			const call = transport.calls.find((c) => c.verb === 'clearCookies');
+			// Each repeated flag is a SEPARATE array element, and the narrowing field
+			// rides in the SAME filter (every field must match).
+			expect(call?.args[0]).toEqual({
+				names: ['_abck', 'bm_sz'],
+				domain: 'eki-net.com',
+			});
+		});
+
+		it('reports the REMAINING count alongside what it cleared', async () => {
+			// `remaining` exists so a caller can see the session still has its login after
+			// a recovery. Pinned as a VALUE, not just a schema key: the stub clears nothing
+			// and holds no cookies, so both numbers are the seam's, not invented here.
+			const {provider} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'cookies',
+				'clear',
+				'--name',
+				'_abck',
+			]);
+			expect(env.data).toMatchObject({
+				verb: 'cookies clear',
+				cleared: 0,
+				remaining: 0,
+			});
+		});
+
+		it('forwards --all as the explicit clear-everything filter', async () => {
+			const {provider, transport} = stubProvider();
+			await runEnvelope(provider, ['cookies', 'clear', '--all']);
+			const call = transport.calls.find((c) => c.verb === 'clearCookies');
+			expect(call?.args[0]).toEqual({all: true});
+		});
+
+		it('refuses a bare `cookies clear` and NEVER reaches the session', async () => {
+			// The decisive wiring property: with no flags the CLI must not send an
+			// empty filter that a transport could read as "clear everything" (which on
+			// a live session is an irreversible logout).
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, ['cookies', 'clear']);
+			expect(env.ok).toBe(false);
+			expect(env.error?.message).toMatch(/empty filter/i);
+			expect(
+				transport.calls.find((c) => c.verb === 'clearCookies'),
+			).toBeUndefined();
+		});
+
+		it('refuses --all combined with --name (contradictory intent)', async () => {
+			const {provider, transport} = stubProvider();
+			const env = await runEnvelope(provider, [
+				'cookies',
+				'clear',
+				'--all',
+				'--name',
+				'_abck',
+			]);
+			expect(env.ok).toBe(false);
+			expect(env.error?.message).toMatch(/cannot be combined/i);
+			expect(
+				transport.calls.find((c) => c.verb === 'clearCookies'),
+			).toBeUndefined();
+		});
+
+		it('names the Akamai recovery cookies in its own description (discoverable)', async () => {
+			// The recipe is useless if the agent cannot find it: the verb that performs
+			// the recovery is where the four names belong.
+			const {stdout} = await run(stubProvider().provider, [
+				'cookies',
+				'clear',
+				'--help',
+			]);
+			for (const name of ['_abck', 'bm_sz', 'bm_sv', 'ak_bmsc']) {
+				expect(stdout).toContain(name);
+			}
+		});
 	});
 
 	describe('Tier-1 query + state verb wiring (spec broaden-agent-verb-surface, R5)', () => {
@@ -963,6 +1226,7 @@ describe('incur CLI wiring', () => {
 				'wait',
 				'cookies export',
 				'cookies import',
+				'cookies clear',
 				'setup-profile',
 				'launch',
 				'attach',
@@ -1104,13 +1368,26 @@ describe('incur CLI wiring', () => {
 				verb: 'serve',
 				url: 'http://127.0.0.1:51999',
 				pid: 4242,
-				// The shared-driving-surface CDP endpoint is surfaced for the harness.
-				cdpEndpoint: 'http://127.0.0.1:9555',
 			});
+			// And NO cdpEndpoint: exposure is opt-in, so a plain serve must not advertise a
+			// shared driving surface the caller never asked for.
+			expect(env.data).not.toHaveProperty('cdpEndpoint');
 			// `serve` consumed the connection options to choose the launch target.
 			expect(targets).toEqual([
 				{mode: 'launch', profile: 'work', headed: false},
 			]);
+		});
+
+		it('surfaces the CDP endpoint in the envelope when the server advertises one', async () => {
+			// The other half: when `--expose-cdp` made the server advertise an endpoint, the
+			// wiring must pass it through (the eval harness reads this field to hand a
+			// Playwright-only agent the same live page).
+			const {provider} = stubProvider();
+			const {serve} = fakeServe('http://127.0.0.1:9555');
+			const env = await runEnvelope(provider, ['serve', '--expose-cdp'], {
+				serveSession: serve,
+			});
+			expect(env.data).toMatchObject({cdpEndpoint: 'http://127.0.0.1:9555'});
 		});
 
 		it('`serve --endpoint` brings the single session up in attach mode', async () => {
@@ -1156,6 +1433,214 @@ describe('incur CLI wiring', () => {
 				{mode: 'launch', profile: 'work', headed: false},
 			]);
 			expect(policies).toEqual([{stealth: true, systemBrowser: 'chrome'}]);
+		});
+
+		it('`serve` does NOT request CDP exposure by default (opt-in)', async () => {
+			// It used to be hard-coded ON, so every serve launch appended
+			// --remote-debugging-port=0: a code-execution surface on the logged-in page
+			// AND an automation tell. The default policy must now carry no exposeCdp.
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			await runEnvelope(provider, ['serve', '--profile', 'work'], {
+				serveSession: serve,
+			});
+			expect(policies[0]).not.toHaveProperty('exposeCdp');
+		});
+
+		it('`serve --expose-cdp` forwards exposeCdp:true in the launch policy', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				['serve', '--profile', 'work', '--expose-cdp'],
+				{serveSession: serve},
+			);
+			expect(policies[0]).toMatchObject({exposeCdp: true});
+			// Asking for it is not self-defeating on its own, so no warning.
+			expect(env.data).not.toHaveProperty('warnings');
+		});
+
+		it('`serve --stealth --expose-cdp` WARNS in the envelope (self-defeating pair)', async () => {
+			// Not refused (a baseline comparison legitimately wants both), but it must
+			// not pass silently: Patchright exists to remove the CDP automation tell and
+			// a debugging port re-adds an automation surface on the same browser. The
+			// warning rides in the ENVELOPE because the caller that chose the flags may
+			// be an agent that never sees stderr.
+			const {provider} = stubProvider();
+			const {serve} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				['serve', '--stealth', '--expose-cdp'],
+				{serveSession: serve},
+			);
+			expect(env.ok).toBe(true);
+			const warnings = (env.data as {warnings?: string[]}).warnings ?? [];
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toMatch(/--expose-cdp/);
+			expect(warnings[0]).toMatch(/--stealth/);
+		});
+
+		it('`serve --stealth` alone carries no warnings', async () => {
+			const {provider} = stubProvider();
+			const {serve} = fakeServe();
+			const env = await runEnvelope(provider, ['serve', '--stealth'], {
+				serveSession: serve,
+			});
+			expect(env.data).not.toHaveProperty('warnings');
+		});
+
+		it('`serve --real-chrome` forwards realChrome in the launch policy', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies, targets} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				['serve', '--real-chrome', '--profile', 'work'],
+				{serveSession: serve},
+			);
+			expect(env.ok).toBe(true);
+			expect(policies[0]).toMatchObject({realChrome: true});
+			// The TARGET is an ordinary launch target: which browser and how is
+			// transport-construction policy, so the seam stays unchanged (ADR-0003).
+			expect(targets).toEqual([
+				{mode: 'launch', profile: 'work', headed: false},
+			]);
+			expect(env.data).not.toHaveProperty('warnings');
+		});
+
+		it('`serve --real-chrome --keep-browser` forwards the lifetime choice', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			await runEnvelope(
+				provider,
+				['serve', '--real-chrome', '--keep-browser'],
+				{
+					serveSession: serve,
+				},
+			);
+			expect(policies[0]).toMatchObject({realChrome: true, keepBrowser: true});
+		});
+
+		it('`serve --real-chrome --proxy` forwards the proxy WITHOUT warning (it applies)', async () => {
+			// --proxy maps onto Chromium's own --proxy-server, so it DOES apply to a
+			// spawned real Chrome, and it is the only lever on the exit IP in that mode.
+			// Warning "it does not apply" would be actively misleading.
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				['serve', '--real-chrome', '--proxy', 'socks5h://127.0.0.1:1080'],
+				{serveSession: serve},
+			);
+			expect(policies[0]).toMatchObject({
+				realChrome: true,
+				proxy: 'socks5h://127.0.0.1:1080',
+			});
+			expect(env.data).not.toHaveProperty('warnings');
+		});
+
+		it('WARNS that --endpoint overrides every browser-bring-up flag', async () => {
+			// --endpoint wins (naming a browser you started yourself is the more specific
+			// request), but silently: `--proxy` would then leave the user believing they
+			// were tunnelled while the attached browser egresses through their real IP.
+			const {provider} = stubProvider();
+			const {serve, targets} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				[
+					'serve',
+					'--endpoint',
+					'http://127.0.0.1:9222',
+					'--real-chrome',
+					'--proxy',
+					'socks5h://127.0.0.1:1080',
+				],
+				{serveSession: serve},
+			);
+			expect(targets).toEqual([
+				{mode: 'attach', endpoint: 'http://127.0.0.1:9222'},
+			]);
+			const warnings = (env.data as {warnings?: string[]}).warnings ?? [];
+			expect(warnings.join(' ')).toMatch(
+				/--endpoint attaches to a browser YOU/,
+			);
+			expect(warnings.join(' ')).toMatch(/--real-chrome/);
+			expect(warnings.join(' ')).toMatch(/--proxy/);
+		});
+
+		it('maps real-chrome-reuse-conflict to a different-profile / attach-as-is fix', async () => {
+			const env = await runEnvelope(
+				throwingProvider(
+					new RealChromeReuseConflictError(
+						'/home/me/.webhands/profiles/default',
+						'http://127.0.0.1:45001',
+						['proxy'],
+					),
+				),
+				['goto', 'https://example.test/'],
+			);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('real-chrome-reuse-conflict');
+			// Both ways out are offered: another profile, or attach to the running one.
+			expect(env.error?.message).toMatch(/--profile <other-name>/);
+			expect(env.error?.message).toMatch(
+				/serve --endpoint http:\/\/127\.0\.0\.1:45001/,
+			);
+		});
+
+		it('maps proxy-auth-unsupported to the local-relay fix', async () => {
+			// Chrome supports no SOCKS5 auth and ignores embedded credentials, so the fix
+			// is to terminate the auth locally and point --proxy at that.
+			const env = await runEnvelope(
+				throwingProvider(
+					new ProxyAuthUnsupportedError('socks5h://user:pw@host:1080'),
+				),
+				['goto', 'https://example.test/'],
+			);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('proxy-auth-unsupported');
+			expect(env.error?.message).toMatch(/ssh -D 1080/);
+			// Never echo the password back at the user.
+			expect(env.error?.message).not.toMatch(/pw@/);
+		});
+
+		it('WARNS that Playwright launch flags do not apply under --real-chrome', async () => {
+			// Silently ignoring --stealth here would let a user believe hardening is
+			// active when the browser is a plain Chrome webhands spawned.
+			const {provider} = stubProvider();
+			const {serve} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				[
+					'serve',
+					'--real-chrome',
+					'--stealth',
+					'--use-system-browser',
+					'chrome',
+					'--proxy',
+					'socks5h://host:1080',
+				],
+				{serveSession: serve},
+			);
+			const warnings = (env.data as {warnings?: string[]}).warnings ?? [];
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toMatch(/--stealth/);
+			expect(warnings[0]).toMatch(/--use-system-browser/);
+			expect(warnings[0]).toMatch(/do not apply/);
+			// --proxy DOES apply here, so it must NOT be named as moot even when the
+			// other launch flags are.
+			expect(warnings[0]).not.toMatch(/--proxy/);
+		});
+
+		it('WARNS that --keep-browser is meaningless without --real-chrome', async () => {
+			const {provider} = stubProvider();
+			const {serve} = fakeServe();
+			const env = await runEnvelope(provider, ['serve', '--keep-browser'], {
+				serveSession: serve,
+			});
+			const warnings = (env.data as {warnings?: string[]}).warnings ?? [];
+			expect(warnings[0]).toMatch(
+				/--keep-browser only applies to --real-chrome/,
+			);
 		});
 
 		it('`serve --proxy socks5h://host:1080` forwards the proxy in the launch policy', async () => {
@@ -1235,6 +1720,43 @@ describe('incur CLI wiring', () => {
 			expect(env.ok).toBe(false);
 			expect(env.error?.code).toBe('missing-browser-binary');
 			expect(env.error?.message).toContain('npx playwright install chromium');
+		});
+
+		it('maps real-chrome-not-found to an install/name-the-path fix, NOT `playwright install`', async () => {
+			// The missing browser is the user's OWN Chrome, which Playwright cannot
+			// install; handing them `npx playwright install` would be a fix command that
+			// cannot work. It must also offer the manual attach recipe, which needs no
+			// discovery at all.
+			const env = await runEnvelope(
+				throwingProvider(
+					new RealChromeNotFoundError(['google-chrome'], 'WEBHANDS_CHROME'),
+				),
+				['goto', 'https://example.test/'],
+			);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('real-chrome-not-found');
+			expect(env.error?.message).toMatch(/WEBHANDS_CHROME=/);
+			expect(env.error?.message).toMatch(
+				/serve --endpoint http:\/\/127\.0\.0\.1:9222/,
+			);
+			expect(env.error?.message).not.toMatch(/playwright install/);
+		});
+
+		it('maps real-chrome-start-failed to the profile-in-use fix', async () => {
+			const env = await runEnvelope(
+				throwingProvider(
+					new RealChromeStartError(
+						'/usr/bin/google-chrome',
+						'it exited with code 21',
+					),
+				),
+				['goto', 'https://example.test/'],
+			);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('real-chrome-start-failed');
+			// Names both ways out: stop the session holding the dir, or use another profile.
+			expect(env.error?.message).toMatch(/stop/);
+			expect(env.error?.message).toMatch(/--profile <name>/);
 		});
 
 		it('maps the typed missing-stealth-dependency condition to `pnpm add patchright`', async () => {
@@ -1506,6 +2028,93 @@ describe('incur CLI wiring', () => {
 			expect(
 				env.meta.cta?.commands.some((c) => c.command.includes('launch')),
 			).toBe(true);
+		});
+
+		it('ACCEPTS the same browser-selection flags as launch/serve and forwards them', async () => {
+			// The inconsistency this closes: `setup-profile --use-system-browser chrome`
+			// used to be "Unknown flag", so the profile dir was always written by the
+			// BUNDLED Chromium and a later `serve --use-system-browser chrome` pointed a
+			// different browser build at it (a fingerprint discrepancy, and a profile
+			// another build may migrate or refuse).
+			const {session, closeIt} = heldSession();
+			const location = {
+				homeRoot: '/tmp/iso',
+				profilesRoot: '/tmp/iso/profiles',
+				profileDir: '/tmp/iso/profiles/default',
+				profile: 'default',
+			};
+			const seen: {launch?: unknown}[] = [];
+			const cli = createCli({
+				setupProfile: async (options) => {
+					seen.push({launch: (options as {launch?: unknown}).launch});
+					return {session, location};
+				},
+			});
+
+			let stdout = '';
+			const serving = cli.serve(
+				[
+					'setup-profile',
+					'--use-system-browser',
+					'chrome',
+					'--stealth',
+					'--full-output',
+					'--format',
+					'json',
+				],
+				{
+					stdout: (s) => {
+						stdout += s;
+					},
+					exit: () => {},
+					env: {},
+				},
+			);
+			closeIt();
+			await serving;
+
+			// The selection reached the orchestration as transport-construction policy,
+			// so the profile dir is created BY that browser.
+			expect(seen).toEqual([
+				{launch: {stealth: true, systemBrowser: 'chrome'}},
+			]);
+			// And it is REPORTED back, so the caller knows what to drive it with later.
+			const env = JSON.parse(stdout) as {
+				ok: boolean;
+				data?: {systemBrowser?: string; stealth?: boolean};
+			};
+			expect(env.ok).toBe(true);
+			expect(env.data).toMatchObject({
+				systemBrowser: 'chrome',
+				stealth: true,
+			});
+		});
+
+		it('defaults to the bundled browser (no launch policy fields set)', async () => {
+			const {session, closeIt} = heldSession();
+			const location = {
+				homeRoot: '/tmp/iso',
+				profilesRoot: '/tmp/iso/profiles',
+				profileDir: '/tmp/iso/profiles/default',
+				profile: 'default',
+			};
+			const seen: unknown[] = [];
+			const cli = createCli({
+				setupProfile: async (options) => {
+					seen.push((options as {launch?: unknown}).launch);
+					return {session, location};
+				},
+			});
+			const serving = cli.serve(['setup-profile'], {
+				stdout: () => {},
+				exit: () => {},
+				env: {},
+			});
+			closeIt();
+			await serving;
+			// An EMPTY policy: nothing is forced, so core's defaults (bundled Chromium,
+			// no stealth) stand exactly as before this flag was added.
+			expect(seen).toEqual([{}]);
 		});
 	});
 

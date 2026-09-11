@@ -144,10 +144,38 @@ describe('script verb (real browser, local fixture, seam)', () => {
 			await expect(session.page.script(`42`)).rejects.toThrow(
 				/must evaluate to a function of the page/i,
 			);
-			// A syntax error in the source is surfaced loud too.
+			// A syntax error in the source is surfaced loud too, and the message now
+			// STATES the constraint (ends with the function expression) rather than
+			// only echoing the parser's token (see `script-source-tolerance.test.ts`).
 			await expect(session.page.script(`async (page) => {`)).rejects.toThrow(
-				/must be JS that evaluates to a function of the page/i,
+				/must END with an EXPRESSION/i,
 			);
+		} finally {
+			await session.close();
+		}
+	});
+
+	it('runs a MODULE-STYLE file: top-level consts + a trailing semicolon', async () => {
+		// The shape a human naturally writes: config hoisted to a
+		// top-level const, the function last, semicolon at the end. Both spellings
+		// used to be hard syntax errors whose messages named only the token. Asserted
+		// END-TO-END here (the shape matrix itself is pinned purely elsewhere) so the
+		// tolerance is proven through the real verb against the real page.
+		const session = await openOnFixture('script-module-style');
+		try {
+			const result = await session.page.script(
+				[
+					"const TARGET = '#query';",
+					"const VALUE = 'module style';",
+					'',
+					'async (page) => {',
+					'\tawait page.fill(TARGET, VALUE);',
+					'\treturn await page.inputValue(TARGET);',
+					'};',
+				].join('\n'),
+			);
+			// The flow actually drove the live page, not merely compiled.
+			expect(result).toBe('module style');
 		} finally {
 			await session.close();
 		}

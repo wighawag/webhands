@@ -279,6 +279,51 @@ describe('PlaywrightLaunchTransport stealth opt-in (hermetic)', () => {
 		).toEqual(drop);
 	});
 
+	it('opens NO remote-debugging port unless exposeCdp is asked for', async () => {
+		// The finding behind this: `serve` used to pass exposeCdp: true
+		// unconditionally, so every launch appended `--remote-debugging-port=0` — a
+		// code-execution surface on the logged-in page AND an automation tell — even
+		// under --stealth, where it partly undoes what Patchright is for. The default
+		// must add no such arg.
+		const {root} = await makeSetUpProfile('no-cdp-by-default');
+		const launchSpy = vi.fn(async () => fakeContext());
+		const transport = new PlaywrightLaunchTransport({root}, [], {
+			stealth: true,
+			importStealthChromium: async () => ({
+				chromium: {launchPersistentContext: launchSpy as never},
+			}),
+		});
+		await transport.open({mode: 'launch', profile: 'no-cdp-by-default'});
+
+		const [, options] = launchSpy.mock.calls[0]!;
+		const args = ((options as {args?: string[]}).args ?? []).join(' ');
+		expect(args).not.toMatch(/--remote-debugging-port/);
+		// Nothing else requested any args either, so the key is absent entirely.
+		expect('args' in (options as object)).toBe(false);
+		// And no endpoint is advertised, so a caller cannot accidentally rely on one.
+		expect(transport.cdpEndpoint()).toBeUndefined();
+	});
+
+	it('opens an OS-assigned remote-debugging port when exposeCdp IS asked for', async () => {
+		const {root} = await makeSetUpProfile('cdp-opt-in');
+		const launchSpy = vi.fn(async () => fakeContext());
+		const transport = new PlaywrightLaunchTransport({root}, [], {
+			stealth: true,
+			exposeCdp: true,
+			importStealthChromium: async () => ({
+				chromium: {launchPersistentContext: launchSpy as never},
+			}),
+		});
+		await transport.open({mode: 'launch', profile: 'cdp-opt-in'});
+
+		const [, options] = launchSpy.mock.calls[0]!;
+		// Port 0 = OS-assigned; the chosen port is read back from DevToolsActivePort
+		// (exercised against a real browser in the CDP suite, not here).
+		expect((options as {args?: string[]}).args).toContain(
+			'--remote-debugging-port=0',
+		);
+	});
+
 	it('throws a typed MissingStealthDependencyError when patchright is not importable (no fallback)', async () => {
 		const {root} = await makeSetUpProfile('needs-patchright');
 

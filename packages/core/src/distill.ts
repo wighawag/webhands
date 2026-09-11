@@ -326,6 +326,73 @@ function describeStep(entry: VerbTraceEntry): DescribedStep {
 				todo: false,
 			};
 		}
+		case 'clearCookies': {
+			// Unlike `setCookies` (whose VALUES are the user's own secrets and so stay a
+			// TODO), a clear carries only the FILTER, which is safe to replay verbatim
+			// and is usually load-bearing for the flow: an anti-bot recovery step
+			// belongs in the distilled hand, not as a TODO the human rediscovers.
+			const filter = req.filter as
+				| {
+						names?: readonly string[];
+						domain?: string;
+						path?: string;
+						all?: boolean;
+				  }
+				| undefined;
+			if (filter?.all === true) {
+				return {
+					verb: 'clearCookies',
+					replay: [`await ctx.context.clearCookies();`],
+					summary: 'clear every cookie in the session',
+					todo: false,
+				};
+			}
+			const scope: string[] = [];
+			if (filter?.domain !== undefined) {
+				scope.push(`domain: ${JSON.stringify(filter.domain)}`);
+			}
+			if (filter?.path !== undefined) {
+				scope.push(`path: ${JSON.stringify(filter.path)}`);
+			}
+			const names = filter?.names ?? [];
+			if (names.length === 0 && scope.length === 0) {
+				// A filterless entry would render `clearCookies({})`, i.e. WIPE EVERYTHING,
+				// into a hand a human will later run. The live verb cannot produce such an
+				// entry (validation refuses an empty filter before it is recorded), but this
+				// is the one place that invariant is not re-checked, and the output is CODE.
+				// So emit a TODO rather than the most destructive possible guess.
+				return {
+					verb: 'clearCookies',
+					replay: [
+						`// TODO: this trace entry named no cookies to clear. Name them, e.g.`,
+						`// await ctx.context.clearCookies({name: '_abck'});`,
+					],
+					summary:
+						'clear cookies (left as a TODO: the trace named no filter, and ' +
+						'clearing everything would log the session out)',
+					todo: true,
+				};
+			}
+			const replay =
+				names.length === 0
+					? [`await ctx.context.clearCookies({${scope.join(', ')}});`]
+					: names.map(
+							(name) =>
+								`await ctx.context.clearCookies({${[
+									...scope,
+									`name: ${JSON.stringify(name)}`,
+								].join(', ')}});`,
+						);
+			return {
+				verb: 'clearCookies',
+				replay,
+				summary:
+					names.length > 0
+						? `clear cookies ${names.join(', ')}`
+						: `clear cookies matching ${scope.join(', ')}`,
+				todo: false,
+			};
+		}
 		case 'setCookies':
 			return {
 				verb: 'setCookies',

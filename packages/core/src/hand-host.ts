@@ -8,7 +8,9 @@ import {
 import type {
 	ActionOptions,
 	BoundingBox,
+	ClickResult,
 	Cookie,
+	CookieFilter,
 	EvalOptions,
 	WebHandsPage,
 	MouseInput,
@@ -23,13 +25,14 @@ import type {
 	SnapshotOptions,
 	WaitCondition,
 } from './seam.js';
-import {validateSnapshotOptions} from './seam.js';
+import {validateCookieFilter, validateSnapshotOptions} from './seam.js';
 import {
 	CrossOriginFrameError,
 	ScreenshotPathError,
 	StaleRefError,
 } from './errors.js';
 import {substituteEnvPlaceholders} from './env-substitution.js';
+import {compileScriptSource} from './script-source.js';
 import {mkdir} from 'node:fs/promises';
 import {isAbsolute, join, relative, resolve as resolvePath} from 'node:path';
 
@@ -209,6 +212,7 @@ const REQUIRED_VERBS = [
 	'wait',
 	'cookies',
 	'setCookies',
+	'clearCookies',
 	'query',
 	'count',
 	'exists',
@@ -252,6 +256,39 @@ function assertCompletePage(verbs: Partial<WebHandsPage>): WebHandsPage {
  * (animations, late layout) before deciding to dispatch.
  */
 const NORMAL_CLICK_TIMEOUT_MS = 1_000;
+
+/**
+ * True iff `cause` is a Playwright-style auto-wait TIMEOUT (as opposed to any
+ * other failure), the signal the `click` escape path and the frame resolver both
+ * branch on.
+ *
+ * Why this is NOT a bare `cause instanceof pwErrors.TimeoutError`: under
+ * `--stealth` the live page is driven by **Patchright**, a SEPARATE npm package
+ * with its own `TimeoutError` class, so a class-identity check against
+ * `playwright`'s class is FALSE for every timeout Patchright raises (verified:
+ * `playwright.errors.TimeoutError !== patchright.errors.TimeoutError`). That
+ * silently disabled both branches under stealth: a hidden control's `click`
+ * rethrew a raw timeout instead of dispatching, and a bad `eval --frame`
+ * selector reported a raw timeout instead of "no iframe matched".
+ *
+ * So we keep the class check (exact, for the vanilla path) and ADD a structural
+ * check on the error's `name`, which both packages set to `'TimeoutError'`. The
+ * brittleness is confined to this one predicate rather than repeated at each
+ * branch, mirroring how {@link isMissingBrowserBinary} confines Playwright's
+ * untyped "binary missing" failure to one spot.
+ *
+ * Exported for TESTING, not as public API (it is absent from the package entry
+ * point). Both call sites matter and only one of them is reachable through a
+ * fixture: `clickLocator` can be driven to a real timeout, while
+ * `resolveSameOriginFrame`'s branch needs a stealth-engine timeout that no hermetic
+ * test can produce. Testing the predicate directly covers both.
+ */
+export function isTimeoutError(cause: unknown): boolean {
+	return (
+		cause instanceof pwErrors.TimeoutError ||
+		(cause instanceof Error && cause.name === 'TimeoutError')
+	);
+}
 
 /**
  * How long {@link resolveSameOriginFrame} waits for the `frame` selector to
@@ -340,15 +377,14 @@ export const snapshotHand: Hand = ({pwPage, ensureOpen}) => ({
  */
 export const interactionHand: Hand = ({pwPage, ensureOpen}) => ({
 	verbs: {
-		async click(t, options?: ActionOptions): Promise<void> {
+		async click(t, options?: ActionOptions): Promise<ClickResult> {
 			ensureOpen();
 			if (options?.byRef === true) {
 				const ref = normalizeRefToLocator(t);
 				await assertRefResolvesToOne(pwPage, ref, 'click');
-				await clickLocator(pwPage, ref);
-				return;
+				return clickLocator(pwPage, ref, options);
 			}
-			await clickLocator(pwPage, t);
+			return clickLocator(pwPage, t, options);
 		},
 		async type(t, text, options?: ActionOptions): Promise<void> {
 			ensureOpen();
@@ -365,10 +401,10 @@ export const interactionHand: Hand = ({pwPage, ensureOpen}) => ({
 			if (options?.byRef === true) {
 				const ref = normalizeRefToLocator(t);
 				await assertRefResolvesToOne(pwPage, ref, 'type');
-				await resolveLocator(pwPage, ref).fill(resolved);
+				await typeIntoLocator(pwPage, ref, resolved, options);
 				return;
 			}
-			await resolveLocator(pwPage, t).fill(resolved);
+			await typeIntoLocator(pwPage, t, resolved, options);
 		},
 	},
 });
@@ -419,9 +455,9 @@ export const waitHand: Hand = ({pwPage, ensureOpen}) => ({
 });
 
 /**
- * The `cookies` + `setCookies` verbs. These prove the {@link HandContext} needs
- * the `context`: cookies are a context-level, not page-level, concern, so this
- * hand reaches `ctx.context`, not `ctx.pwPage`.
+ * The `cookies` + `setCookies` + `clearCookies` verbs. These prove the
+ * {@link HandContext} needs the `context`: cookies are a context-level, not
+ * page-level, concern, so this hand reaches `ctx.context`, not `ctx.pwPage`.
  */
 export const cookiesHand: Hand = ({context, ensureOpen}) => ({
 	verbs: {
@@ -434,8 +470,75 @@ export const cookiesHand: Hand = ({context, ensureOpen}) => ({
 			ensureOpen();
 			await context.addCookies(cookies.map(fromSeamCookie));
 		},
+		async clearCookies(filter: CookieFilter): Promise<number> {
+			ensureOpen();
+			// Validate HERE, through the shared seam validator, so an empty filter can
+			// never be read as "clear everything" on any path (in-process or RPC).
+			validateCookieFilter(filter);
+			// Count by DIFFERENCE rather than trusting the filter: we read the live
+			// cookie jar before and after, so the returned number is what the browser
+			// actually removed, not what we asked it to. That is the difference between
+			// "recovery happened" and "the names were already gone / misspelled".
+			//
+			// Counting only the cookies the FILTER matches, not the whole jar: a jar-wide
+			// difference is wrong under concurrent writes, which is the normal state of a
+			// logged-in page. A background XHR setting one cookie mid-clear would
+			// under-report; two would turn a successful clear into `cleared: 0`, which the
+			// CLI help explicitly reads as "nothing matched, check the names"; a
+			// net-positive write would report a NEGATIVE count.
+			const matching = (cookies: readonly Cookie[]): number =>
+				filter.all === true
+					? cookies.length
+					: cookies.filter((c) => matchesCookieFilter(c, filter)).length;
+			const before = matching(await context.cookies());
+			if (filter.all === true) {
+				await context.clearCookies();
+			} else {
+				// Playwright's clearCookies takes ONE name per call and ANDs its fields,
+				// so a multi-name filter is one call per name (each still narrowed by
+				// domain/path when given). With no names, the domain/path narrowing is
+				// the whole filter and a single call does it.
+				const scope = {
+					...(filter.domain !== undefined ? {domain: filter.domain} : {}),
+					...(filter.path !== undefined ? {path: filter.path} : {}),
+				};
+				const names = filter.names ?? [];
+				if (names.length === 0) {
+					await context.clearCookies(scope);
+				} else {
+					for (const name of names) {
+						await context.clearCookies({...scope, name});
+					}
+				}
+			}
+			const after = matching(await context.cookies());
+			// Clamped: a concurrent write that ADDS a matching cookie must not make the
+			// reported removal count negative.
+			return Math.max(0, before - after);
+		},
 	},
 });
+
+/**
+ * True iff `cookie` matches every field a {@link CookieFilter} names (AND), using
+ * the same exact-string semantics the verb documents.
+ *
+ * Kept beside the verb because it exists ONLY to count what was removed: the
+ * removal itself is Playwright's, and this must agree with it. `names` is the one
+ * OR in the filter ("clear these four"), which is why it is an `includes`.
+ */
+function matchesCookieFilter(cookie: Cookie, filter: CookieFilter): boolean {
+	if (filter.names !== undefined && !filter.names.includes(cookie.name)) {
+		return false;
+	}
+	if (filter.domain !== undefined && cookie.domain !== filter.domain) {
+		return false;
+	}
+	if (filter.path !== undefined && cookie.path !== filter.path) {
+		return false;
+	}
+	return true;
+}
 
 /**
  * The Tier-1 read verbs (spec `broaden-agent-verb-surface`, R2): the `query`
@@ -502,28 +605,60 @@ export const queryHand: Hand = ({pwPage, ensureOpen}) => ({
  */
 export const inputHand: Hand = ({pwPage, ensureOpen}) => ({
 	verbs: {
-		async press(key, target): Promise<void> {
+		async press(key, target, options?: ActionOptions): Promise<void> {
 			ensureOpen();
+			if (target === undefined && options?.dom === true) {
+				// `--dom` means "fire the event at THIS element without the actionability
+				// check", which needs an element. The focused-element form has no target to
+				// fire at and waits for nothing anyway, so silently ignoring the flag would
+				// leave a caller believing they had used an escape hatch that did not apply.
+				throw new Error(
+					'press --dom needs a --locator: the escape dispatches key events AT an ' +
+						'element. Without a locator the key goes to the focused element, which ' +
+						'involves no actionability check to escape, so drop --dom.',
+				);
+			}
 			if (target !== undefined) {
+				if (options?.dom === true) {
+					// DOM escape: dispatch the key event trio at the element without
+					// requiring it to be actionable (see dispatchKeyToLocator).
+					await dispatchKeyToLocator(pwPage, target, key, options);
+					return;
+				}
 				// At a locator: Playwright focuses the element first, then presses
 				// (the `locator.press` semantics).
-				await resolveLocator(pwPage, target).press(key);
+				await resolveLocator(pwPage, target).press(key, timeoutOption(options));
 				return;
 			}
 			// No locator: the page's currently focused element receives the key.
 			await pwPage.keyboard.press(key);
 		},
-		async hover(target): Promise<void> {
+		async hover(target, options?: ActionOptions): Promise<void> {
 			ensureOpen();
-			await resolveLocator(pwPage, target).hover();
+			if (options?.dom === true) {
+				await dispatchHoverToLocator(pwPage, target, options);
+				return;
+			}
+			await resolveLocator(pwPage, target).hover(timeoutOption(options));
 		},
-		async select(target, choice: SelectChoice): Promise<void> {
+		async select(
+			target,
+			choice: SelectChoice,
+			options?: ActionOptions,
+		): Promise<void> {
 			ensureOpen();
+			if (options?.dom === true) {
+				await dispatchSelectToLocator(pwPage, target, choice, options);
+				return;
+			}
 			// EXACTLY ONE of value/label (the seam type enforces it); map to
 			// Playwright's `selectOption({value})` / `selectOption({label})`.
 			const option =
 				'value' in choice ? {value: choice.value} : {label: choice.label};
-			await resolveLocator(pwPage, target).selectOption(option);
+			await resolveLocator(pwPage, target).selectOption(
+				option,
+				timeoutOption(options),
+			);
 		},
 		async scroll(target: ScrollTarget): Promise<void> {
 			ensureOpen();
@@ -536,10 +671,17 @@ export const inputHand: Hand = ({pwPage, ensureOpen}) => ({
 			// scrolls DOWN).
 			await pwPage.mouse.wheel(target.by.dx, target.by.dy);
 		},
-		async drag(source, target): Promise<void> {
+		async drag(source, target, options?: ActionOptions): Promise<void> {
 			ensureOpen();
+			// NO `dom` escape for drag, deliberately. A faithful synthetic drag needs a
+			// dragstart/dragover/drop/dragend sequence with a populated DataTransfer,
+			// and real HTML5 drop targets frequently ignore a hand-rolled one, so the
+			// "escape" would fail silently more often than it worked. A hidden drag
+			// source is also not the real-world case `--dom` exists for (hidden radios
+			// and checkboxes are). `--timeout` still applies.
 			await resolveLocator(pwPage, source).dragTo(
 				resolveLocator(pwPage, target),
+				timeoutOption(options),
 			);
 		},
 	},
@@ -751,26 +893,14 @@ export async function runScript(
 	source: string,
 	_options?: ScriptOptions,
 ): Promise<unknown> {
-	let fn: unknown;
-	try {
-		// eslint-disable-next-line no-new-func
-		const factory = new Function('page', 'p', `return (${source});`) as (
-			page: Page,
-			p: Page,
-		) => unknown;
-		fn = factory(page, page);
-	} catch (cause) {
-		// A source that is not a valid function-of-page expression (a syntax error,
-		// or a value that is not a function) is a CALLER mistake; surface it LOUD as
-		// a clean error rather than a cryptic crash, mirroring the repo's
-		// loud-over-silent style.
-		throw new Error(
-			`script: the source must be JS that evaluates to a function of the page, ` +
-				`e.g. async (page) => { ... }. ${
-					cause instanceof Error ? cause.message : String(cause)
-				}`,
-		);
-	}
+	// Compiling the source to its function value lives in `script-source.ts`,
+	// which accepts BOTH the bare-expression spelling and the module-style one (a
+	// trailing semicolon, top-level consts before the final expression, a leading
+	// `export default`) and raises the explaining InvalidScriptSourceError when the
+	// file genuinely cannot be a function of the page. The contract is unchanged
+	// (ADR-0012: the file's VALUE is the function); only the compile tolerates the
+	// shapes a human naturally writes.
+	const fn: unknown = compileScriptSource(source, {page, p: page});
 	if (typeof fn !== 'function') {
 		throw new Error(
 			`script: the source must evaluate to a function of the page ` +
@@ -827,7 +957,7 @@ export async function resolveSameOriginFrame(
 			.owner()
 			.elementHandle({timeout: FRAME_RESOLVE_TIMEOUT_MS});
 	} catch (cause) {
-		if (cause instanceof pwErrors.TimeoutError) {
+		if (isTimeoutError(cause)) {
 			throw new Error(
 				`eval --frame: no iframe element matched selector ${JSON.stringify(
 					selector,
@@ -916,8 +1046,9 @@ export function resolveLocator(page: Page, expression: string) {
  * locator is clicked.
  *
  * Only a timeout triggers the fallback. The fallback `dispatchEvent` is itself
- * bounded by the same short timeout, so a locator that resolves NO element (a
- * bad locator) surfaces its timeout quickly instead of hanging the dispatch on
+ * bounded by the same short timeout (passed in its OPTIONS argument, which is the
+ * only place Playwright reads it), so a locator that resolves NO element (a bad
+ * locator) surfaces its timeout quickly instead of hanging the dispatch on
  * Playwright's 30s default — the dispatch escape is for elements that EXIST but
  * are not actionable (hidden custom inputs), not for absent ones.
  *
@@ -937,17 +1068,230 @@ export function resolveLocator(page: Page, expression: string) {
 export async function clickLocator(
 	page: Page,
 	expression: string,
-): Promise<void> {
+	options?: ActionOptions,
+): Promise<ClickResult> {
 	const target = resolveLocator(page, expression);
+	// The actionability budget: the caller's `--timeout` when given, else the short
+	// default. A hidden control never becomes actionable, so there is nothing to
+	// gain by waiting longer than it takes to be sure.
+	const timeout = usableTimeoutMs(options) ?? NORMAL_CLICK_TIMEOUT_MS;
+	if (options?.dom === true) {
+		// EXPLICIT escape: the caller already knows the control is hidden behind a
+		// label, so skip the wait entirely rather than paying the budget to rediscover
+		// it. `dispatchEvent` still waits for the element to EXIST, so a wrong locator
+		// fails loudly instead of silently doing nothing.
+		await target.dispatchEvent('click', {}, {timeout});
+		return {via: 'dispatch'};
+	}
 	try {
-		await target.click({timeout: NORMAL_CLICK_TIMEOUT_MS, noWaitAfter: true});
+		await target.click({timeout, noWaitAfter: true});
+		return {via: 'click'};
 	} catch (cause) {
-		if (!(cause instanceof pwErrors.TimeoutError)) {
+		if (!isTimeoutError(cause)) {
 			throw cause;
 		}
 		// The element never became actionable (e.g. a hidden custom input). Fire
 		// the click without actionability checks, the spec's explicit escape path.
-		await target.dispatchEvent('click', {timeout: NORMAL_CLICK_TIMEOUT_MS});
+		// The RESULT reports that this happened: the caller asked to click a button
+		// and got a dispatched event at something a user could not have clicked,
+		// which they may well want to treat differently (it can be a honeypot).
+		//
+		// NOTE the THIRD argument. `dispatchEvent(type, eventInit?, options?)` takes
+		// the timeout in its OPTIONS, not its event init. This used to read
+		// `dispatchEvent('click', {timeout})`, which passed the bound as an event
+		// FIELD and silently left Playwright's 30s default in place, so a bad locator
+		// hung for 30s here while the comment promised it failed fast (measured: 30.4s
+		// against a locator matching nothing; ~1s now).
+		await target.dispatchEvent('click', {}, {timeout});
+		return {via: 'dispatch'};
+	}
+}
+
+/**
+ * Playwright's per-action `{timeout}` option for an {@link ActionOptions}, or
+ * `undefined` to keep the action's own default.
+ *
+ * One helper so every acting verb spells the override the same way, and so
+ * omitting `--timeout` provably changes nothing (no key is passed at all).
+ */
+function timeoutOption(options?: ActionOptions): {timeout: number} | undefined {
+	const ms = usableTimeoutMs(options);
+	return ms !== undefined ? {timeout: ms} : undefined;
+}
+
+/**
+ * The caller's `timeoutMs` if it is a usable bound, else `undefined`.
+ *
+ * Non-positive values are DROPPED rather than forwarded, because Playwright reads
+ * `timeout: 0` as "disable the timeout", i.e. wait forever. A caller writing
+ * `--timeout 0` plainly means "do not wait", so honouring it literally would hang
+ * the single served session on a bad locator and, for `click`, skip the dispatch
+ * fallback entirely. The CLI rejects non-positive values at the flag; this is the
+ * belt for every OTHER caller (an untyped RPC client, a programmatic user).
+ */
+function usableTimeoutMs(options?: ActionOptions): number | undefined {
+	const ms = options?.timeoutMs;
+	return typeof ms === 'number' && Number.isFinite(ms) && ms > 0
+		? ms
+		: undefined;
+}
+
+/**
+ * The budget a `dom` escape waits for the element to EXIST (not to be
+ * actionable). Short by design: the caller has already told us actionability is
+ * not coming, so the only thing left to wait for is the node being in the DOM, and
+ * a locator that matches nothing should say so fast.
+ */
+const DOM_ESCAPE_TIMEOUT_MS = 1_000;
+
+/** The existence budget for a `dom` escape: the caller's override, else short. */
+function domEscapeTimeout(options?: ActionOptions): number {
+	return usableTimeoutMs(options) ?? DOM_ESCAPE_TIMEOUT_MS;
+}
+
+/**
+ * Run the `type` verb: fill the addressed element, or with `{dom: true}` SET its
+ * value and fire the events a page listens for.
+ *
+ * The `dom` path is honestly weaker than `click`'s, which is why it is opt-in and
+ * documented as such: setting `.value` and dispatching `input` + `change` is what
+ * React/Vue controlled inputs and most validation listen to, but it does NOT
+ * produce keystrokes, so a field that keys off `keydown`/`keypress` (input masks,
+ * some autocompletes, keyboard-shortcut handlers) can behave differently from a
+ * human typing. Use it for a hidden/readonly-ish field that refuses a real fill,
+ * not as a default.
+ */
+export async function typeIntoLocator(
+	page: Page,
+	expression: string,
+	value: string,
+	options?: ActionOptions,
+): Promise<void> {
+	const target = resolveLocator(page, expression);
+	if (options?.dom !== true) {
+		await target.fill(value, timeoutOption(options));
+		return;
+	}
+	await target.evaluate(
+		(el, v: string) => {
+			const node = el as HTMLInputElement;
+			// Use the native value SETTER so frameworks that patch the property (React
+			// tracks the last value it set) still see the change; assigning `.value`
+			// directly is the classic way this silently fails to register.
+			const proto =
+				node instanceof HTMLTextAreaElement
+					? HTMLTextAreaElement.prototype
+					: HTMLInputElement.prototype;
+			const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+			if (setter !== undefined) {
+				setter.call(node, v);
+			} else {
+				node.value = v;
+			}
+			node.dispatchEvent(new Event('input', {bubbles: true}));
+			node.dispatchEvent(new Event('change', {bubbles: true}));
+		},
+		value,
+		{timeout: domEscapeTimeout(options)},
+	);
+}
+
+/**
+ * The `press --dom` escape: dispatch `keydown` + `keypress` + `keyup` at the
+ * element without requiring it to be actionable.
+ *
+ * Weaker than a real `press` and deliberately so: the events carry the key name
+ * but no real input state, so they will NOT insert text into a field (the browser
+ * does that only for trusted key events) and will not move the caret. They DO run
+ * a page's key handlers, which is the case this escape exists for (a shortcut
+ * bound to a hidden element).
+ */
+async function dispatchKeyToLocator(
+	page: Page,
+	expression: string,
+	key: string,
+	options?: ActionOptions,
+): Promise<void> {
+	const target = resolveLocator(page, expression);
+	const timeout = domEscapeTimeout(options);
+	for (const type of ['keydown', 'keypress', 'keyup']) {
+		// `key` only, deliberately no `code`. `KeyboardEvent.code` is a PHYSICAL key
+		// name (`KeyA`, `Enter`), so setting it to the key VALUE (`a`) would produce a
+		// combination no real keyboard can emit, and a handler branching on `e.code`
+		// would see a value it can never otherwise see. Omitting it is the honest
+		// synthetic event: a handler reading `e.key` works, one reading `e.code` sees
+		// nothing rather than a lie.
+		await target.dispatchEvent(type, {key}, {timeout});
+	}
+}
+
+/**
+ * The `hover --dom` escape: dispatch the pointer-enter sequence at the element.
+ *
+ * Weaker than a real `hover`: there is no mouse POSITION, so a menu that opens on
+ * `mousemove` at coordinates, or one that checks `:hover` in CSS, will not react.
+ * `mouseover`/`mouseenter` cover the common JS-handler case.
+ */
+async function dispatchHoverToLocator(
+	page: Page,
+	expression: string,
+	options?: ActionOptions,
+): Promise<void> {
+	const target = resolveLocator(page, expression);
+	const timeout = domEscapeTimeout(options);
+	// `mouseenter` is deliberately absent. Playwright's event-type map does not carry
+	// it (an upstream typo, `mouseeenter`, in playwright-core 1.61.1), so dispatching
+	// it yields a GENERIC bubbling Event, while a real `mouseenter` never bubbles:
+	// ancestor handlers would fire spuriously, which is worse than not firing the
+	// event at all. `mouseover` already covers the JS-handler case this escape exists
+	// for.
+	for (const type of ['pointerover', 'mouseover', 'mousemove']) {
+		await target.dispatchEvent(type, {}, {timeout});
+	}
+}
+
+/**
+ * The `select --dom` escape: set the `<select>`'s value and fire `change`.
+ *
+ * The most faithful of the escapes after `click`: choosing an option IS setting
+ * the value, and `change` is what a page listens for. Resolving a LABEL happens in
+ * the page (match an option's visible text), so a label with no matching option
+ * fails LOUD rather than silently selecting nothing.
+ */
+async function dispatchSelectToLocator(
+	page: Page,
+	expression: string,
+	choice: SelectChoice,
+	options?: ActionOptions,
+): Promise<void> {
+	const target = resolveLocator(page, expression);
+	const picked = await target.evaluate(
+		(el, c: SelectChoice) => {
+			const select = el as HTMLSelectElement;
+			const options_ = Array.from(select.options);
+			const match =
+				'value' in c
+					? options_.find((o) => o.value === c.value)
+					: options_.find((o) => (o.textContent ?? '').trim() === c.label);
+			if (match === undefined) {
+				return false;
+			}
+			select.value = match.value;
+			select.dispatchEvent(new Event('input', {bubbles: true}));
+			select.dispatchEvent(new Event('change', {bubbles: true}));
+			return true;
+		},
+		choice,
+		{timeout: domEscapeTimeout(options)},
+	);
+	if (!picked) {
+		throw new Error(
+			`select --dom: no <option> matched ${
+				'value' in choice
+					? `value ${JSON.stringify(choice.value)}`
+					: `label ${JSON.stringify(choice.label)}`
+			} in ${expression}.`,
+		);
 	}
 }
 

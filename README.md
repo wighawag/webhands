@@ -97,7 +97,10 @@ typical end-to-end flow:
 
 1. `webhands setup-profile`: opens the dedicated profile in a
    VISIBLE browser so you log in / clear any anti-bot challenge ONCE. State
-   (cookies, login, challenge clearance) persists on disk.
+   (cookies, login, challenge clearance) persists on disk. It takes the SAME
+   browser-selection flags as `serve` (`--use-system-browser`, `--stealth`,
+   `--proxy`, `--no-viewport`): a profile dir is written by a specific browser
+   build, so set it up with the browser you will later drive it with.
 2. `webhands serve --headless`: launches the one browser against
    that saved profile and keeps it alive (runs until `stop` or Ctrl-C).
 3. `webhands goto <url>` then `webhands snapshot` (and
@@ -208,6 +211,108 @@ deliberately local and single-session by design.
 In short: this is for reading and acting on web apps **you already have an account
 on**, from **your own browser**, the way you could by hand.
 
+## Anti-bot: drive your own real Chrome (`--real-chrome`)
+
+If a site blocks you, reach for this before `--stealth`. The cheapest fix is still
+headed plus a human clearing the challenge once; this is the next rung, and the one
+that worked when nothing else did. Measured
+against Akamai Bot Manager on an authenticated booking site: a Playwright-launched
+browser was blocked identically in every configuration (default, `--stealth`,
+`--stealth --use-system-browser chrome`, fresh profile), while attaching to a
+Chrome the human started drove a nine-screen authenticated flow with no blocking.
+
+```sh
+# Start YOUR Chrome with a debugging port on a dedicated profile dir, then attach,
+# in one command. Opens a VISIBLE window so you can log in and take over:
+npx webhands serve --real-chrome
+
+# Keep your tabs alive after `stop` (the next --real-chrome serve re-attaches):
+npx webhands serve --real-chrome --keep-browser
+
+# Chrome somewhere unusual? Name it:
+WEBHANDS_CHROME=/opt/google/chrome/chrome npx webhands serve --real-chrome
+```
+
+The equivalent by hand, which still works and is what `--real-chrome` automates:
+
+```sh
+google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/scratch
+npx webhands serve --endpoint http://127.0.0.1:9222
+```
+
+**Read the symptom correctly.** A bot block is deceptive: the static, edge-cached
+top page renders fine, so it looks like it is working, and then every DYNAMIC
+endpoint returns a bare "Access Denied". Check a dynamic endpoint before
+concluding anything. If you get blocked part way through a session, see the
+cookie-clearing recovery below.
+
+**Honesty: this is not a cloak.** Chrome sets `navigator.webdriver = true` whenever
+a remote-debugging port is enabled, before any client attaches, so this mode is
+just as visible on that signal as a Playwright launch. What differs is everything
+else: no launch-hardening flags, a real warm profile with history and prefs, a real
+window, your own IP and your own behaviour. Details and the measurements are in
+[`docs/adr/0014`](docs/adr/0014-attach-to-the-users-own-chrome-is-the-anti-bot-answer.md).
+
+**Lifetime.** webhands spawned that browser, so `stop` terminates it, unlike plain
+`--endpoint` attach where the browser is yours and is left alone. `--keep-browser`
+inverts it. The Playwright LAUNCH flags (`--stealth`, `--use-system-browser`,
+`--no-viewport`) do not apply in this mode, and `serve` warns if you pass them.
+
+**`--proxy` DOES apply**, and it is the only lever on the exit IP here (a real
+browser on a datacentre IP is still on a datacentre IP, and that is part of what a
+bot manager weighs):
+
+```sh
+# Chromium's own --proxy-server, plus the no-DNS-leak resolver catch-all:
+npx webhands serve --real-chrome --proxy socks5h://127.0.0.1:1080
+```
+
+Three caveats, all verified rather than assumed:
+
+- **No credentials.** Chromium documents that it supports no SOCKSv5
+  authentication and "will not use any credentials embedded in the proxy settings",
+  so a `user:pass@` URL is REFUSED here rather than silently sent unauthenticated.
+  Terminate the auth locally (`ssh -D 1080`, or any local relay that adds the
+  upstream credentials) and point `--proxy` at that. The default Playwright launch
+  path can carry credentials, because Playwright answers the auth challenge itself.
+- **Loopback is never proxied.** Chromium's implicit bypass list exempts
+  `localhost`/`127.0.0.1`, so "all traffic" means all non-loopback traffic. That is
+  almost always what you want (your local dev server stays direct).
+- **It fails closed, not open.** If the proxy is unreachable, navigation fails
+  rather than quietly leaving via your real IP. There is a test asserting exactly
+  that, because the opposite is one `direct://` away in Chromium's flag syntax.
+
+WebRTC can still reveal a local or real address over UDP, which a SOCKS proxy cannot
+carry (Chromium: "SOCKSv5 is only used to proxy TCP-based URL requests"). webhands
+exposes no lever for this today: if it matters, start Chrome yourself with
+`--force-webrtc-ip-handling-policy=disable_non_proxied_udp` and attach with
+`serve --endpoint` instead of using `--real-chrome`.
+
+## Recovering from a mid-session bot block
+
+A WAF can flip from serving you to blocking you part way through a session (one
+observed trip: ~15 rapid automated flows in 40 minutes). The verdict lives in a few
+NAMED COOKIES, so it survives reloads until they are gone. In the one session this
+was measured on (Akamai in front of an ASP.NET app) the LOGIN lived in entirely
+different cookies and survived the clear. That is the common shape rather than a
+guarantee: some sites bind the session to the WAF cookie, in which case this signs
+you out. Export first if that would be expensive.
+
+```sh
+# Akamai keeps its verdict in these four; other WAFs use their own names.
+npx webhands cookies clear --name _abck --name bm_sz --name bm_sv --name ak_bmsc
+```
+
+It reports how many cookies were actually removed, so `cleared: 0` means nothing
+matched (check the names) rather than silently doing nothing. Then slow down: pace
+flows with `wait`.
+
+Clear ONCE. This is not evading a protection: you are clearing cookies in your own
+browser, exactly as you could from Chrome's own UI, so the WAF re-evaluates the real
+logged-in user. It stops being that if you loop it, which is why there is no
+`--bot-block` preset flag and why the four names live here rather than in the tool
+([`docs/adr/0016`](docs/adr/0016-cookies-clear-takes-no-vendor-preset-and-refuses-an-empty-filter.md)).
+
 ## Optional: stealth launch (opt-in, default OFF)
 
 Standard Playwright drives Chromium over CDP and calls `Runtime.enable` at
@@ -229,14 +334,18 @@ This is **off by default** — vanilla Playwright stays the default. To enable i
    #   pnpm exec patchright install chromium
    ```
 
-2. Bring the session up with `--stealth`. The realistic recipe also drives your
-   installed system browser (`--use-system-browser chrome`), headed, against a
-   **warmed, logged-in profile**:
+2. Bring the session up with `--stealth`, ideally also driving your installed
+   system browser (`--use-system-browser chrome`), headed, against a **warmed,
+   logged-in profile**:
 
    ```sh
    # serve consumes these (it is where the browser is launched, ADR-0005):
    npx webhands serve --headed --stealth --use-system-browser chrome
    ```
+
+   Do NOT add `--expose-cdp` here: a remote-debugging port re-opens an automation
+   surface on the very browser `--stealth` is hardening. `serve` warns in its
+   output envelope if you ask for both.
 
    `--use-system-browser` is independent of `--stealth`: you can drive real
    Chrome with or without the Patchright path, and stealth with or without a
@@ -276,14 +385,29 @@ If stealth is enabled but `patchright` is not installed, the open throws a typed
 It **never silently falls back** to vanilla Playwright, because that would put
 the tell back without telling you.
 
-**Honest caveat.** Stealth addresses ONLY the CDP `Runtime.enable` automation
-tell, and the launch-hardening knobs (`--no-viewport`, `extraLaunchArgs`,
-`ignoreDefaultArgs`) reduce but do **not** eliminate detection. They are
-**necessary-but-not-sufficient**: IP reputation and session/profile
-reputation still matter. The realistic recipe is stealth +
-`systemBrowser: 'chrome'` + headed + a warmed, logged-in profile + a residential
-IP (see
+**Honest caveat, and it is a big one.** Stealth addresses ONLY the CDP
+`Runtime.enable` automation tell, and the launch-hardening knobs (`--no-viewport`,
+`extraLaunchArgs`, `ignoreDefaultArgs`) reduce but do **not** eliminate detection.
+They are **necessary-but-not-sufficient**: IP reputation and session/profile
+reputation still matter (see
 [`docs/adr/0002`](docs/adr/0002-real-session-over-fingerprint-spoofing.md)).
+
+Against a serious commercial bot manager, measured rather than assumed, stealth
+was **not enough at all**. On an Akamai-protected site, a Playwright-LAUNCHED
+browser was blocked identically in every configuration tried: default launch,
+`--stealth`, `--stealth --use-system-browser chrome`, and a brand-new profile. The
+symptom is deceptive, so read it carefully: the static, edge-cached top page
+renders fine, which looks like success, and then every dynamic endpoint returns a
+bare "Access Denied". What worked flawlessly through a nine-screen authenticated
+flow was **attaching to a Chrome the human started themselves**:
+
+```sh
+google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/scratch
+npx webhands serve --endpoint http://127.0.0.1:9222
+```
+
+So treat `--stealth` as one tell removed, not as the anti-bot answer. The answer
+is to drive a real browser you started and logged into yourself.
 
 ## Optional: route traffic and DNS through a SOCKS proxy (opt-in, default OFF)
 
