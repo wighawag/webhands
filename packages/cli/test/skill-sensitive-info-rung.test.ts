@@ -1,7 +1,6 @@
 import {readFileSync} from 'node:fs';
-import {dirname, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
+import {SKILL_PATHS} from '../src/skills.js';
 
 /**
  * The bundled `use-webhands` skill's "handling sensitive info" rung (task
@@ -21,8 +20,11 @@ import {describe, expect, it} from 'vitest';
  *
  * We assert against the SHIPPED `skills/use-webhands/SKILL.md` file (the real
  * artifact synced to an agent), not a transcription, so the advertisement cannot
- * silently rot. The `{ENV:NAME}` grammar itself is intentionally NOT selector-
- * shaped (it is a value placeholder), so it does not trip the guard.
+ * silently rot. "Shipped" is literal: the file is resolved through the SAME
+ * {@link SKILL_PATHS} the CLI hands `incur`, and it travels inside the published
+ * tarball, so this asserts against the bytes a consumer installs. The
+ * `{ENV:NAME}` grammar itself is intentionally NOT selector-shaped (it is a
+ * value placeholder), so it does not trip the guard.
  */
 
 /** The selector/URL shapes inlined skill PROTOCOL text must never carry. */
@@ -39,11 +41,13 @@ const SELECTOR_SHAPES: readonly RegExp[] = [
 ];
 const URL_SHAPE = /https?:\/\/[^\s"'`)<>]+/i;
 
-/** The repo-root path to the shipped skill file. */
+/**
+ * The path to the shipped skill file, taken from the CLI's OWN resolution
+ * rather than re-derived here, so a move of the skill cannot leave the test
+ * asserting against a file the CLI no longer installs.
+ */
 function skillPath(): string {
-	// This test file lives at packages/cli/test/; the skill is at the repo root.
-	const here = dirname(fileURLToPath(import.meta.url));
-	return join(here, '..', '..', '..', 'skills', 'use-webhands', 'SKILL.md');
+	return SKILL_PATHS['use-webhands']!;
 }
 
 /**

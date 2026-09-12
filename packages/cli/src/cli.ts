@@ -44,6 +44,7 @@ import {
 	type SessionProvider,
 } from './session-provider.js';
 import {setupProfile} from '@webhands/core';
+import {PACKAGE_ROOT, SKILLS_DEPTH, SKILLS_INCLUDE} from './skills.js';
 import {VERSION} from './version.js';
 
 /**
@@ -573,6 +574,18 @@ export function createCli(deps: CliDeps = {}) {
 		description: DESCRIPTION,
 		version: deps.version ?? VERSION,
 		// `outputPolicy: 'all'` (the default) — humans and agents both see output.
+		//
+		// `skills add` installs the hand-authored `use-webhands` skill SHIPPED IN
+		// THIS PACKAGE (the `skills` entry of `files`), resolved from the module's
+		// own location rather than the caller's cwd, so it works from a bare `npx
+		// webhands skills add` with no checkout of this repo present. `depth: 0`
+		// collapses the per-verb generated skills into ONE command reference
+		// instead of 26. See `skills.ts` for why each of those is explicit.
+		sync: {
+			cwd: PACKAGE_ROOT,
+			depth: SKILLS_DEPTH,
+			include: [...SKILLS_INCLUDE],
+		},
 	});
 
 	// --- mode commands: setup-profile / launch / attach --------------------

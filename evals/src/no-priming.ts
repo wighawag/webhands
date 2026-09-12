@@ -86,7 +86,7 @@ export const WEBHANDS_PREAMBLE: ProtocolPreamble = {
 
 /**
  * The SKILLED webhands toolkit reference: the curated, SITE-AGNOSTIC workflow
- * knowledge from `skills/use-webhands/SKILL.md`, inlined so the agent STARTS
+ * knowledge from `packages/cli/skills/use-webhands/SKILL.md`, inlined so the agent STARTS
  * already knowing the webhands surface (the way a real agent with the
  * `use-webhands` skill synced would), instead of discovering it COLD at runtime.
  *

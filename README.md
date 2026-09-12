@@ -77,10 +77,36 @@ Three things a new user should know up front:
 
 For the full agent playbook (workflow, gotchas, guardrails) AND a complete
 per-verb reference, install the bundled skill: `npx webhands skills add` then look
-for `use-webhands`. A skilled agent drives the whole surface from that skill and
+for `use-webhands`. It is shipped INSIDE the package, so that works from a bare
+`npx` with no clone of this repo (the command also installs a generated
+`webhands` command reference; those two are the whole set). A skilled agent
+drives the whole surface from that skill and
 does NOT need to re-dump `--help`/`--llms-full` at runtime; those discovery dumps
 (`npx webhands <verb> --help`, `npx webhands --llms-full`) stay available for
 human exploration or an obscure flag.
+
+### Linking the skill instead of syncing it
+
+`use-webhands` is a real FILE in the package — `<pkg>/skills/use-webhands/SKILL.md`
+— so on a declarative setup (Nix, or any read-only install) you can point your
+agent straight at it and never run the CLI:
+
+```sh
+ln -s "$(dirname "$(readlink -f "$(which webhands)")")/../skills/use-webhands" \
+      ~/.agents/skills/use-webhands
+```
+
+That gives you a skill PINNED to the version of the binary you actually have, and
+read-only by construction. The syncing path (`skills add`) instead COPIES into
+`~/.agents/skills/`, which is mutable and drifts from the installed tool.
+
+**Pick one path per machine; they do not compose.** `skills add` clears its
+destination before writing, so running it after linking will delete your symlink
+and leave a mutable copy in its place, silently. Note also that the generated
+`webhands` command reference has no file to link: it is rendered from the command
+map at sync time into a temp dir, so materializing it REQUIRES running
+`skills add`. If you link, you get `use-webhands` only — which is the complete
+reference anyway.
 
 **Output is lean by default.** Every verb prints just its structured result; the
 old per-result "Suggested command" next-step breadcrumbs are suppressed (an agent

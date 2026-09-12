@@ -42,7 +42,7 @@ This does two things at once:
 
 - The preamble is already a per-adapter `ProtocolPreamble` (toolkitReference +
   leaveOpenRule). Add a webhands-WITH-skill preamble whose `toolkitReference`
-  embeds the skill text (read from `skills/use-webhands/SKILL.md` and/or the
+  embeds the skill text (read from `packages/cli/skills/use-webhands/SKILL.md` and/or the
   `--llms-full` output) instead of the bare pointer. Keep the no-priming guard on
   the GOAL intact: the skill is toolkit PROTOCOL (how to use the tool), not goal
   priming (how to solve THIS site), exactly like the existing preamble distinction.
