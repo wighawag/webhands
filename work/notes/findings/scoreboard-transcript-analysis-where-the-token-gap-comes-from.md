@@ -94,6 +94,16 @@ sub-flow into a single script and pay for one model turn.
    asked for) and (b) gives webhands the fair shake of not paying the discovery tax
    at runtime.
 
+## Update 2026-09-12 — the skill-shipping parenthetical above is now wrong in two ways
+
+Idea 2 above says, in passing, "webhands SHIPS skills (`webhands skills` syncs them; there is a hand-written `skills/use-webhands/SKILL.md` workflow skill + one auto-generated `webhands-<verb>` skill per verb)". Left as written because it records what was true on 2026-06-29 and the finding's ARGUMENT does not depend on it; corrected here because a reader following it today is misled twice.
+
+1. **It did not actually ship.** At the time this was written the hand-written skill lived at the MONOREPO ROOT and `packages/cli/package.json` `files` did not list it, so the published npm tarball carried NO skill file at all (verified against 0.6.0). "webhands SHIPS skills" was true only of the generated ones, which are rendered from the command map at sync time, and of anyone reading a git checkout. Task `ship-use-webhands-skill-in-published-package` fixed that: the skill now lives at `packages/cli/skills/use-webhands/SKILL.md` and travels inside the tarball. **That is the path to use if you are building the benchmark variant this idea proposes** — and it is now a stable one, since a consumer install has it too.
+
+2. **There is no longer one generated skill per verb.** The same task set `sync.depth: 0`, collapsing the 26 per-verb skills into a SINGLE generated `webhands` command reference. `webhands skills add` now installs exactly two skills: `use-webhands` and `webhands`.
+
+Neither correction weakens the finding. Cause 1 (the discovery tax) and the proposed three-point comparison stand exactly as argued: the benchmark still gives its agent no webhands knowledge, and the model still knows Playwright for free and webhands not at all.
+
 ## Caveat
 
 These are single runs; the turn/call counts will vary. But the STRUCTURAL pattern
