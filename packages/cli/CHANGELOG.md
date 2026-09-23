@@ -1,5 +1,30 @@
 # webhands
 
+## 0.7.1
+
+### Patch Changes
+
+- cc4fe66: **A headed launch with no X display is now a typed `missing-display` error naming the fix, instead of Playwright's ASCII box.**
+
+  On any server, container or CI runner, `setup-profile` (headed by definition) and `serve --headed` failed with a message whose FIRST line says the browser "has been closed", with the real explanation buried in attached browser logs as a drawn box suggesting `xvfb-run`. That reads as a crash, and it names a tool the reader has to already know to reach for. An agent driving webhands cannot act on it at all.
+
+  It is now `code: missing-display` with the three ways out, ordered by what the user is actually doing: `xvfb-run -a <the same command>` for a throwaway virtual display when nothing needs to be seen, a headless `serve` when only the page was wanted, or a real display over `ssh -X` / VNC when a HUMAN is the point. The message says "use a headless serve" rather than "drop `--headed`", because this fires for `setup-profile` too, which has no such flag to drop.
+
+  Also in this release: the repo's own test suite stops depending on the caller knowing the incantation. `@webhands/core`'s `test` script runs through `scripts/with-display.mjs`, which supplies `xvfb-run -a` when the box is Linux with no `DISPLAY`, steps aside when a display exists (including CI's outer `xvfb-run`, so nothing nests), and on a box with neither prints one actionable line instead of letting six browser tests produce walls of Playwright output. Wrapping rather than spawning an X server from a test hook is deliberate: it makes `xvfb-run` the parent of the test process, so its own cleanup kills the server however the run ends.
+
+- cc4fe66: **The browser-install fix command is now VERSION-PINNED, and `missing-browser-binary` says which revision it wanted.**
+
+  Found in the field on a standalone install: the first run failed with `missing-browser-binary`, the user ran the suggested `npx playwright install chromium`, it succeeded, and the identical error came back. Playwright resolves browsers by REVISION and each Playwright version pins its own, so the unpinned command (which resolves whatever Playwright is latest on npm that day) downloads a revision this build cannot use. That machine ended up holding `chromium-1223` and `chromium-1234` while webhands wanted `1228`. A fix command that costs a ~150MB download and returns you to the same error is worse than no fix command at all.
+
+  - **The fix command names our pin**: `npx playwright@1.61.1 install chromium`, read at runtime from the bundled `playwright/package.json` (exported as `bundledPlaywrightVersion`), so bumping the dependency cannot leave a stale version in an install instruction. The unpinned form survives only as the fallback for when that version cannot be read.
+  - **`MissingBrowserBinaryError` carries the evidence**: `executablePath` (the exact build Playwright looked for) and `present` (the sibling revisions that ARE installed), both folded into the message. Playwright's own error named the path all along; the transport was discarding it on re-raise, which left the user with "the chromium browser binary is not installed" on a machine holding eight browser trees, a sentence that reads as false and sends the reader looking anywhere but at the revision.
+
+  Docs carry the same correction: the README explains that the browser is a separate, revision-matched download (and that this bites hardest on a global/store-path install, or on a machine running other Playwright projects), and the bundled `use-webhands` skill gains a first-run entry so an agent fixes this itself instead of escalating, including the warning not to substitute the generic unpinned command and the note that it is not a headed/display problem.
+
+- Updated dependencies [cc4fe66]
+- Updated dependencies [cc4fe66]
+  - @webhands/core@0.8.1
+
 ## 0.7.0
 
 ### Minor Changes
