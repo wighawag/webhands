@@ -18,6 +18,7 @@
 /** The closed set of identifiable `core` error conditions. */
 export type ControllerErrorCode =
 	| 'missing-browser-binary'
+	| 'missing-display'
 	| 'missing-stealth-dependency'
 	| 'invalid-proxy'
 	| 'missing-profile'
@@ -59,19 +60,100 @@ export abstract class ControllerError extends Error {
  * The browser binary Playwright needs is not installed (e.g.
  * `playwright install chromium` was never run). Surfaced so the CLI can tell
  * the user the exact install command.
+ *
+ * CARRIES THE REVISION CONTEXT, because "not installed" is frequently a LIE in
+ * the shape that matters. Playwright resolves a browser by REVISION, not by
+ * name: a machine can hold several browser trees and satisfy none of them, and
+ * that is the normal state of any machine that runs more than one project.
+ * Reported from the field: a host with eight trees in `~/.cache/ms-playwright`
+ * (`chromium-1223`, `chromium-1234`, webkit, firefox) met a bare "the chromium
+ * browser binary is not installed", which reads as false and sends the reader
+ * looking anywhere but at the revision. Playwright's own error names the exact
+ * path it wanted; the transport passes it through here instead of discarding
+ * it, and adds what IS present next to it.
  */
 export class MissingBrowserBinaryError extends ControllerError {
 	readonly code = 'missing-browser-binary';
 	/** The browser whose binary is missing (e.g. `chromium`). */
 	readonly browser: string;
+	/**
+	 * The exact executable Playwright looked for, when its own error named one
+	 * (e.g. `~/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome`). Absent
+	 * for a missing SYSTEM channel (`--use-system-browser chrome`), which has no
+	 * managed path.
+	 */
+	readonly executablePath?: string;
+	/**
+	 * The browser trees actually present in the search dir, as directory names
+	 * (e.g. `['chromium-1223', 'chromium-1234']`). Empty means the dir was empty,
+	 * absent means it could not be read. This is the field that turns a confusing
+	 * report into an obvious one.
+	 */
+	readonly present?: readonly string[];
 
 	constructor(
 		browser: string,
 		message: string = `The ${browser} browser binary is not installed.`,
+		options?: {
+			cause?: unknown;
+			executablePath?: string;
+			present?: readonly string[];
+		},
+	) {
+		super(describeMissingBrowser(message, options), options);
+		this.browser = browser;
+		this.executablePath = options?.executablePath;
+		this.present = options?.present;
+	}
+}
+
+/**
+ * Append the revision evidence to the base "not installed" sentence.
+ *
+ * Kept as a free function rather than inlined so the base sentence stays the
+ * one the caller passed (a caller that supplies its own message still gets the
+ * evidence appended, and a caller with no evidence gets exactly the old text,
+ * which is what keeps this change additive).
+ */
+function describeMissingBrowser(
+	base: string,
+	options?: {executablePath?: string; present?: readonly string[]},
+): string {
+	const lines: string[] = [base];
+	if (options?.executablePath) {
+		lines.push(`Playwright looked for this exact build:`);
+		lines.push(`  ${options.executablePath}`);
+	}
+	if (options?.present && options.present.length > 0) {
+		lines.push(
+			`Present alongside it: ${options.present.join(', ')} (a DIFFERENT revision, which does not satisfy this one).`,
+		);
+	}
+	return lines.join('\n');
+}
+
+/**
+ * A HEADED browser was asked for on a machine with no X display.
+ *
+ * The condition is ordinary rather than exotic: every server, container, CI
+ * runner and headless dev box is in it, and `setup-profile` is headed BY
+ * DEFINITION (its entire job is showing a human a window), so this is the first
+ * thing a new headless host meets.
+ *
+ * Typed for the same reason as {@link MissingBrowserBinaryError}: what
+ * Playwright emits here is a multi-line ASCII box inside a message whose first
+ * line claims the browser "has been closed", which reads as a crash and names a
+ * tool (`xvfb-run`) the reader has to already know to reach for. An agent
+ * driving webhands cannot act on that; it can act on a code plus one command.
+ */
+export class MissingDisplayError extends ControllerError {
+	readonly code = 'missing-display';
+
+	constructor(
+		message: string = 'A HEADED browser needs an X display, and this machine has none (DISPLAY is unset or no X server is reachable).',
 		options?: {cause?: unknown},
 	) {
 		super(message, options);
-		this.browser = browser;
 	}
 }
 

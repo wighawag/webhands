@@ -4,11 +4,13 @@ import {homedir, tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
 import {
+	bundledPlaywrightVersion,
 	CONTROLLER_HOME_ENV,
 	DEFAULT_HOME_DIRNAME,
 	isControllerError,
 	locator,
 	MissingBrowserBinaryError,
+	MissingDisplayError,
 	MissingProfileError,
 	PlaywrightLaunchTransport,
 	resolveProfileLocation,
@@ -166,6 +168,44 @@ describe('PlaywrightLaunchTransport (real browser, local fixture)', () => {
 		expect((err as MissingProfileError).profileDir).toContain('never-set-up');
 	});
 
+	// LINUX ONLY, and that is the condition rather than a CI concession: macOS
+	// and Windows have a native window server, where an unset DISPLAY means
+	// nothing and a headed launch simply works.
+	it.skipIf(process.platform !== 'linux')(
+		'surfaces a headed launch with no X display as a typed MissingDisplayError',
+		async () => {
+			// Drive the REAL transport with the display taken away, which is the
+			// state of every server, container and unwrapped CI runner. Restored in
+			// a finally, because the rest of this suite launches headed browsers.
+			const {transport} = await makeSetUpProfile('no-display');
+			const saved = process.env.DISPLAY;
+			delete process.env.DISPLAY;
+			try {
+				const outcome = await transport
+					.open({mode: 'launch', profile: 'no-display', headed: true})
+					.then(
+						(session) => session.close().then(() => 'opened' as const),
+						(e: unknown) => e,
+					);
+				// A machine that can still open a window without DISPLAY (a Wayland
+				// session that Chromium reaches directly) is NOT in the condition
+				// under test, and must not be reported as a failure of it.
+				if (outcome === 'opened') {
+					return;
+				}
+				expect(isControllerError(outcome)).toBe(true);
+				expect((outcome as MissingDisplayError).code).toBe('missing-display');
+				expect((outcome as MissingDisplayError).message).toMatch(
+					/needs an X display/i,
+				);
+			} finally {
+				if (saved !== undefined) {
+					process.env.DISPLAY = saved;
+				}
+			}
+		},
+	);
+
 	it('reads the profile root from the env override too', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'mbc-env-'));
 		tempRoots.push(root);
@@ -227,5 +267,46 @@ describe('MissingBrowserBinaryError (typed condition shape)', () => {
 		expect(isControllerError(err)).toBe(true);
 		expect(err.code).toBe('missing-browser-binary');
 		expect(err.browser).toBe('chromium');
+		// With no evidence supplied the text is exactly the old sentence: the
+		// revision detail is ADDITIVE, never a rewrite of the condition.
+		expect(err.message).toBe('The chromium browser binary is not installed.');
+		expect(err.executablePath).toBeUndefined();
+		expect(err.present).toBeUndefined();
+	});
+
+	it('carries the revision evidence into the message when the transport has it', () => {
+		// "not installed" is the confusing half-truth this evidence exists to
+		// correct: browsers resolve by REVISION, so a cache full of chromium can
+		// still satisfy nothing.
+		const err = new MissingBrowserBinaryError('chromium', undefined, {
+			executablePath:
+				'/home/u/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+			present: ['chromium-1223', 'chromium-1234'],
+		});
+		expect(err.code).toBe('missing-browser-binary');
+		expect(err.executablePath).toContain('chromium-1228');
+		expect(err.present).toEqual(['chromium-1223', 'chromium-1234']);
+		expect(err.message).toContain(
+			'/home/u/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+		);
+		expect(err.message).toContain('chromium-1223, chromium-1234');
+	});
+});
+
+describe('MissingDisplayError (headed on a machine with no X server)', () => {
+	it('is an identifiable controller error with the missing-display code', () => {
+		const err = new MissingDisplayError();
+		expect(isControllerError(err)).toBe(true);
+		expect(err.code).toBe('missing-display');
+		expect(err.message).toMatch(/HEADED browser needs an X display/i);
+	});
+});
+
+describe('bundledPlaywrightVersion (the pin the fix command must name)', () => {
+	it('reports the version of the playwright this build depends on', () => {
+		// Read from playwright/package.json rather than hard-coded, so a bump of
+		// the dependency cannot leave a stale pin behind in an install command.
+		const version = bundledPlaywrightVersion();
+		expect(version).toMatch(/^\d+\.\d+\.\d+/);
 	});
 });

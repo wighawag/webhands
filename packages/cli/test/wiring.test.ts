@@ -4,7 +4,9 @@ import {join} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {
 	StubTransport,
+	bundledPlaywrightVersion,
 	MissingBrowserBinaryError,
+	MissingDisplayError,
 	MissingStealthDependencyError,
 	InvalidProxyError,
 	MissingProfileError,
@@ -1707,7 +1709,11 @@ describe('incur CLI wiring', () => {
 	});
 
 	describe('actionable errors name the EXACT fix command (story 17)', () => {
-		it('maps the typed missing-browser-binary condition to `playwright install`', async () => {
+		it('maps the typed missing-browser-binary condition to a VERSION-PINNED `playwright install`', async () => {
+			// The pin is the whole point. Browsers resolve by REVISION and each
+			// Playwright version pins its own, so an unpinned `npx playwright
+			// install` downloads a revision this build cannot use: a ~150MB
+			// download that reports success and returns the identical error.
 			const provider = throwingProvider(
 				new MissingBrowserBinaryError('chromium'),
 			);
@@ -1719,7 +1725,51 @@ describe('incur CLI wiring', () => {
 			]);
 			expect(env.ok).toBe(false);
 			expect(env.error?.code).toBe('missing-browser-binary');
-			expect(env.error?.message).toContain('npx playwright install chromium');
+			expect(env.error?.message).toMatch(
+				/npx playwright@\d+\.\d+\.\d+ install chromium/,
+			);
+			// And it must be OUR pin, not merely A version: the command has to
+			// install the revision this build will ask Playwright for.
+			expect(env.error?.message).toContain(
+				`npx playwright@${bundledPlaywrightVersion()} install chromium`,
+			);
+		});
+
+		it('maps missing-display to a virtual display, NOT to a browser install', async () => {
+			// The condition every server, container and unwrapped CI runner is in.
+			// Playwright reports it as "the browser has been closed" with the real
+			// reason in an ASCII box, which reads as a crash; the fix command has to
+			// name the tool, because a reader who does not already know `xvfb-run`
+			// cannot guess it.
+			const env = await runEnvelope(
+				throwingProvider(new MissingDisplayError()),
+				['goto', 'https://example.test/'],
+			);
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('missing-display');
+			expect(env.error?.message).toContain('xvfb-run -a');
+			// Both other ways out are named too, since which one is right depends on
+			// whether a HUMAN needs to see the window.
+			expect(env.error?.message).toMatch(/headless/i);
+			expect(env.error?.message).toMatch(/ssh -X/);
+		});
+
+		it('surfaces the revision evidence, so "not installed" is not read as "absent"', async () => {
+			// A machine can hold several browser trees and satisfy none of them. The
+			// message has to name WHICH build was wanted and what sits next to it,
+			// or the bare sentence reads as false and sends the reader elsewhere.
+			const env = await runEnvelope(
+				throwingProvider(
+					new MissingBrowserBinaryError('chromium', undefined, {
+						executablePath:
+							'/home/u/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+						present: ['chromium-1223', 'chromium-1234'],
+					}),
+				),
+				['goto', 'https://example.test/'],
+			);
+			expect(env.error?.message).toContain('chromium-1228/chrome-linux64');
+			expect(env.error?.message).toContain('chromium-1223, chromium-1234');
 		});
 
 		it('maps real-chrome-not-found to an install/name-the-path fix, NOT `playwright install`', async () => {

@@ -1,6 +1,8 @@
 import {
+	bundledPlaywrightVersion,
 	isControllerError,
 	MissingBrowserBinaryError,
+	MissingDisplayError,
 	MissingStealthDependencyError,
 	InvalidProxyError,
 	MissingProfileError,
@@ -50,11 +52,40 @@ export interface MappedError {
  */
 export function fixCommandFor(error: ControllerError, binary: string): string {
 	switch (error.code) {
-		case 'missing-browser-binary':
+		case 'missing-browser-binary': {
 			// Playwright ships its own browser binaries; `playwright install
 			// <browser>` is the documented way to download the missing one. We name
 			// the specific browser from the typed error rather than a generic hint.
-			return `npx playwright install ${(error as MissingBrowserBinaryError).browser}`;
+			//
+			// PIN THE INSTALLER TO OUR PLAYWRIGHT. Browsers resolve by REVISION, and
+			// each Playwright version pins its own, so a bare `npx playwright
+			// install` (which resolves whatever is latest on npm) downloads a
+			// revision this build cannot use. That is worse than no fix command: it
+			// costs a ~150MB download, reports success, and returns the user to the
+			// identical error. Reported from the field on a standalone install,
+			// where the machine ended up holding chromium-1223 and chromium-1234
+			// while webhands wanted 1228.
+			//
+			// The unpinned form survives only as the fallback for when the version
+			// cannot be read (see core's bundledPlaywrightVersion): there it is an
+			// honest guess rather than a promise, and it is still better than
+			// nothing.
+			const pin = bundledPlaywrightVersion();
+			const browser = (error as MissingBrowserBinaryError).browser;
+			return `npx playwright${pin ? `@${pin}` : ''} install ${browser}`;
+		}
+		case 'missing-display':
+			// A headed browser with no X server to draw on. Two real ways out, and
+			// the right one depends on what the user was doing, so name both: a
+			// virtual display when the window does not need to be SEEN (a test run,
+			// a CI job, an agent clearing a challenge is NOT this), and forwarding
+			// when a human does need to look at it. `xvfb-run -a` leads because it
+			// is the one that works with no second machine involved.
+			// "use a headless serve" rather than "drop --headed", because this also
+			// fires for `setup-profile`, which is headed BY DEFINITION and has no
+			// flag to drop. Naming an option the user does not have would be the
+			// same class of mistake as an install command for the wrong revision.
+			return `xvfb-run -a ${binary} <the same command>  # a virtual display; or use a headless ${binary} serve; or reach a real display over ssh -X`;
 		case 'missing-stealth-dependency':
 			// Stealth launch was opted into but the OPTIONAL `patchright` dependency
 			// is absent. Name the package from the typed error so the install command
@@ -172,6 +203,7 @@ export function mapControllerError(
 // construct/assert against them without reaching into core directly.
 export {
 	MissingBrowserBinaryError,
+	MissingDisplayError,
 	MissingStealthDependencyError,
 	InvalidProxyError,
 	MissingProfileError,

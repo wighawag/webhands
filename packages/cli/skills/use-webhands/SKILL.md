@@ -73,6 +73,22 @@ running.
 If `goto`/`snapshot` print "run `serve` first", the server is not up (or was
 stopped): start `serve` and retry. The tool NEVER silently spawns a browser.
 
+### First run on a new machine: `missing-browser-binary`
+
+`webhands` ships the CLI, NOT a browser. On a machine where no matching browser was ever downloaded, the first `setup-profile`/`serve` fails with `code: missing-browser-binary`. **Run the command the error message gives you and retry.** It is version-pinned on purpose, e.g. `npx playwright@1.61.1 install chromium`, and the download is around 150MB.
+
+DO NOT substitute a bare `npx playwright install chromium`: Playwright resolves browsers by REVISION and each Playwright version pins its own, so the unpinned form can install a revision webhands cannot use, succeed, and leave you on the identical error. For the same reason, "chromium is already installed" is not a reason to skip the fix: the error message names the exact build it wanted and lists the near-miss revisions sitting beside it, and several chromium trees satisfying none of them is the normal state of a machine that runs more than one Playwright project.
+
+This is NOT a headed/display problem, so do not go looking for one. The lookup is identical headless, and the same error appears under `serve` with no window involved. It is also not a reason to escalate to the human: it is a one-command fix that you can run yourself.
+
+### `missing-display`: headed, on a machine with no X server
+
+The OTHER first-run failure, and a different condition entirely: the browser exists, but a HEADED launch (`setup-profile` always, `serve --headed`) has nothing to draw on. Every server, container and CI runner is in this state. The error names the fix; the three ways out, in the order you should consider them:
+
+- **`xvfb-run -a <the same command>`** when nothing needs to be SEEN (a test run, an automated flow). It supplies a throwaway virtual display.
+- **A headless `serve`** when you only wanted the page, not the window.
+- **A real display the HUMAN can see**, over `ssh -X` or a VNC session, which is the only option that works when the point is a human logging in or clearing a challenge. A virtual display satisfies the browser and shows the human nothing, so do NOT reach for `xvfb-run` to "fix" a `setup-profile` that a person is supposed to be watching: ask them where they want the window instead.
+
 ## Reading pages cheaply
 
 - `snapshot` returns a token-cheap accessibility-tree + text view — your default
