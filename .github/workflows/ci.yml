@@ -42,5 +42,11 @@ jobs:
       # Some tests launch HEADED (`setup-profile`, the headed-launch case), which
       # needs an X display the runner does not have. xvfb-run supplies a virtual
       # one; headless tests are unaffected.
+      #
+      # KEPT EXPLICIT even though `@webhands/core`'s test script now wraps itself
+      # (scripts/with-display.mjs does the same thing for a contributor on a
+      # display-less box). The wrapper sees this outer DISPLAY and steps aside,
+      # so there is no nesting, and the gate does not depend on the runner image
+      # happening to ship xvfb-run.
       - name: Test
         run: xvfb-run -a pnpm -r test
