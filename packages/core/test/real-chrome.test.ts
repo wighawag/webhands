@@ -99,13 +99,22 @@ describe('spawnRealChrome (real process, Playwright Chromium as the system brows
 	});
 
 	it('FAILS FAST with a typed error when the executable exits immediately', async () => {
-		// `/bin/true` exits 0 at once and never publishes a port. Without the
+		// A script that exits 0 at once and never publishes a port. Without the
 		// exit-watching abort, this would wait out the whole ready timeout, so the
 		// assertion is BOTH the typed error and that it took nowhere near it.
+		//
+		// WRITTEN, not `/bin/true`: that path is an FHS assumption, and on a NixOS
+		// host `/bin` holds `sh` and nothing else, so the hard-coded version fails
+		// with ENOENT (a spawn error) instead of the exit-0 condition under test.
+		// A generated script is deterministic everywhere and states its own intent.
+		const exitsImmediately = join(await tempDir(), 'exits-0');
+		await writeFile(exitsImmediately, '#!/bin/sh\nexit 0\n');
+		await chmod(exitsImmediately, 0o755);
+
 		const started = Date.now();
 		const err = await spawnRealChrome({
 			userDataDir: await tempDir(),
-			executablePath: '/bin/true',
+			executablePath: exitsImmediately,
 			readyTimeoutMs: 10_000,
 			args: CI_SANDBOX_ARGS,
 		}).then(

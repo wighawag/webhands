@@ -79,6 +79,11 @@ export {
 
 export {PlaywrightAttachTransport} from './playwright-attach-transport.js';
 
+// The Playwright version this build is pinned to. Exported because the CLI's
+// browser-install fix command is only correct when it names it (a bare
+// `npx playwright install` resolves a DIFFERENT revision).
+export {bundledPlaywrightVersion} from './playwright-pin.js';
+
 export {
 	setupProfile,
 	buildPrompt,
@@ -90,6 +95,7 @@ export {
 export {
 	ControllerError,
 	MissingBrowserBinaryError,
+	MissingDisplayError,
 	MissingStealthDependencyError,
 	InvalidProxyError,
 	MissingProfileError,

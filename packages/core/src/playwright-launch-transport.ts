@@ -1,8 +1,10 @@
-import {stat} from 'node:fs/promises';
+import {readdir, stat} from 'node:fs/promises';
+import {basename, dirname} from 'node:path';
 import {chromium, type BrowserContext, type Page} from 'playwright';
 import {resolveCdpEndpoint} from './devtools-port.js';
 import {
 	MissingBrowserBinaryError,
+	MissingDisplayError,
 	MissingProfileError,
 	MissingStealthDependencyError,
 } from './errors.js';
@@ -393,7 +395,23 @@ export class PlaywrightLaunchTransport implements Transport {
 				// means the SYSTEM browser is absent, not the bundled Chromium; name
 				// what is actually missing so the CLI's fix message is accurate.
 				const browser = this.#systemBrowser ?? 'chromium';
-				throw new MissingBrowserBinaryError(browser, undefined, {cause});
+				// Carry the REVISION evidence across the re-raise. Playwright's own
+				// message names the exact build it wanted, and dropping it is what
+				// makes this failure expensive to read on a machine that already has
+				// other browser trees (see MissingBrowserBinaryError's docblock).
+				const executablePath = missingExecutablePath(cause);
+				throw new MissingBrowserBinaryError(browser, undefined, {
+					cause,
+					executablePath,
+					present: await siblingBrowserBuilds(executablePath, browser),
+				});
+			}
+			if (isMissingDisplay(cause)) {
+				// A headed launch on a machine with no X server. Typed here so the
+				// CLI can name `xvfb-run` (or headless) instead of passing on
+				// Playwright's ASCII box, whose first line says the browser "has been
+				// closed" and reads as a crash.
+				throw new MissingDisplayError(undefined, {cause});
 			}
 			throw cause;
 		}
@@ -480,6 +498,75 @@ function isMissingBrowserBinary(cause: unknown): boolean {
 		/Chromium distribution '.*' is not found/i.test(message) ||
 		/No "?(chrome|msedge|chromium)"? .* found/i.test(message)
 	);
+}
+
+/**
+ * Recognise a HEADED launch that failed for want of an X display.
+ *
+ * Message matching again, and confined here for the same reason as
+ * {@link isMissingBrowserBinary}: Playwright surfaces this as a generic "Target
+ * page, context or browser has been closed" with the real explanation appended
+ * in the attached browser logs. Both halves of that appendix are matched (the
+ * advisory box Playwright prints, and Chromium's own ozone/X11 line) because
+ * either can be the one that survives into the message.
+ */
+function isMissingDisplay(cause: unknown): boolean {
+	const message = cause instanceof Error ? cause.message : String(cause ?? '');
+	return (
+		/headed browser without having a XServer running/i.test(message) ||
+		/Missing X server or \$DISPLAY/i.test(message)
+	);
+}
+
+/**
+ * Pull the executable path out of Playwright's "Executable doesn't exist at
+ * <path>" message.
+ *
+ * Message-shape matching, confined here for the same reason as
+ * {@link isMissingBrowserBinary}: Playwright exports no typed error and no
+ * accessor for the path it resolved. Returning `undefined` is a normal outcome
+ * (a missing system channel names no managed path), and the caller degrades to
+ * the plain message rather than guessing.
+ */
+function missingExecutablePath(cause: unknown): string | undefined {
+	const message = cause instanceof Error ? cause.message : String(cause ?? '');
+	// Playwright prints the path on its own line, sometimes wrapped in
+	// decoration; take everything up to the end of the line and trim.
+	const match = /Executable doesn't exist at\s+(.+)/i.exec(message);
+	const path = match?.[1]?.split('\n')[0]?.trim();
+	return path && path.length > 0 ? path : undefined;
+}
+
+/**
+ * The browser trees that ARE installed next to the one Playwright wanted, e.g.
+ * `['chromium-1223', 'chromium-1234']` when it asked for `chromium-1228`.
+ *
+ * This is the fact that names the real condition (a revision mismatch, not an
+ * absent install), so it is worth one `readdir` on a path we already failed on.
+ * Best-effort by construction: any error yields `undefined` and the caller
+ * simply reports less. The browsers root is the grandparent of the executable
+ * (`<root>/<browser>-<revision>/<platform dir>/<binary>`), and entries are
+ * filtered to the SAME browser family so a missing chromium does not recite the
+ * webkit and firefox builds at the reader.
+ */
+async function siblingBrowserBuilds(
+	executablePath: string | undefined,
+	browser: string,
+): Promise<readonly string[] | undefined> {
+	if (!executablePath) {
+		return undefined;
+	}
+	const buildDir = dirname(dirname(executablePath));
+	const root = dirname(buildDir);
+	const wanted = basename(buildDir);
+	try {
+		const entries = await readdir(root);
+		return entries
+			.filter((name) => name.startsWith(`${browser}-`) && name !== wanted)
+			.sort();
+	} catch {
+		return undefined;
+	}
 }
 
 /**

@@ -75,6 +75,26 @@ Three things a new user should know up front:
   "you look like a bot" page on sites like Kayak. The fix is to run `--headed` and
   clear the challenge yourself once, not to defeat it.
 
+### The browser itself is a separate, revision-matched download
+
+`npx webhands` fetches the CLI and its Playwright library; it does NOT fetch a browser. If none is installed you get a typed `missing-browser-binary` error whose message ends in the exact command to run. Run that command and you are done.
+
+The one thing worth knowing before you improvise your own: **Playwright resolves browsers by REVISION, not by name.** Each Playwright version pins its own revision, so a machine can hold several chromium trees and satisfy none of them. This is why the fix command webhands prints is version-pinned:
+
+```sh
+npx playwright@<the version webhands bundles> install chromium
+```
+
+A bare `npx playwright install chromium` resolves whatever Playwright is latest on npm that day. If that is not the version webhands bundles, you download ~150MB, see it succeed, and meet the identical error again. Let the error message hand you the command rather than typing the generic one from memory.
+
+This bites hardest on a STANDALONE install (`npm i -g webhands`, a pinned store path, a container image) and on a machine that already runs other Playwright projects, since those are exactly the machines with a cache full of near-miss revisions. Browsers land in `~/.cache/ms-playwright` (or `PLAYWRIGHT_BROWSERS_PATH` if you set it) regardless of how webhands itself was installed, so a read-only install prefix is not an obstacle.
+
+### Headed browsers need a display (a server or container has none)
+
+`setup-profile` is headed by definition and `serve --headed` asks for a window, so on a display-less Linux box both fail with a typed `missing-display` error. It names the three ways out: `xvfb-run -a <the same command>` for a throwaway virtual display when nothing needs to be SEEN, a headless `serve` when you only wanted the page, or a real display over `ssh -X` or VNC when a HUMAN is the point (logging in, clearing a challenge). A virtual display satisfies the browser and shows a person nothing, so it is the wrong answer for the login case, and the right one for a test run.
+
+The repo's own suite is wrapped for exactly this (`scripts/with-display.mjs`): `pnpm test` supplies a virtual display when there is none, and steps aside when `DISPLAY` is already set.
+
 For the full agent playbook (workflow, gotchas, guardrails) AND a complete
 per-verb reference, install the bundled skill: `npx webhands skills add` then look
 for `use-webhands`. It is shipped INSIDE the package, so that works from a bare
