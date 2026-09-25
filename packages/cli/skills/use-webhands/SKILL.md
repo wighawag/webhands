@@ -89,6 +89,28 @@ The OTHER first-run failure, and a different condition entirely: the browser exi
 - **A headless `serve`** when you only wanted the page, not the window.
 - **A real display the HUMAN can see**, over `ssh -X` or a VNC session, which is the only option that works when the point is a human logging in or clearing a challenge. A virtual display satisfies the browser and shows the human nothing, so do NOT reach for `xvfb-run` to "fix" a `setup-profile` that a person is supposed to be watching: ask them where they want the window instead.
 
+### Verbs time out against a server that reports `ok: true`
+
+A distinct failure from "run `serve` first", and the distinction is the whole diagnosis. If `serve` logged `ok: true` with a URL and a pid, but every verb fails with `could not reach the session server at http://127.0.0.1:<port>: fetch failed`, check what kind of failure it is:
+
+```sh
+curl -sv --max-time 5 http://127.0.0.1:<port>/ 2>&1 | tail -5
+```
+
+- **"Connection refused"** is the ONE shape that means nothing is listening: the server died. Check the serve log and restart it.
+- **Anything else** (a timeout, or `Recv failure: Connection reset by peer` after the request was sent) means the server is alive and healthy and that ADDRESS is unusable to you. That is a local packet filter, typically a per-uid rule (`ip daddr 127.0.0.0/8 drop`) used to force an account's egress through a specific proxy or Tor. It applies in both directions, so trying another port or host will not help. Do not keep restarting `serve`: it is not the problem, and both shapes have been observed for this same condition on the same box.
+
+For that second case, serve on a unix socket instead, which is not IP traffic and crosses no filter:
+
+```sh
+nohup npx webhands serve --socket ~/.webhands/session.sock > /tmp/webhands-serve.log 2>&1 &
+sleep 12
+cat /tmp/webhands-serve.log   # expect: ok: true, transport: "socket", a socket path, and a pid
+npx webhands goto https://example.com/   # NO extra flag: verbs read the transport from discovery
+```
+
+Linux/macOS only (Windows refuses with a clear error). Do NOT use this mode by default, and do NOT "fix" the timeout by binding a public interface or adding a proxy: the first exposes your logged-in session to the network, and the second defeats the rule that was put there deliberately.
+
 ## Reading pages cheaply
 
 - `snapshot` returns a token-cheap accessibility-tree + text view — your default

@@ -56,6 +56,12 @@ export interface DefaultSessionProviderOptions {
  * a different browser; it just drives the live one. If no server is live the
  * provider raises {@link NoLiveServerError} (mapped by the CLI to "run `serve`
  * first"); it never silently opens a browser.
+ *
+ * The TRANSPORT is ignored here for the same reason (ADR-0017): the endpoint is
+ * handed to {@link connectRemoteSession} whole, so whether the session is
+ * reached over TCP or a unix socket is whatever `serve` advertised. No verb
+ * takes a `--socket` flag, and no verb can dial TCP when a socket is the only
+ * reachable address.
  */
 export function createDefaultSessionProvider(
 	options: DefaultSessionProviderOptions = {},
@@ -65,6 +71,6 @@ export function createDefaultSessionProvider(
 		if (endpoint === undefined) {
 			throw new NoLiveServerError();
 		}
-		return connectRemoteSession(endpoint.url);
+		return connectRemoteSession(endpoint);
 	};
 }

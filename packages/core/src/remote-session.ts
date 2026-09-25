@@ -1,3 +1,4 @@
+import {request as httpRequest} from 'node:http';
 import {
 	callHandVerb,
 	makeRpcPage,
@@ -6,8 +7,132 @@ import {
 	type SessionRpcRequest,
 	type SessionRpcResponse,
 } from './session-rpc.js';
+import {NoLiveServerError} from './errors.js';
 import type {Session} from './seam.js';
 import type {VerbTraceEntry} from './verb-trace.js';
+
+/**
+ * WHERE a client reaches the served session: a TCP base URL, or a unix socket
+ * path (ADR-0017). Structurally satisfied by a read `SessionEndpoint`, so the
+ * normal call is `connectRemoteSession(await readSessionEndpoint())` and
+ * DISCOVERY stays the single source of truth for the transport: no verb takes a
+ * `--socket` flag, and no verb can choose TCP when a socket is advertised.
+ */
+export type SessionAddress =
+	| {readonly url: string; readonly socket?: undefined}
+	| {readonly socket: string; readonly url?: undefined};
+
+/** A base URL string (the pre-ADR-0017 argument) or an address object. */
+export type SessionTarget = string | SessionAddress;
+
+/** An address resolved to the one transport it names. */
+type ResolvedAddress =
+	| {readonly kind: 'url'; readonly base: string}
+	| {readonly kind: 'socket'; readonly socketPath: string};
+
+/**
+ * Resolve a {@link SessionTarget} to its transport, or raise the TYPED
+ * {@link NoLiveServerError}.
+ *
+ * The error path is a compatibility guarantee, not defensiveness (ADR-0017). A
+ * url-only caller written against the old shape reaches here as
+ * `connectRemoteSession(endpoint.url)`, and for a socket-served session that
+ * argument is `undefined`. Without this it would land in `new URL(path,
+ * undefined)` and surface as a raw `TypeError: Invalid base URL`, which tells
+ * the user nothing. It is the same conclusion the old ENDPOINT READER reaches
+ * from the other direction (a file with no `url` reads as "no live server"), so
+ * both halves of the old url-only path degrade to the one actionable error.
+ *
+ * A socket WINS over a url, matching `readSessionEndpoint`: socket mode exists
+ * because loopback is unreachable, so preferring TCP would pick the one address
+ * that cannot work.
+ */
+function resolveAddress(target: SessionTarget | undefined): ResolvedAddress {
+	if (typeof target === 'string') {
+		if (target === '') {
+			throw new NoLiveServerError(
+				'No session address was given (an empty base URL). Start a server ' +
+					'with `serve` first.',
+			);
+		}
+		return {kind: 'url', base: target};
+	}
+	if (target !== undefined && target !== null) {
+		if (typeof target.socket === 'string' && target.socket !== '') {
+			return {kind: 'socket', socketPath: target.socket};
+		}
+		if (typeof target.url === 'string' && target.url !== '') {
+			return {kind: 'url', base: target.url};
+		}
+	}
+	throw new NoLiveServerError(
+		'No reachable session address was found: the advertised endpoint carries ' +
+			'no `url`, which is how a session served over a UNIX SOCKET appears to a ' +
+			'client that can only dial a URL. Pass the whole endpoint (it names its ' +
+			'own transport), or start a TCP server with `serve`.',
+	);
+}
+
+/** How an address reads in an error message (the url, or the socket path). */
+function describeAddress(address: ResolvedAddress): string {
+	return address.kind === 'url'
+		? address.base
+		: `unix socket ${address.socketPath}`;
+}
+
+/**
+ * One request/response against the served session, over whichever transport the
+ * address names. Returns the raw response body; the callers parse the RPC
+ * envelope.
+ *
+ * The socket branch uses `node:http`'s `request({socketPath})` rather than
+ * `fetch`. `fetch` cannot be pointed at a unix socket without undici's `Agent`,
+ * which Node does not re-export from any builtin, so the alternative is a
+ * DEPENDENCY on undici for two call sites (this and the trace GET) in a package
+ * whose client half currently has none. The builtin is the smaller change.
+ */
+function sendHttp(
+	address: ResolvedAddress,
+	path: string,
+	method: 'GET' | 'POST',
+	body?: string,
+): Promise<string> {
+	if (address.kind === 'url') {
+		const endpoint = new URL(path, address.base).toString();
+		return fetch(endpoint, {
+			method,
+			...(body !== undefined
+				? {headers: {'content-type': 'application/json'}, body}
+				: {}),
+		}).then((res) => res.text());
+	}
+	return new Promise<string>((resolve, reject) => {
+		const req = httpRequest(
+			{
+				socketPath: address.socketPath,
+				path,
+				method,
+				...(body !== undefined
+					? {
+							headers: {
+								'content-type': 'application/json',
+								'content-length': Buffer.byteLength(body),
+							},
+						}
+					: {}),
+			},
+			(res) => {
+				const chunks: Buffer[] = [];
+				res.on('data', (chunk: Buffer) => chunks.push(chunk));
+				res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+				res.on('error', reject);
+			},
+		);
+		req.on('error', reject);
+		if (body !== undefined) req.write(body);
+		req.end();
+	});
+}
 
 /**
  * A client-side {@link Session} that drives a session living in a SEPARATE
@@ -39,19 +164,20 @@ import type {VerbTraceEntry} from './verb-trace.js';
  * faithfully, the same contract as the built-in verbs.
  */
 export function connectRemoteSession(
-	baseUrl: string,
+	target: SessionTarget,
 	handVerbs: readonly string[] = [],
 ): Session {
-	const endpoint = new URL(SESSION_RPC_PATH, baseUrl).toString();
+	const address = resolveAddress(target);
 
 	const send = async (request: SessionRpcRequest): Promise<unknown> => {
-		let res: Response;
+		let text: string;
 		try {
-			res = await fetch(endpoint, {
-				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: JSON.stringify(request),
-			});
+			text = await sendHttp(
+				address,
+				SESSION_RPC_PATH,
+				'POST',
+				JSON.stringify(request),
+			);
 		} catch (cause) {
 			// The advertised server is unreachable (it died without clearing its
 			// endpoint file, say). Surface a plain Error; the CLI maps the discovery
@@ -59,10 +185,11 @@ export function connectRemoteSession(
 			// endpoint that no longer answers is a genuine connection failure.
 			const message = cause instanceof Error ? cause.message : String(cause);
 			throw new Error(
-				`could not reach the session server at ${baseUrl}: ${message}`,
+				`could not reach the session server at ${describeAddress(address)}: ` +
+					`${message}`,
 			);
 		}
-		const reply = (await res.json()) as SessionRpcResponse;
+		const reply = JSON.parse(text) as SessionRpcResponse;
 		if (reply.ok) {
 			return reply.value;
 		}
@@ -121,19 +248,20 @@ export function connectRemoteSession(
  * `send`).
  */
 export async function readSessionTrace(
-	baseUrl: string,
+	target: SessionTarget,
 ): Promise<readonly VerbTraceEntry[]> {
-	const endpoint = new URL(SESSION_TRACE_PATH, baseUrl).toString();
-	let res: Response;
+	const address = resolveAddress(target);
+	let text: string;
 	try {
-		res = await fetch(endpoint, {method: 'GET'});
+		text = await sendHttp(address, SESSION_TRACE_PATH, 'GET');
 	} catch (cause) {
 		const message = cause instanceof Error ? cause.message : String(cause);
 		throw new Error(
-			`could not reach the session server at ${baseUrl}: ${message}`,
+			`could not reach the session server at ${describeAddress(address)}: ` +
+				`${message}`,
 		);
 	}
-	const reply = (await res.json()) as SessionRpcResponse;
+	const reply = JSON.parse(text) as SessionRpcResponse;
 	if (reply.ok) {
 		return (reply.value ?? []) as readonly VerbTraceEntry[];
 	}

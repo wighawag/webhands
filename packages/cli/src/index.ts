@@ -22,6 +22,7 @@ export {
 	CTA_ENV_VAR,
 	DEFAULT_PROFILE,
 	transportForPolicy,
+	resolveServeSocketPath,
 	type CliDeps,
 	type LaunchPolicy,
 	type ServeSession,

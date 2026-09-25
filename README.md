@@ -516,6 +516,27 @@ than a clean residential one. This is a deliberate, scoped opt-in deviation from
 the "own IP" default (see
 [`docs/adr/0009`](docs/adr/0009-opt-in-socks-proxy-all-traffic-and-dns.md)).
 
+## Optional: serve over a unix socket (when loopback is unreachable)
+
+`serve` listens on a loopback TCP port by default. If your account cannot reach loopback at all, serve on a **unix socket** instead:
+
+```sh
+# Linux/macOS. The socket is created 0600 and owned by you; that IS the access control.
+npx webhands serve --socket ~/.webhands/session.sock &
+
+# Verbs need NO flag: they read the transport from the endpoint file.
+npx webhands goto https://example.com/
+npx webhands eval "document.title"
+npx webhands stop
+
+# Env-var form, for a wrapper or a service unit that cannot change the command line:
+WEBHANDS_SOCKET=~/.webhands/session.sock npx webhands serve &
+```
+
+The symptom this treats is **anything but a connection refusal**: `serve` reports `ok: true` with a URL and stays alive, and then every verb fails with `could not reach the session server at http://127.0.0.1:<port>`, as does a plain `curl` against it. A refusal is the one shape that means nothing is listening (restart `serve`). A timeout or a reset means the server is healthy and the address is unusable, which is what a per-uid packet filter (`ip daddr 127.0.0.0/8 drop`, as used to force an account's egress through a specific proxy or Tor) leaves you with. Such a rule drops both directions, so no other host or port helps. A unix socket is not IP traffic and traverses no filter chain, which is why it works.
+
+TCP stays the default and is unchanged. Do not reach for this otherwise: it adds a filesystem path with a lifecycle (it is unlinked on `stop`, and a socket left by a crash is cleared by the next `serve`). Windows is not covered and refuses with a clear error, because Node would give you a named pipe there, which does not carry the ownership and mode this relies on. `serve --socket` reports `transport: "socket"` and a `socket` path in place of `url`, and note that `--expose-cdp` stays on loopback TCP regardless (`serve` warns if you combine them). See [`docs/adr/0017`](docs/adr/0017-serve-over-a-unix-socket-when-loopback-is-unreachable.md).
+
 ## Security note (the `serve` endpoint runs arbitrary code)
 
 The page verbs execute caller-supplied expressions: `eval` runs a JS expression
@@ -541,3 +562,9 @@ The same loopback-only rule below covers it.
   localhost (the default); never bind it to a public interface or hand its URL to
   code you do not trust. Anyone who can call it can run arbitrary JavaScript in
   your logged-in session (`eval`, `script`, and the raw Playwright locators).
+- **In `--socket` mode, the socket file is the whole gate.** There is no
+  authentication on the session RPC in either mode; TCP's protection is that it
+  binds loopback, and the socket's is its inode, because connecting requires
+  write permission on it. webhands creates it `0600` and owned by you, so keep it
+  that way: do not `chmod` it wider, and do not put it in a directory others can
+  write.

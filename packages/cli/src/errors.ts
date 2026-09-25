@@ -116,6 +116,17 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// A session is already live; v1 holds exactly one. The fix is to tear it
 			// down before starting another.
 			return `${binary} stop`;
+		case 'socket-unsupported-platform':
+			// This platform has no unix socket in the sense the mode needs (Windows
+			// would give a named pipe, which carries none of the ownership+mode that
+			// IS the access control). There is no flag that fixes the platform, so
+			// the fix is the default TCP serve.
+			return `${binary} serve  # drop --socket: TCP is the default and works here`;
+		case 'invalid-socket-path':
+			// Either over the kernel's sun_path limit, or occupied by something that
+			// is NOT a socket (which we refuse to delete). Both are fixed by naming a
+			// different, shorter path; the conventional one is short by construction.
+			return `${binary} serve --socket ~/.webhands/session.sock  # a short path, not an existing file`;
 		case 'cross-origin-frame':
 			// `eval --frame` reaches the top document and SAME-ORIGIN child frames
 			// only (page-world JS cannot cross a security boundary). There is no

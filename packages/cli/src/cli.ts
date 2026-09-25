@@ -17,6 +17,8 @@ import {
 	readSessionEndpoint,
 	readSessionTrace,
 	clearSessionEndpoint,
+	removeSessionSocket,
+	SESSION_SOCKET_ENV,
 	NoLiveServerError,
 	SessionAlreadyActiveError,
 	startSessionServer,
@@ -37,7 +39,8 @@ import {
 	type WaitCondition,
 } from '@webhands/core';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
-import {dirname} from 'node:path';
+import {dirname, join} from 'node:path';
+import {homedir} from 'node:os';
 import {mapControllerError} from './errors.js';
 import {
 	createDefaultSessionProvider,
@@ -104,7 +107,17 @@ export interface CliDeps {
  */
 export type ServeSession = (
 	target: OpenTarget,
-	options: {root?: string; env?: NodeJS.ProcessEnv},
+	options: {
+		root?: string;
+		env?: NodeJS.ProcessEnv;
+		/**
+		 * Serve on a UNIX SOCKET at this path instead of a TCP port (ADR-0017).
+		 * Rides with the location options rather than the {@link LaunchPolicy}
+		 * because it configures the LISTENER, not the browser, which is also how
+		 * `core`'s `SessionServerOptions` groups it.
+		 */
+		socketPath?: string;
+	},
 	launchPolicy?: LaunchPolicy,
 ) => Promise<RunningSessionServer>;
 
@@ -187,6 +200,38 @@ const connectionOptions = z.object({
 				'(attach mode, Chromium-only). When set, attach is used instead of launch.',
 		),
 });
+
+/**
+ * Resolve the unix socket path `serve` should listen on, or `undefined` for the
+ * default TCP listener (ADR-0017).
+ *
+ * Precedence is FLAG then env var, matching every other override in the tool
+ * (`WEBHANDS_HOME`, `WEBHANDS_CHROME`): the explicit command line wins, and the
+ * env var serves the caller who cannot easily change the command line (a
+ * wrapper script, a service unit, a jailed shell's profile). An empty string
+ * from either source means "unset", so `WEBHANDS_SOCKET=` disables rather than
+ * asking for a socket named "".
+ *
+ * A leading `~/` is expanded. The shell does that for `--socket ~/x.sock`, but
+ * NOT for an env var assignment or a quoted value, and the failure mode there is
+ * silent and confusing: we would create a directory literally named `~` in the
+ * cwd and serve inside it, so the user's `webhands` would advertise a socket at
+ * a path they cannot find.
+ *
+ * Exported for its own test: it is pure, and the precedence is the kind of thing
+ * that is quietly got wrong.
+ */
+export function resolveServeSocketPath(
+	flag: string | undefined,
+	env: NodeJS.ProcessEnv,
+): string | undefined {
+	const chosen =
+		flag !== undefined && flag !== '' ? flag : (env[SESSION_SOCKET_ENV] ?? '');
+	if (chosen === '') return undefined;
+	if (chosen === '~') return homedir();
+	if (chosen.startsWith('~/')) return join(homedir(), chosen.slice(2));
+	return chosen;
+}
 
 /** Resolve the {@link OpenTarget} for a page verb from its connection options. */
 function targetFrom(options: {profile: string; endpoint?: string}): OpenTarget {
@@ -771,6 +816,18 @@ export function createCli(deps: CliDeps = {}) {
 					'Show the browser window (default: headless). Ignored under ' +
 						'--real-chrome, which is always visible so you can take the browser over.',
 				),
+			socket: z
+				.string()
+				.optional()
+				.describe(
+					'Serve on a UNIX SOCKET at this path instead of a TCP port (Linux/macOS). ' +
+						'For a caller that cannot reach loopback at all: a per-uid packet filter ' +
+						'that drops 127.0.0.0/8 leaves a healthy TCP server unreachable, and a ' +
+						'unix socket is not IP traffic so it crosses no filter. The socket is ' +
+						'created 0600 and owned by you, which IS the access control. Verbs need ' +
+						'no flag: they read the transport from the endpoint file. ' +
+						`Conventional path: ~/.webhands/session.sock. Env: ${SESSION_SOCKET_ENV}.`,
+				),
 			...stealthOptions.shape,
 			...realChromeOptions.shape,
 			...exposeCdpOptions.shape,
@@ -779,7 +836,29 @@ export function createCli(deps: CliDeps = {}) {
 		output: z.object({
 			ok: z.literal(true),
 			verb: z.literal('serve'),
-			url: z.string().describe('The endpoint client verbs discover and call.'),
+			transport: z
+				.enum(['tcp', 'socket'])
+				.describe(
+					'Which listener came up: `tcp` (the default, reported in `url`) or ' +
+						'`socket` (reported in `socket`). Stated explicitly so a caller ' +
+						'parsing this envelope never has to infer the mode from which ' +
+						'address field is present.',
+				),
+			url: z
+				.string()
+				.optional()
+				.describe(
+					'The endpoint client verbs discover and call. Present in `tcp` mode ' +
+						'only: a socket-served session has no URL, and inventing one would ' +
+						'name an address that is wrong or someone else\u2019s listener.',
+				),
+			socket: z
+				.string()
+				.optional()
+				.describe(
+					'The unix socket path client verbs discover and call. Present in ' +
+						'`socket` mode only.',
+				),
 			pid: z
 				.number()
 				.describe('The served process PID (for `stop` / signals).'),
@@ -804,10 +883,17 @@ export function createCli(deps: CliDeps = {}) {
 		async run(c) {
 			try {
 				// Single session in v1: refuse to bring up a second while one is live.
+				// IDENTICAL in both transports: the guard is the endpoint FILE, which a
+				// socket-mode serve writes exactly as a TCP one does (ADR-0017).
 				const existing = await readSessionEndpoint(home);
 				if (existing !== undefined) {
 					throw new SessionAlreadyActiveError();
 				}
+				// Unix socket mode: the flag wins over the env var (ADR-0017).
+				const socketPath = resolveServeSocketPath(
+					c.options.socket,
+					home.env ?? process.env,
+				);
 				const target: OpenTarget =
 					c.options.endpoint !== undefined && c.options.endpoint !== ''
 						? {mode: 'attach', endpoint: c.options.endpoint}
@@ -886,7 +972,23 @@ export function createCli(deps: CliDeps = {}) {
 							'driving surface.',
 					);
 				}
-				const server = await serveSession(target, home, policy);
+				// `--socket --expose-cdp`: the socket mode exists for a caller that
+				// cannot reach loopback, and the CDP endpoint we would advertise is a
+				// loopback TCP address. Advertising it silently would hand that caller
+				// an address with the exact failure --socket was chosen to avoid.
+				if (socketPath !== undefined && policy.exposeCdp === true) {
+					warnings.push(
+						'--expose-cdp advertises a LOOPBACK TCP address (the browser\u2019s ' +
+							'remote-debugging port), which a caller that needs --socket to ' +
+							'reach this server very likely cannot reach either. The session ' +
+							'RPC is on the socket; only the CDP surface stays on TCP.',
+					);
+				}
+				const server = await serveSession(
+					target,
+					{...home, ...(socketPath !== undefined ? {socketPath} : {})},
+					policy,
+				);
 				// Explicit teardown on signal: closing the browser + clearing the
 				// endpoint file is the server's `stop`. We DO NOT auto-spawn and we DO
 				// NOT auto-teardown on anything but an explicit stop/signal (ADR-0005).
@@ -899,7 +1001,18 @@ export function createCli(deps: CliDeps = {}) {
 					{
 						ok: true as const,
 						verb: 'serve' as const,
-						url: server.endpoint.url,
+						// Exactly one address field is present, and `transport` names which
+						// (the endpoint union guarantees the pair stays consistent).
+						transport:
+							server.endpoint.socket !== undefined
+								? ('socket' as const)
+								: ('tcp' as const),
+						...(server.endpoint.url !== undefined
+							? {url: server.endpoint.url}
+							: {}),
+						...(server.endpoint.socket !== undefined
+							? {socket: server.endpoint.socket}
+							: {}),
 						pid: server.endpoint.pid,
 						...(server.endpoint.cdpEndpoint !== undefined
 							? {cdpEndpoint: server.endpoint.cdpEndpoint}
@@ -956,6 +1069,20 @@ export function createCli(deps: CliDeps = {}) {
 					// The process is already gone; clearing the file below suffices.
 				}
 				await clearSessionEndpoint(home);
+				// A socket-served session leaves a socket FILE, which is advertised
+				// state exactly like the endpoint file, so it is cleared the same way
+				// and for the same reason: a dead server must not leave behind a path
+				// that looks live (ADR-0017). The served process removes it on its own
+				// clean stop; this covers the stale case where it is already gone.
+				if (endpoint.socket !== undefined) {
+					try {
+						await removeSessionSocket(endpoint.socket);
+					} catch {
+						// Best-effort, and deliberately not fatal: `stop` reporting a
+						// failure here would leave the user unable to stop a session whose
+						// socket path has since been replaced by something else.
+					}
+				}
 				return c.ok({
 					ok: true as const,
 					verb: 'stop' as const,
@@ -1434,7 +1561,7 @@ export function createCli(deps: CliDeps = {}) {
 				if (endpoint === undefined) {
 					throw new NoLiveServerError();
 				}
-				const entries = await readSessionTrace(endpoint.url);
+				const entries = await readSessionTrace(endpoint);
 
 				const {scaffold, notes, replayScript} = distillTrace(entries, {
 					...(c.options.summary !== undefined
@@ -1467,7 +1594,7 @@ export function createCli(deps: CliDeps = {}) {
 					| {passed: boolean; result?: unknown; error?: string}
 					| undefined;
 				if (c.options.test) {
-					const session = connectRemoteSession(endpoint.url);
+					const session = connectRemoteSession(endpoint);
 					try {
 						const result = await session.page.script(replayScript);
 						test = {passed: true, result};
@@ -2344,7 +2471,7 @@ export function createCli(deps: CliDeps = {}) {
  */
 async function defaultServeSession(
 	target: OpenTarget,
-	home: {root?: string; env?: NodeJS.ProcessEnv},
+	home: {root?: string; env?: NodeJS.ProcessEnv; socketPath?: string},
 	launchPolicy: LaunchPolicy = {},
 ): Promise<RunningSessionServer> {
 	// (The transport choice is `transportForPolicy`, exported so a test can assert
@@ -2363,6 +2490,8 @@ async function defaultServeSession(
 
 	const {transport, cdpEndpoint} = transportForPolicy(home, launchPolicy);
 	const options: SessionServerOptions = {
+		// Carries `root`/`env` AND (when asked for) `socketPath`, which `core`
+		// groups with them because it configures the listener, not the browser.
 		...home,
 		transport,
 		// Present only when the policy actually has an endpoint to advertise (see

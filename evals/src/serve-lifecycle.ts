@@ -92,6 +92,31 @@ interface Endpoint {
 }
 
 /**
+ * This harness requires a TCP serve, and says so the moment it is handed
+ * something else (ADR-0017).
+ *
+ * It reads the endpoint file itself rather than importing `core`'s reader, to
+ * stay decoupled from the package under test, which means it only understands
+ * the `url` shape. A socket-shaped file would otherwise fall through the poll
+ * loop below and be reported as "serve did not advertise an endpoint within
+ * 60000ms", which is FALSE (serve is healthy) and sends the reader looking in
+ * the wrong place. The harness pins `WEBHANDS_SOCKET` empty for its own child,
+ * so reaching this means an endpoint file from something else.
+ */
+function assertTcpEndpoint(parsed: {socket?: unknown}, path: string): void {
+	if (typeof parsed.socket === 'string' && parsed.socket !== '') {
+		throw new Error(
+			`the endpoint file ${path} advertises a UNIX SOCKET, but this eval ` +
+				`harness drives the session over TCP (it reads the endpoint file ` +
+				`itself and speaks only the url shape). A serve started by this ` +
+				`harness pins WEBHANDS_SOCKET empty, so this file belongs to another ` +
+				`session sharing this WEBHANDS_HOME: stop it, or give the harness its ` +
+				`own home root.`,
+		);
+	}
+}
+
+/**
  * Start a harness-owned `serve` session against the ISOLATED home and return it
  * once the endpoint file appears. The harness spawns `webhands serve` as a
  * long-lived child (pinning `WEBHANDS_HOME`), polls for the endpoint file, and
@@ -107,6 +132,15 @@ export async function startServe(
 		...process.env,
 		...opts.env,
 		WEBHANDS_HOME: opts.home,
+		// PIN THE TRANSPORT TOO, for the same reason the home root is pinned.
+		// `WEBHANDS_SOCKET` (ADR-0017) asks `serve` to listen on a unix socket, and
+		// the operator running these evals may well have it exported: it is the
+		// documented way to drive webhands from an account whose loopback is
+		// filtered. Inherited here it would point the harness's own serve at the
+		// user's socket path, which is OUTSIDE the isolated home we just pinned, so
+		// the harness would take over the path their live session advertises. Empty
+		// reads as unset, so this restores the TCP default for the child only.
+		WEBHANDS_SOCKET: '',
 	};
 	const serveArgs = ['serve', ...serveFlags(opts.launch)];
 	const child = spawn(
@@ -207,7 +241,10 @@ async function readEndpoint(path: string): Promise<Endpoint | undefined> {
 		return undefined;
 	}
 	try {
-		const parsed = JSON.parse(text) as Partial<Endpoint>;
+		const parsed = JSON.parse(text) as Partial<Endpoint> & {socket?: unknown};
+		// A socket-shaped file is a LOUD failure, not a "not ready yet": polling
+		// for it would burn the whole ready timeout and then lie about the cause.
+		assertTcpEndpoint(parsed, path);
 		if (
 			typeof parsed.url === 'string' &&
 			parsed.url !== '' &&
@@ -221,8 +258,12 @@ async function readEndpoint(path: string): Promise<Endpoint | undefined> {
 					: {}),
 			};
 		}
-	} catch {
-		// partial write; treat as not-yet-ready
+	} catch (cause) {
+		// A partial write is "not ready yet"; the socket-shaped refusal above is a
+		// real verdict and must not be swallowed with it.
+		if (cause instanceof Error && cause.message.includes('UNIX SOCKET')) {
+			throw cause;
+		}
 	}
 	return undefined;
 }
