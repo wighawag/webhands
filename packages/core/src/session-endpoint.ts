@@ -27,13 +27,13 @@ import {
 export const SESSION_ENDPOINT_FILENAME = 'session-endpoint.json';
 
 /**
- * What the served process advertises about itself for client discovery. Kept
- * deliberately small: the base `url` a client posts verb calls to, plus the
- * `pid` so a human/test can confirm or signal the owning process.
+ * What EVERY advertised endpoint carries, whichever transport it names.
+ *
+ * The endpoint file is the single source of truth for HOW to reach the session
+ * (ADR-0005, ADR-0017): a client reads it and learns both the address and the
+ * transport, so no verb ever needs a `--socket` flag of its own.
  */
-export interface SessionEndpoint {
-	/** The base HTTP URL the served session listens on (e.g. `http://127.0.0.1:53113`). */
-	readonly url: string;
+interface SessionEndpointCommon {
 	/** The PID of the served process, for confirmation / signalling. */
 	readonly pid: number;
 	/**
@@ -54,6 +54,47 @@ export interface SessionEndpoint {
 	 */
 	readonly cdpEndpoint?: string;
 }
+
+/**
+ * A session served over a TCP port: the DEFAULT, and the only shape written
+ * before ADR-0017. `url` is the base a client posts verb calls to.
+ */
+export interface TcpSessionEndpoint extends SessionEndpointCommon {
+	/** The base HTTP URL the served session listens on (e.g. `http://127.0.0.1:53113`). */
+	readonly url: string;
+	/** Never set in TCP mode; present so the union discriminates on absence. */
+	readonly socket?: undefined;
+}
+
+/**
+ * A session served over a UNIX SOCKET (`serve --socket <path>`, ADR-0017): the
+ * mode for a caller that CANNOT reach loopback, because a unix socket is not IP
+ * traffic and so traverses no packet-filter chain at all.
+ *
+ * `url` is deliberately ABSENT rather than synthesised. There is no honest URL
+ * for a socket-served session (`http://localhost/` would name an address that is
+ * either wrong or, worse, someone else's listener), and the absence is exactly
+ * what makes an OLD url-only client degrade to "no live server" instead of
+ * dialling the wrong thing (see {@link readSessionEndpoint}).
+ */
+export interface SocketSessionEndpoint extends SessionEndpointCommon {
+	/** Absolute path of the listening unix socket, mode 0600, owned by the serving user. */
+	readonly socket: string;
+	/** Never set in socket mode; present so the union discriminates on absence. */
+	readonly url?: undefined;
+}
+
+/**
+ * What the served process advertises about itself for client discovery: an
+ * address (a TCP {@link TcpSessionEndpoint.url} or a
+ * {@link SocketSessionEndpoint.socket} path) plus the `pid` so a human/test can
+ * confirm or signal the owning process.
+ *
+ * It is a UNION, not a record with two optional fields, because a session is
+ * reachable exactly one way and a client must not be able to read a
+ * socket-served endpoint as though it had a URL.
+ */
+export type SessionEndpoint = TcpSessionEndpoint | SocketSessionEndpoint;
 
 /**
  * Resolve the absolute path of the endpoint file for a given home root. Pure
@@ -86,6 +127,23 @@ export async function writeSessionEndpoint(
  * is absent or unreadable). Discovery is best-effort: a malformed file is
  * treated as "no live server" so a client falls through to the clear
  * "run `serve` first" error rather than crashing on a partial write.
+ *
+ * TRANSPORT PRECEDENCE: an advertised `socket` WINS over an advertised `url`.
+ * The socket mode exists because loopback is unreachable for the caller
+ * (ADR-0017), so silently preferring TCP when both appear would send a verb at
+ * the one address that cannot work. A file carrying both is not a shape we
+ * write; treating socket as authoritative is the safe reading of it.
+ *
+ * COMPATIBILITY, both directions (ADR-0017):
+ * - A NEW client reading an OLD url-shaped file gets the TCP endpoint, exactly
+ *   as before. That is why the url branch is kept verbatim rather than folded
+ *   into a generic "address" field, which would have made every previously
+ *   written endpoint file unreadable.
+ * - An OLD client (this function as it shipped through 0.7.x, which required
+ *   `url` + `pid`) reading a NEW socket-shaped file finds no `url` and returns
+ *   `undefined`, i.e. "no live server", so it prints "run `serve` first" rather
+ *   than crashing. That degradation is DESIGNED, and the reason a socket
+ *   endpoint carries no synthetic `url`.
  */
 export async function readSessionEndpoint(
 	options: ProfileLocationOptions = {},
@@ -98,19 +156,27 @@ export async function readSessionEndpoint(
 		return undefined;
 	}
 	try {
-		const parsed = JSON.parse(text) as Partial<SessionEndpoint>;
-		if (
-			typeof parsed.url === 'string' &&
-			parsed.url !== '' &&
-			typeof parsed.pid === 'number'
-		) {
-			return {
-				url: parsed.url,
-				pid: parsed.pid,
-				...(typeof parsed.cdpEndpoint === 'string' && parsed.cdpEndpoint !== ''
-					? {cdpEndpoint: parsed.cdpEndpoint}
-					: {}),
-			};
+		// Typed as `unknown` fields, not as a Partial of the union: the file is
+		// UNTRUSTED input (a partial write, an older or newer writer), and every
+		// field below is validated before it is believed.
+		const parsed = JSON.parse(text) as {
+			url?: unknown;
+			socket?: unknown;
+			pid?: unknown;
+			cdpEndpoint?: unknown;
+		};
+		if (typeof parsed.pid !== 'number') {
+			return undefined;
+		}
+		const cdp =
+			typeof parsed.cdpEndpoint === 'string' && parsed.cdpEndpoint !== ''
+				? {cdpEndpoint: parsed.cdpEndpoint}
+				: {};
+		if (typeof parsed.socket === 'string' && parsed.socket !== '') {
+			return {socket: parsed.socket, pid: parsed.pid, ...cdp};
+		}
+		if (typeof parsed.url === 'string' && parsed.url !== '') {
+			return {url: parsed.url, pid: parsed.pid, ...cdp};
 		}
 	} catch {
 		// fall through

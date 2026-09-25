@@ -111,6 +111,8 @@ export {
 	RealChromeStartError,
 	RealChromeReuseConflictError,
 	ProxyAuthUnsupportedError,
+	SocketUnsupportedError,
+	InvalidSocketPathError,
 	isControllerError,
 	type ControllerErrorCode,
 } from './errors.js';
@@ -144,11 +146,15 @@ export {
 	clearSessionEndpoint,
 	SESSION_ENDPOINT_FILENAME,
 	type SessionEndpoint,
+	type TcpSessionEndpoint,
+	type SocketSessionEndpoint,
 } from './session-endpoint.js';
 
 export {
 	startSessionServer,
 	sessionAlreadyActive,
+	removeSessionSocket,
+	SESSION_SOCKET_ENV,
 	type SessionServerOptions,
 	type RunningSessionServer,
 } from './session-server.js';
@@ -161,7 +167,12 @@ export {
 	type VerbTraceEntry,
 } from './verb-trace.js';
 
-export {connectRemoteSession, readSessionTrace} from './remote-session.js';
+export {
+	connectRemoteSession,
+	readSessionTrace,
+	type SessionAddress,
+	type SessionTarget,
+} from './remote-session.js';
 
 export {
 	compileScriptSource,

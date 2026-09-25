@@ -26,6 +26,8 @@ export type ControllerErrorCode =
 	| 'attach-no-context'
 	| 'no-live-server'
 	| 'session-already-active'
+	| 'socket-unsupported-platform'
+	| 'invalid-socket-path'
 	| 'cross-origin-frame'
 	| 'screenshot-path-outside-managed-dir'
 	| 'stale-ref'
@@ -487,6 +489,61 @@ export class SessionAlreadyActiveError extends ControllerError {
 		options?: {cause?: unknown},
 	) {
 		super(message, options);
+	}
+}
+
+/**
+ * `serve --socket` was asked for on a platform that has no unix socket in the
+ * sense this mode NEEDS (ADR-0017).
+ *
+ * Node accepts `listen(path)` on Windows, but it creates a NAMED PIPE, and a
+ * named pipe carries none of what makes this mode safe: the whole access
+ * control here is the socket inode's owner plus its 0600 mode, since `connect()`
+ * requires write permission on it. Pretending to honour the flag would hand the
+ * user a channel with different, unstated access rules, so it refuses loudly
+ * instead. TCP (the default) is unaffected and is what Windows should use.
+ */
+export class SocketUnsupportedError extends ControllerError {
+	readonly code = 'socket-unsupported-platform';
+	/** The platform that was refused (`process.platform`). */
+	readonly platform: string;
+
+	constructor(platform: string, options?: {cause?: unknown}) {
+		super(
+			`Serving over a unix socket is not supported on ${platform}: Node maps ` +
+				`listen(<path>) there to a named pipe, which does not carry the file ` +
+				`ownership and 0600 mode that ARE the access control for this mode. ` +
+				`Use the default TCP serve instead.`,
+			options,
+		);
+		this.platform = platform;
+	}
+}
+
+/**
+ * The `--socket` path cannot be used as a listening unix socket (ADR-0017).
+ *
+ * Two causes, both worth naming rather than letting the OS speak:
+ * 1. **Too long.** `sockaddr_un.sun_path` is 108 bytes on Linux and 104 on
+ *    macOS, a limit nothing else in the tool has, and a path built from a long
+ *    home root or a deep temp dir crosses it. The kernel's own complaint is an
+ *    opaque `EINVAL`/`ENAMETOOLONG` on `listen`.
+ * 2. **Occupied by something that is NOT a socket.** A stale SOCKET is ours to
+ *    unlink (that is the documented crash-recovery path), but a regular file or
+ *    a directory at that path is the user's, and deleting it to make room would
+ *    be destroying data to satisfy a flag.
+ */
+export class InvalidSocketPathError extends ControllerError {
+	readonly code = 'invalid-socket-path';
+	/** The rejected path. */
+	readonly socketPath: string;
+
+	constructor(socketPath: string, reason: string, options?: {cause?: unknown}) {
+		super(
+			`Cannot serve on the unix socket ${JSON.stringify(socketPath)}: ${reason}`,
+			options,
+		);
+		this.socketPath = socketPath;
 	}
 }
 
