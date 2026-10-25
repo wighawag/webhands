@@ -63,10 +63,7 @@ npx webhands stop
 
 Three things a new user should know up front:
 
-- **You log in once, in a window you can see.** Run `npx webhands setup-profile`
-  (or start with `serve --headed`) and sign in / clear any cookie or anti-bot
-  prompt yourself. That state is saved to a dedicated profile and reused on later
-  runs. The tool never bypasses logins or solves CAPTCHAs — you do that part.
+- **You log in once, in a window you can see.** Run `npx webhands setup-profile` and sign in / clear any cookie or anti-bot prompt yourself. That window is a PLAIN browser, not one under automation, so sign-in pages and bot checks see an ordinary browser. The state is saved to a dedicated profile and reused on later runs. The tool never bypasses logins or solves CAPTCHAs: you do that part.
 - **It acts as the real, logged-in you.** Reading pages is low-risk; let the agent
   do that freely. But anything that spends money, books, posts, or changes account
   state should be YOUR explicit decision — have the agent surface the link and let
@@ -141,12 +138,7 @@ thin client that drives the SAME live page and exits (see
 [`docs/adr/0005`](docs/adr/0005-incur-serve-hosts-the-long-lived-session.md)). The
 typical end-to-end flow:
 
-1. `webhands setup-profile`: opens the dedicated profile in a
-   VISIBLE browser so you log in / clear any anti-bot challenge ONCE. State
-   (cookies, login, challenge clearance) persists on disk. It takes the SAME
-   browser-selection flags as `serve` (`--use-system-browser`, `--stealth`,
-   `--proxy`, `--no-viewport`): a profile dir is written by a specific browser
-   build, so set it up with the browser you will later drive it with.
+1. `webhands setup-profile`: opens the dedicated profile in a VISIBLE, PLAIN browser (started as an ordinary process: no Playwright, no debugging port) so you log in / clear any anti-bot challenge ONCE, then waits until you quit it. State (cookies, login, challenge clearance) persists on disk. A profile dir is written by a specific browser build, so set it up with the browser you will later drive it with: the default is webhands' pinned Chromium, `--real-chrome` (or `--use-system-browser chrome`) is your system Chrome, `--stealth` is Patchright's Chromium. `--url <sign-in page>` opens straight on the page you need, and `--proxy` makes you log in from the same exit IP.
 2. `webhands serve --headless`: launches the one browser against
    that saved profile and keeps it alive (runs until `stop` or Ctrl-C).
 3. `webhands goto <url>` then `webhands snapshot` (and
@@ -314,6 +306,17 @@ just as visible on that signal as a Playwright launch. What differs is everythin
 else: no launch-hardening flags, a real warm profile with history and prefs, a real
 window, your own IP and your own behaviour. Details and the measurements are in
 [`docs/adr/0014`](docs/adr/0014-attach-to-the-users-own-chrome-is-the-anti-bot-answer.md).
+
+**The recommended flow for a protected site: log in plainly, then automate.** A site behind Cloudflare Turnstile, or Google's own sign-in, refuses a browser with a debugging port ("Verifying your browser" forever; "This browser or app may not be secure"). `setup-profile` starts a browser with no port at all, so do the login there, then attach:
+
+```sh
+# 1. A plain Chrome on the dedicated profile, no automation at all. Log in, then quit it.
+npx webhands setup-profile --real-chrome --profile luma --url https://luma.com/
+# 2. Drive the SAME profile with the SAME Chrome. The login carries over.
+npx webhands serve --real-chrome --profile luma
+```
+
+**Its limit, measured:** the login carries over, but a site that re-challenges on an ACTION still sees `navigator.webdriver === true` in step 2 and can block it. On Luma, the event Register button re-runs Turnstile and was refused while attached over CDP. A human has to do such steps in a browser with no debugging port: `stop`, run `setup-profile` again on the same profile, do the step there, quit, and resume with `serve`. Clicking it yourself in the `serve --real-chrome` window is probably not enough (not measured), because the port, and so the flag, is still on. Details in `work/notes/findings/cloudflare-turnstile-refuses-any-browser-with-a-debugging-port.md`.
 
 **Lifetime.** webhands spawned that browser, so `stop` terminates it, unlike plain
 `--endpoint` attach where the browser is yours and is left alone. `--keep-browser`

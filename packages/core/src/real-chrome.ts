@@ -69,6 +69,17 @@ const CANDIDATES: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * The Chrome-family executables {@link discoverChromeExecutable} looks for on
+ * `platform`, in preference order. Exposed so a caller reporting "none found"
+ * (the typed {@link RealChromeNotFoundError}) names the SAME list that was tried.
+ */
+export function chromeCandidates(
+	platform: string = process.platform,
+): readonly string[] {
+	return CANDIDATES[platform] ?? CANDIDATES.linux!;
+}
+
+/**
  * The env var naming the Chrome executable to spawn, for a user whose install is
  * somewhere the candidate list does not cover (a Flatpak wrapper, a versioned
  * build, a non-English Windows path). Checked BEFORE the candidates, so it is
@@ -439,7 +450,7 @@ async function terminate(child: ChildProcess): Promise<void> {
  * (`--no-sandbox --disable-dev-shm-usage`), and a quoting mini-language would be a
  * worse trade than the limitation.
  */
-function envArgs(env: NodeJS.ProcessEnv): string[] {
+export function envArgs(env: NodeJS.ProcessEnv): string[] {
 	const raw = env[REAL_CHROME_ARGS_ENV];
 	return raw === undefined || raw.trim() === '' ? [] : raw.trim().split(/\s+/);
 }
@@ -455,7 +466,7 @@ const STDERR_TAIL_BYTES = 2_000;
  * TAIL means a browser that logs for hours cannot grow our memory. The getter is
  * read only on the failure path.
  */
-function captureTail(
+export function captureTail(
 	child: ChildProcess,
 	maxBytes: number,
 ): {read: () => Promise<string>} {

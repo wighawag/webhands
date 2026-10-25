@@ -184,7 +184,7 @@ export interface PlaywrightLaunchTransportOptions {
  * its types at build time, since it is an OPTIONAL dependency that is legitimately
  * absent when stealth is never enabled.
  */
-const STEALTH_PACKAGE = 'patchright';
+export const STEALTH_PACKAGE = 'patchright';
 
 /** The default lazy import of the OPTIONAL `patchright` dependency. */
 const defaultStealthImporter: StealthChromiumImporter = async () => {
@@ -549,7 +549,7 @@ function missingExecutablePath(cause: unknown): string | undefined {
  * filtered to the SAME browser family so a missing chromium does not recite the
  * webkit and firefox builds at the reader.
  */
-async function siblingBrowserBuilds(
+export async function siblingBrowserBuilds(
 	executablePath: string | undefined,
 	browser: string,
 ): Promise<readonly string[] | undefined> {

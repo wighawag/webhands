@@ -46,8 +46,7 @@ The session that persists across invocations is held by **`serve`**, NOT by
 `launch`. A bare `launch` opens and closes within one invocation and does not keep
 a session alive for later verbs — do not build the pipe on `launch`.
 
-1. One-time, per profile: `webhands setup-profile` (headed) — human logs in /
-   clears any challenge once. State persists on disk.
+1. One-time, per profile: `webhands setup-profile`: a human logs in / clears any challenge once in a PLAIN browser window (no automation, no debugging port), then quits it. The command blocks until they do. State persists on disk.
 2. Bring the session up and KEEP it alive: `webhands serve` (headless default; add
    `--headed` to show the window).
 3. Drive it (separate invocations against the same page):
@@ -239,6 +238,10 @@ The escalation ladder, cheapest first:
    visible so the human can log in and take over. Equivalent by hand:
    `google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/scratch` then
    `webhands serve --endpoint http://127.0.0.1:9222`.
+
+   **For a site behind Cloudflare Turnstile, or a Google sign-in, do the LOGIN in `setup-profile` first, never under `serve`.** Any browser with a debugging port (every `serve` mode, `--real-chrome` included) has `navigator.webdriver === true`, and Turnstile then loops on "Verifying your browser" while Google says "This browser or app may not be secure". `setup-profile` starts a browser with no port, so the human can pass both. The flow: `webhands setup-profile --real-chrome --profile <name> --url <sign-in page>` (human logs in, quits the window), then `webhands serve --real-chrome --profile <name>` (the login carries over). Use the SAME selection on both, so the profile is driven by the build that wrote it.
+
+   **Its limit:** a site that re-challenges on an ACTION (measured: Luma's event Register button re-runs Turnstile) still sees `navigator.webdriver` under `serve` and blocks it. Do NOT retry or try to work around it. Tell the human that step needs them: `webhands stop`, they run `setup-profile` on the same profile, do the step themselves, quit, and you resume with `serve`.
 3. **If you get blocked MID-session, clear the verdict cookies** (see the recovery
    section below) rather than restarting everything.
 
@@ -306,12 +309,8 @@ separate `--frame <css>` flag.
 
 Lifecycle + mode:
 
-- `setup-profile [--profile <name>] [--stealth] [--use-system-browser <ch>] [--proxy <socks-url>] [--no-viewport]`
-  — one-time HEADED login / challenge-clear; HOLDS the window open until you close
-  it, then persists the profile state. It takes the SAME browser-selection flags as
-  `serve`, and you should pass the same ones: the profile dir is written by that
-  specific browser build, so setting it up with bundled Chromium and then driving
-  it with `--use-system-browser chrome` is a mismatch.
+- `setup-profile [--profile <name>] [--url <url>] [--real-chrome] [--use-system-browser chrome] [--stealth] [--proxy <socks-url>]`
+  — one-time human login / challenge-clear in a PLAIN browser: started as an ordinary process with no Playwright, no debugging port and no automation flags, so bot checks and Google sign-in see a normal browser. Blocks until the human QUITS the browser, then reports the profile saved. `--url` opens it on the sign-in page (default `about:blank`). Pick the browser build that will later drive the profile, because a profile dir belongs to the build that wrote it: default is webhands' pinned Chromium (for plain `serve`), `--real-chrome` or `--use-system-browser chrome` is the system Chrome (for `serve --real-chrome`, resolved the same way: `WEBHANDS_CHROME`, then PATH), `--stealth` is Patchright's Chromium (for `serve --stealth`). `--proxy` makes the human log in from the same exit IP (no credentials, as with `--real-chrome`). It honours `WEBHANDS_CHROME_ARGS` (e.g. `--no-sandbox` in a container).
 - `serve [--headed] [--profile <name>] [--endpoint <url>] [--real-chrome] [--keep-browser] [--stealth] [--use-system-browser <ch>] [--proxy <socks-url>] [--no-viewport] [--expose-cdp]`
   — start & HOLD the one browser (headless default). The session it holds is what
   every later verb drives. Blocks; background it (see above).

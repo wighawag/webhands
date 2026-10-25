@@ -637,21 +637,47 @@ export function createCli(deps: CliDeps = {}) {
 
 	cli.command('setup-profile', {
 		description:
-			'Open the dedicated profile HEADED so you log in / clear a challenge ONCE; ' +
-			'later launch --headless reuses the saved session.',
+			'Open the dedicated profile in a PLAIN browser window (not under automation) ' +
+			'so you log in / clear a challenge ONCE; a later serve reuses the saved session.',
 		env: ctaEnv,
 		options: z.object({
 			profile: z
 				.string()
 				.default(DEFAULT_PROFILE)
 				.describe('Name of the dedicated profile to set up.'),
-			// The SAME browser-selection flags `launch`/`serve` take. A profile dir is
-			// written by a specific browser build, so it must be set up with the
-			// browser that will later drive it; accepting these here is what makes
-			// `setup-profile --use-system-browser chrome` then `serve
-			// --use-system-browser chrome` a consistent pair instead of an "Unknown
-			// flag" followed by a mismatched profile.
-			...stealthOptions.shape,
+			url: z
+				.string()
+				.optional()
+				.describe(
+					'Page the window opens on, e.g. the sign-in page. Default: about:blank.',
+				),
+			// Browser selection: a profile dir is written by a specific browser build,
+			// so it must be set up with the build that will later drive it. These
+			// mirror the `serve` flags that choose that build.
+			'real-chrome': z
+				.boolean()
+				.default(false)
+				.describe(
+					'Set the profile up with YOUR system Chrome, the same one `serve ' +
+						'--real-chrome` will drive (resolved the same way: ' +
+						`${REAL_CHROME_ENV}, then the usual names on PATH).`,
+				),
+			'use-system-browser': stealthOptions.shape['use-system-browser'],
+			stealth: z
+				.boolean()
+				.default(false)
+				.describe(
+					"Set the profile up with Patchright's Chromium, the build `serve " +
+						'--stealth` launches (requires `pnpm add patchright`).',
+				),
+			proxy: z
+				.string()
+				.optional()
+				.describe(
+					'Route the window through a SOCKS proxy (socks5h://host:1080), so you ' +
+						'log in from the same exit IP a later `serve --proxy` uses. No ' +
+						'credentials: Chrome supports no SOCKS5 auth (use `ssh -D 1080`).',
+				),
 			...ctaOptions.shape,
 		}),
 		output: z.object({
@@ -659,6 +685,14 @@ export function createCli(deps: CliDeps = {}) {
 			profileDir: z
 				.string()
 				.describe('Its dedicated user-data directory on disk.'),
+			executablePath: z
+				.string()
+				.describe('The browser executable the profile was set up with.'),
+			realChrome: z
+				.boolean()
+				.describe(
+					'Whether the profile was set up with the system Chrome (drive it with `serve --real-chrome`).',
+				),
 			systemBrowser: z
 				.string()
 				.optional()
@@ -668,65 +702,68 @@ export function createCli(deps: CliDeps = {}) {
 				),
 			stealth: z
 				.boolean()
-				.describe('Whether the profile was set up via the stealth engine.'),
+				.describe("Whether the profile was set up with Patchright's Chromium."),
 		}),
 		async run(c) {
 			try {
-				const policy = launchPolicyFrom(c.options);
-				const {session, location} = await runSetupProfile({
+				const realChrome = c.options['real-chrome'] === true;
+				const systemBrowser =
+					c.options['use-system-browser'] !== undefined &&
+					c.options['use-system-browser'] !== ''
+						? c.options['use-system-browser']
+						: undefined;
+				const stealth = c.options.stealth === true;
+				const {browser, location} = await runSetupProfile({
 					profile: c.options.profile,
 					...(deps.home ?? {}),
-					// Create the profile WITH the selected browser/engine, so the dir a
-					// later `launch`/`serve` reuses was written by that same build. Only
-					// the fields actually given are forwarded, so the default stays
-					// bundled-Chromium, no stealth. `exposeCdp` is deliberately NOT
-					// forwarded: setup-profile serves no RPC and needs no shared surface.
-					launch: {
-						...(policy.stealth === true ? {stealth: true} : {}),
-						...(policy.systemBrowser !== undefined
-							? {systemBrowser: policy.systemBrowser}
-							: {}),
-						...(policy.noViewport !== undefined
-							? {noViewport: policy.noViewport}
-							: {}),
-						...(policy.proxy !== undefined ? {proxy: policy.proxy} : {}),
-					},
+					// Only the fields actually given are forwarded, so the default stays
+					// the pinned bundled Chromium.
+					...(c.options.url !== undefined && c.options.url !== ''
+						? {url: c.options.url}
+						: {}),
+					...(realChrome ? {realChrome: true} : {}),
+					...(systemBrowser !== undefined ? {systemBrowser} : {}),
+					...(stealth ? {stealth: true} : {}),
+					...(c.options.proxy !== undefined && c.options.proxy !== ''
+						? {proxy: c.options.proxy}
+						: {}),
 				});
-				// `setup-profile` HOLDS the headed window open for the human's login:
-				// block until the user closes the browser (or it otherwise ends),
-				// THEN report success. (Earlier this closed the session immediately,
-				// so the window opened and vanished in the same tick.) On close the
-				// persistent context has flushed the new state to the profile dir, so
-				// the profile is set up and `launch` is the right next step.
-				await session.waitForClose();
+				// HOLD until the human quits the browser: the process exiting IS the
+				// "I am done" signal, and Chrome has flushed the profile by then.
+				await browser.waitForExit();
 				return c.ok(
 					{
 						profile: location.profile,
 						profileDir: location.profileDir,
-						// Report the browser identity the profile was written by, so the
-						// caller can drive it later with the SAME selection.
-						...(policy.systemBrowser !== undefined
-							? {systemBrowser: policy.systemBrowser}
-							: {}),
-						stealth: policy.stealth === true,
+						executablePath: browser.executablePath,
+						realChrome,
+						...(systemBrowser !== undefined ? {systemBrowser} : {}),
+						stealth,
 					},
 					ctaMeta(c, [
-						{
-							command: 'launch',
-							options: {
-								profile: location.profile,
-								// Carry the browser selection into the suggested next command:
-								// driving this profile with a DIFFERENT build is the mismatch
-								// this flag pair exists to avoid.
-								...(policy.systemBrowser !== undefined
-									? {'use-system-browser': policy.systemBrowser}
-									: {}),
-								...(policy.stealth === true ? {stealth: true} : {}),
-							},
-							description:
-								'Launch this profile headless now that it is set up (keep the ' +
-								'same browser selection it was set up with).',
-						},
+						realChrome
+							? {
+									command: 'serve',
+									options: {profile: location.profile, 'real-chrome': true},
+									description:
+										'Drive this profile with the same system Chrome it was set up with.',
+								}
+							: {
+									command: 'launch',
+									options: {
+										profile: location.profile,
+										// Carry the browser selection into the suggested next command:
+										// driving this profile with a DIFFERENT build is the mismatch
+										// the selection flags exist to avoid.
+										...(systemBrowser !== undefined
+											? {'use-system-browser': systemBrowser}
+											: {}),
+										...(stealth ? {stealth: true} : {}),
+									},
+									description:
+										'Launch this profile headless now that it is set up (keep the ' +
+										'same browser selection it was set up with).',
+								},
 					]),
 				);
 			} catch (cause) {

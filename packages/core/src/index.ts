@@ -87,9 +87,14 @@ export {bundledPlaywrightVersion} from './playwright-pin.js';
 export {
 	setupProfile,
 	buildPrompt,
+	buildSetupProfileArgs,
+	resolveSetupProfileExecutable,
+	type BrowserExit,
 	type PromptSink,
+	type SetupProfileBrowser,
 	type SetupProfileOptions,
 	type SetupProfileResult,
+	type SpawnBrowser,
 } from './setup-profile.js';
 
 export {

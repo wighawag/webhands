@@ -24,6 +24,8 @@ import {
 	type OpenTarget,
 	type RunningSessionServer,
 	type Session,
+	type BrowserExit,
+	type SetupProfileBrowser,
 } from '@webhands/core';
 import {
 	createCli,
@@ -1964,76 +1966,38 @@ describe('incur CLI wiring', () => {
 		});
 	});
 
-	describe('setup-profile HOLDS the headed window open until the user closes it', () => {
-		/** A fake session whose close is driven by the test (models the headed window). */
-		function heldSession(): {
-			session: Session;
+	describe('setup-profile HOLDS until the human quits the plain browser', () => {
+		/** A fake running browser whose exit is driven by the test (models the window). */
+		function heldBrowser(): {
+			browser: SetupProfileBrowser;
 			closeIt: () => void;
-			closedByCommand: () => boolean;
 		} {
-			let resolveClosed!: () => void;
-			const closedSignal = new Promise<void>((r) => {
-				resolveClosed = r;
+			let resolveExit!: (exit: BrowserExit) => void;
+			const exited = new Promise<BrowserExit>((r) => {
+				resolveExit = r;
 			});
-			let closedByCommand = false;
-			const page = {
-				async navigate() {},
-				async snapshot() {
-					return {url: 'stub://x', view: 'accessibility' as const, content: ''};
-				},
-				async click() {},
-				async type() {},
-				async eval() {
-					return undefined;
-				},
-				async wait() {},
-				async cookies() {
-					return [];
-				},
-				async setCookies() {},
-				async query() {
-					return [];
-				},
-				async count() {
-					return 0;
-				},
-				async exists() {
-					return false;
-				},
-				async isVisible() {
-					return false;
-				},
-				async getAttribute() {
-					return null;
-				},
-			};
-			const session: Session = {
-				page,
-				async close() {
-					closedByCommand = true;
-					resolveClosed();
-				},
-				waitForClose() {
-					return closedSignal;
-				},
-			};
 			return {
-				session,
-				closeIt: resolveClosed,
-				closedByCommand: () => closedByCommand,
+				browser: {
+					executablePath: '/fake/chromium',
+					args: ['--user-data-dir=/tmp/iso/profiles/default', 'about:blank'],
+					pid: 4242,
+					waitForExit: () => exited,
+				},
+				closeIt: () => resolveExit({code: 0, signal: null}),
 			};
 		}
 
+		const location = {
+			homeRoot: '/tmp/iso',
+			profilesRoot: '/tmp/iso/profiles',
+			profileDir: '/tmp/iso/profiles/default',
+			profile: 'default',
+		};
+
 		it('does not resolve until the user closes the window, then reports success + (with --cta) the launch cta', async () => {
-			const {session, closeIt} = heldSession();
-			const location = {
-				homeRoot: '/tmp/iso',
-				profilesRoot: '/tmp/iso/profiles',
-				profileDir: '/tmp/iso/profiles/default',
-				profile: 'default',
-			};
+			const {browser, closeIt} = heldBrowser();
 			const cli = createCli({
-				setupProfile: async () => ({session, location}),
+				setupProfile: async () => ({browser, location}),
 			});
 
 			let stdout = '';
@@ -2067,37 +2031,25 @@ describe('incur CLI wiring', () => {
 
 			const env = JSON.parse(stdout) as {
 				ok: boolean;
-				data?: {profile: string; profileDir: string};
+				data?: {profile: string; profileDir: string; executablePath: string};
 				meta: {cta?: {commands: {command: string}[]}};
 			};
 			expect(env.ok).toBe(true);
 			expect(env.data?.profile).toBe('default');
 			expect(env.data?.profileDir).toBe('/tmp/iso/profiles/default');
-			// The cta suggests `launch` now that the profile is set up (the command
-			// field is the resolved string, e.g. `webhands launch --profile default`).
+			expect(env.data?.executablePath).toBe('/fake/chromium');
 			expect(
 				env.meta.cta?.commands.some((c) => c.command.includes('launch')),
 			).toBe(true);
 		});
 
-		it('ACCEPTS the same browser-selection flags as launch/serve and forwards them', async () => {
-			// The inconsistency this closes: `setup-profile --use-system-browser chrome`
-			// used to be "Unknown flag", so the profile dir was always written by the
-			// BUNDLED Chromium and a later `serve --use-system-browser chrome` pointed a
-			// different browser build at it (a fingerprint discrepancy, and a profile
-			// another build may migrate or refuse).
-			const {session, closeIt} = heldSession();
-			const location = {
-				homeRoot: '/tmp/iso',
-				profilesRoot: '/tmp/iso/profiles',
-				profileDir: '/tmp/iso/profiles/default',
-				profile: 'default',
-			};
-			const seen: {launch?: unknown}[] = [];
+		it('forwards --url, --use-system-browser, --stealth and --proxy to the orchestration', async () => {
+			const {browser, closeIt} = heldBrowser();
+			const seen: unknown[] = [];
 			const cli = createCli({
 				setupProfile: async (options) => {
-					seen.push({launch: (options as {launch?: unknown}).launch});
-					return {session, location};
+					seen.push(options);
+					return {browser, location};
 				},
 			});
 
@@ -2105,9 +2057,13 @@ describe('incur CLI wiring', () => {
 			const serving = cli.serve(
 				[
 					'setup-profile',
+					'--url',
+					'https://example.test/login',
 					'--use-system-browser',
 					'chrome',
 					'--stealth',
+					'--proxy',
+					'socks5h://127.0.0.1:1080',
 					'--full-output',
 					'--format',
 					'json',
@@ -2123,36 +2079,81 @@ describe('incur CLI wiring', () => {
 			closeIt();
 			await serving;
 
-			// The selection reached the orchestration as transport-construction policy,
-			// so the profile dir is created BY that browser.
 			expect(seen).toEqual([
-				{launch: {stealth: true, systemBrowser: 'chrome'}},
+				{
+					profile: 'default',
+					url: 'https://example.test/login',
+					systemBrowser: 'chrome',
+					stealth: true,
+					proxy: 'socks5h://127.0.0.1:1080',
+				},
 			]);
-			// And it is REPORTED back, so the caller knows what to drive it with later.
 			const env = JSON.parse(stdout) as {
 				ok: boolean;
-				data?: {systemBrowser?: string; stealth?: boolean};
+				data?: {
+					systemBrowser?: string;
+					stealth?: boolean;
+					realChrome?: boolean;
+				};
 			};
 			expect(env.ok).toBe(true);
 			expect(env.data).toMatchObject({
 				systemBrowser: 'chrome',
 				stealth: true,
+				realChrome: false,
 			});
 		});
 
-		it('defaults to the bundled browser (no launch policy fields set)', async () => {
-			const {session, closeIt} = heldSession();
-			const location = {
-				homeRoot: '/tmp/iso',
-				profilesRoot: '/tmp/iso/profiles',
-				profileDir: '/tmp/iso/profiles/default',
-				profile: 'default',
-			};
+		it('--real-chrome selects the system Chrome and points the cta at serve --real-chrome', async () => {
+			const {browser, closeIt} = heldBrowser();
 			const seen: unknown[] = [];
 			const cli = createCli({
 				setupProfile: async (options) => {
-					seen.push((options as {launch?: unknown}).launch);
-					return {session, location};
+					seen.push(options);
+					return {browser, location};
+				},
+			});
+			let stdout = '';
+			const serving = cli.serve(
+				[
+					'setup-profile',
+					'--real-chrome',
+					'--cta',
+					'--full-output',
+					'--format',
+					'json',
+				],
+				{
+					stdout: (s) => {
+						stdout += s;
+					},
+					exit: () => {},
+					env: {},
+				},
+			);
+			closeIt();
+			await serving;
+			expect(seen).toEqual([{profile: 'default', realChrome: true}]);
+			const env = JSON.parse(stdout) as {
+				data?: {realChrome?: boolean};
+				meta: {cta?: {commands: {command: string}[]}};
+			};
+			expect(env.data?.realChrome).toBe(true);
+			expect(
+				env.meta.cta?.commands.some(
+					(c) =>
+						c.command.includes('serve') && c.command.includes('real-chrome'),
+				),
+			).toBe(true);
+		});
+
+		it('defaults to the bundled browser (no selection fields set)', async () => {
+			const {browser, closeIt} = heldBrowser();
+			const seen: unknown[] = [];
+			const cli = createCli({
+				setupProfile: async (options) => {
+					seen.push(options);
+					return {browser, location};
 				},
 			});
 			const serving = cli.serve(['setup-profile'], {
@@ -2162,9 +2163,36 @@ describe('incur CLI wiring', () => {
 			});
 			closeIt();
 			await serving;
-			// An EMPTY policy: nothing is forced, so core's defaults (bundled Chromium,
-			// no stealth) stand exactly as before this flag was added.
-			expect(seen).toEqual([{}]);
+			// Nothing is forced, so core's default (the pinned bundled Chromium) stands.
+			expect(seen).toEqual([{profile: 'default'}]);
+		});
+
+		it('surfaces a failing browser exit as the typed error, not as success', async () => {
+			const cli = createCli({
+				setupProfile: async () => ({
+					location,
+					browser: {
+						executablePath: '/fake/chromium',
+						args: [],
+						pid: 1,
+						waitForExit: () => Promise.reject(new MissingDisplayError()),
+					},
+				}),
+			});
+			let stdout = '';
+			await cli.serve(['setup-profile', '--full-output', '--format', 'json'], {
+				stdout: (s) => {
+					stdout += s;
+				},
+				exit: () => {},
+				env: {},
+			});
+			const env = JSON.parse(stdout) as {
+				ok: boolean;
+				error?: {code: string};
+			};
+			expect(env.ok).toBe(false);
+			expect(env.error?.code).toBe('missing-display');
 		});
 	});
 
