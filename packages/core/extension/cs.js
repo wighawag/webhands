@@ -256,6 +256,17 @@
 				return move;
 			case 'calibrationPoint':
 				return calibrationPoint();
+			case 'isVisibleNow': {
+				// What Playwright's strict waitFor() reads: how many match, and whether
+				// the (single) match is visible. A read: nothing is scrolled.
+				const els = resolveAll(m.selector);
+				return {
+					count: els.length,
+					visible:
+						els.length === 1 &&
+						engine().elementState(els[0], 'visible').matches,
+				};
+			}
 			case 'count':
 				return resolveAll(m.selector).length;
 			case 'query': {

@@ -170,6 +170,17 @@ function fakeServe(
 	return {serve, targets, policies, stopped};
 }
 
+/**
+ * An ISOLATED controller home for every command these tests run. Without it the
+ * CLI resolves the REAL `~/.webhands`: `serve` then refuses as "already active"
+ * whenever the developer has a real session up, and `stop` would SIGTERM that
+ * real session. (Both were observed while another agent session was serving.)
+ */
+const ISOLATED_HOME = {
+	root: await mkdtemp(join(tmpdir(), 'webhands-wiring-home-')),
+	env: {} as NodeJS.ProcessEnv,
+};
+
 /** Run a command through `serve`, capturing stdout and exit code (no real process exit). */
 async function run(
 	provider: SessionProvider,
@@ -183,6 +194,7 @@ async function run(
 	const {env, ...cliExtra} = extra;
 	const cli = createCli({
 		sessionProvider: provider,
+		home: ISOLATED_HOME,
 		...cliExtra,
 	});
 	let stdout = '';
@@ -1764,7 +1776,7 @@ describe('incur CLI wiring', () => {
 
 		it('`stop` with no live server is a friendly no-op (stopped:false), not an error', async () => {
 			const {provider} = stubProvider();
-			// home is unset, so discovery finds no endpoint file under a fresh root.
+			// The isolated home has no endpoint file, so discovery finds no server.
 			const env = await runEnvelope(provider, ['stop']);
 			expect(env.ok).toBe(true);
 			expect(env.data).toMatchObject({verb: 'stop', stopped: false});

@@ -319,18 +319,42 @@ export function compileLocator(expression: string): string {
  * except the last addresses an `<iframe>` in the previous frame's document, and
  * the last addresses the target inside the innermost frame.
  *
- * The split is on the exact ` >> internal:control=enter-frame >> ` token the
- * compiler emits, at TOP level only: an `enter-frame` inside a quoted nested
- * selector (`internal:has="..."`) is JSON-escaped and never matches.
+ * The split happens only at TOP level. A hop inside a quoted nested selector
+ * (`internal:has="... >> internal:control=enter-frame >> ..."`) is part of that
+ * string: `JSON.stringify` does not escape ` >> `, so a naive string split
+ * would cut it in the wrong place. So the scan tracks quotes and backslash
+ * escapes, and a hop inside quotes is refused instead (Playwright's engine
+ * cannot cross frames inside a nested selector either).
  */
 export function splitFrameHops(selector: string): string[] {
-	const parts = selector.split(` >> ${ENTER_FRAME} >> `);
+	const token = ` >> ${ENTER_FRAME} >> `;
+	const parts: string[] = [];
+	let start = 0;
+	let quote: string | undefined;
+	for (let i = 0; i < selector.length; i++) {
+		const ch = selector[i]!;
+		if (quote !== undefined) {
+			if (ch === '\\') i++;
+			else if (ch === quote) quote = undefined;
+			continue;
+		}
+		if (ch === '"' || ch === "'" || ch === '`') {
+			quote = ch;
+			continue;
+		}
+		if (selector.startsWith(token, i)) {
+			parts.push(selector.slice(start, i));
+			i += token.length - 1;
+			start = i + 1;
+		}
+	}
+	parts.push(selector.slice(start));
 	for (const part of parts) {
 		if (part.includes(ENTER_FRAME)) {
 			throw new UnsupportedByTransportError(
 				'frame hop',
 				'extension',
-				`a frame step that is not followed by an element step (${JSON.stringify(selector)})`,
+				`a frame step inside a nested selector, or not followed by an element step (${JSON.stringify(selector)})`,
 			);
 		}
 	}

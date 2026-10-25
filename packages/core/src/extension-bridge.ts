@@ -1,4 +1,9 @@
-import {createHash, randomBytes, timingSafeEqual} from 'node:crypto';
+import {
+	createHash,
+	createHmac,
+	randomBytes,
+	timingSafeEqual,
+} from 'node:crypto';
 import {createServer, type IncomingMessage, type Server} from 'node:http';
 import type {Duplex} from 'node:stream';
 
@@ -16,9 +21,12 @@ import type {Duplex} from 'node:stream';
  * AUTH, in two independent layers, both checked before any request is sent:
  * 1. the HTTP upgrade must carry `Origin: chrome-extension://<pinned id>`, which a
  *    web page cannot forge (browsers set `Origin` on WebSocket handshakes);
- * 2. the first frame must be `{hello: <token>}` with the per-session token the
- *    controller wrote into the extension's private `config.json`, compared in
- *    constant time.
+ * 2. a MUTUAL challenge on the per-session token the controller wrote into the
+ *    extension's private `config.json`, which never crosses the wire: the
+ *    worker sends a nonce, the server answers with HMAC(token, nonce) plus its
+ *    own nonce, and the worker answers that. The worker refuses a server that
+ *    cannot prove the token, so a stale `config.json` port that some other
+ *    local process has since bound gets no token and gives no orders.
  * The listener binds 127.0.0.1 only.
  *
  * WHY A HAND-ROLLED WEBSOCKET. The peer is one known client (Chrome) sending
@@ -160,13 +168,23 @@ function acceptUpgrade(req: IncomingMessage, socket: Duplex): WsConnection {
 	};
 }
 
-/** An error the extension reported for a request. */
-export class BridgeRemoteError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'Error';
-	}
+/**
+ * The handshake proof: HMAC-SHA256 of a peer's nonce under the session token,
+ * bound to the ROLE so one side's proof can never be replayed as the other's.
+ * The worker computes the same with WebCrypto (`sw.js`).
+ */
+export function bridgeProof(
+	token: string,
+	role: 'server' | 'client',
+	nonce: string,
+): string {
+	return createHmac('sha256', token)
+		.update(`webhands-bridge:${role}:${nonce}`)
+		.digest('base64url');
 }
+
+/** An error the extension reported for a request (its page-side message). */
+export class BridgeRemoteError extends Error {}
 
 /** Thrown when the worker is not (or no longer) connected. */
 export class BridgeDisconnectedError extends Error {}
@@ -210,6 +228,7 @@ export interface ExtensionBridge {
 }
 
 interface Pending {
+	readonly conn: WsConnection;
 	resolve(value: unknown): void;
 	reject(cause: unknown): void;
 	timer: NodeJS.Timeout;
@@ -222,7 +241,6 @@ export async function startExtensionBridge(
 	options: ExtensionBridgeOptions,
 ): Promise<ExtensionBridge> {
 	const expectedOrigin = extensionOrigin(options.extensionId);
-	const expectedToken = Buffer.from(options.token, 'utf8');
 	let current: WsConnection | undefined;
 	let nextId = 1;
 	const pending = new Map<number, Pending>();
@@ -265,19 +283,53 @@ export async function startExtensionBridge(
 		const helloTimer = setTimeout(() => {
 			if (!authed) conn.close();
 		}, 5_000);
+		// The server half of the challenge (see the handshake notes above).
+		let serverNonce: string | undefined;
 		conn.onMessage((text) => {
-			let message: Record<string, unknown>;
+			let parsed: unknown;
 			try {
-				message = JSON.parse(text) as Record<string, unknown>;
+				parsed = JSON.parse(text);
 			} catch {
 				conn.close();
 				return;
 			}
+			// Anything but a plain object (`null`, an array, a number) is not ours,
+			// and reading fields off it would throw inside the socket handler.
+			if (
+				typeof parsed !== 'object' ||
+				parsed === null ||
+				Array.isArray(parsed)
+			) {
+				conn.close();
+				return;
+			}
+			const message = parsed as Record<string, unknown>;
 			if (!authed) {
-				const presented = Buffer.from(String(message.hello ?? ''), 'utf8');
+				if (serverNonce === undefined) {
+					// Step 1: the worker sent its nonce. Prove WE hold the token, without
+					// sending it, and challenge the worker to prove the same.
+					if (typeof message.hello !== 'string' || message.hello.length < 16) {
+						conn.close();
+						return;
+					}
+					serverNonce = randomBytes(24).toString('base64url');
+					conn.send(
+						JSON.stringify({
+							challenge: serverNonce,
+							proof: bridgeProof(options.token, 'server', message.hello),
+						}),
+					);
+					return;
+				}
+				// Step 2: the worker answered our challenge.
+				const expected = Buffer.from(
+					bridgeProof(options.token, 'client', serverNonce),
+					'utf8',
+				);
+				const presented = Buffer.from(String(message.auth ?? ''), 'utf8');
 				if (
-					presented.length !== expectedToken.length ||
-					!timingSafeEqual(presented, expectedToken)
+					presented.length !== expected.length ||
+					!timingSafeEqual(presented, expected)
 				) {
 					conn.close();
 					return;
@@ -297,7 +349,7 @@ export async function startExtensionBridge(
 			const id = typeof message.id === 'number' ? message.id : undefined;
 			if (id === undefined) return;
 			const entry = pending.get(id);
-			if (entry === undefined) return;
+			if (entry === undefined || entry.conn !== conn) return;
 			pending.delete(id);
 			clearTimeout(entry.timer);
 			if (message.ok === true) {
@@ -311,9 +363,11 @@ export async function startExtensionBridge(
 		});
 		conn.onClose(() => {
 			clearTimeout(helloTimer);
-			if (current !== conn) return;
-			current = undefined;
+			if (current === conn) current = undefined;
+			// Reject what was sent on THIS connection, whether it dropped or was
+			// replaced by a reconnect: a reply can never arrive on another socket.
 			for (const [id, entry] of pending) {
+				if (entry.conn !== conn) continue;
 				pending.delete(id);
 				clearTimeout(entry.timer);
 				entry.reject(
@@ -370,6 +424,7 @@ export async function startExtensionBridge(
 				);
 			}, timeoutMs);
 			pending.set(id, {
+				conn,
 				resolve: resolve as (v: unknown) => void,
 				reject,
 				timer,

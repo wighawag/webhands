@@ -213,14 +213,21 @@ export class RealChromeTransport implements Transport {
 			// process portably, but its EFFECT is observable, so check the effect: a
 			// browser started with it (an earlier `--keep-browser` run) is reused, one
 			// started without it is refused rather than silently showing the bit.
-			if (
-				this.#options.hideWebdriver === true &&
-				(await reused.page.eval('navigator.webdriver')) === true
-			) {
-				await reused.close();
-				throw new RealChromeReuseConflictError(loc.profileDir, existing, [
-					'hideWebdriver',
-				]);
+			if (this.#options.hideWebdriver === true) {
+				let shown: unknown;
+				try {
+					shown = await reused.page.eval('navigator.webdriver');
+				} catch (cause) {
+					// Could not check: do not hand out a session we cannot vouch for.
+					await reused.close().catch(() => {});
+					throw cause;
+				}
+				if (shown === true) {
+					await reused.close();
+					throw new RealChromeReuseConflictError(loc.profileDir, existing, [
+						'hideWebdriver',
+					]);
+				}
 			}
 			return reused;
 		}

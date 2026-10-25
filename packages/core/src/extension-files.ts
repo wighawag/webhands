@@ -1,5 +1,13 @@
-import {createHash} from 'node:crypto';
-import {chmod, mkdir, readdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {createHash, randomBytes} from 'node:crypto';
+import {
+	chmod,
+	mkdir,
+	readdir,
+	readFile,
+	rename,
+	rm,
+	writeFile,
+} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -208,9 +216,29 @@ export async function writeExtension(
 		join(dir, 'manifest.json'),
 		JSON.stringify(extensionManifest(version, scripts), null, '\t') + '\n',
 	);
+	await writeExtensionConfig(dir, config);
+}
+
+/**
+ * Write `config.json` ATOMICALLY and private: a fresh 0600 temp file renamed over
+ * the old one, so the token is never readable through an older, looser file
+ * mode, and the worker never reads a half-written file. Pass no `config` for
+ * the INERT one (no port, no token), which a worker reads as "do not dial":
+ * `serve` writes it on teardown so a later plain start of that profile does not
+ * keep dialling a port that some other process may have taken.
+ */
+export async function writeExtensionConfig(
+	dir: string,
+	config?: ExtensionConfig,
+): Promise<void> {
 	const configPath = join(dir, 'config.json');
-	await writeFile(configPath, JSON.stringify(config ?? {port: 0, token: ''}), {
+	const temp = join(
+		dir,
+		`.config.${process.pid}.${randomBytes(6).toString('hex')}.json`,
+	);
+	await writeFile(temp, JSON.stringify(config ?? {port: 0, token: ''}), {
 		mode: 0o600,
+		flag: 'wx',
 	});
-	await chmod(configPath, 0o600);
+	await rename(temp, configPath);
 }

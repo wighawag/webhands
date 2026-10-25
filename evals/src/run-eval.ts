@@ -6,6 +6,10 @@ import type {
 	AgentUsage,
 	LaunchResult,
 } from './agent-under-test.js';
+import {
+	checkAutomationSignals,
+	type AutomationCheck,
+} from './automation-check.js';
 import type {EvalEntry} from './eval-contract.js';
 import {evaluateOutcome, type Outcome, type OutcomeKind} from './outcome.js';
 import {startServe, type ServeLaunchOptions} from './serve-lifecycle.js';
@@ -46,6 +50,15 @@ export interface EvalRunResult {
 	 * and was swallowed. NEVER part of the verdict: it is a teardown report only.
 	 */
 	readonly cleanedUp: CleanupStatus;
+	/**
+	 * The no-automation-signals evidence, for an entry that requires it: the
+	 * check before the agent ran, after it ended, and whether both were clean.
+	 */
+	readonly automation?: {
+		readonly before: AutomationCheck;
+		readonly after: AutomationCheck;
+		readonly ok: boolean;
+	};
 }
 
 /** Outcome of the best-effort post-PASS cleanup (never affects the verdict). */
@@ -211,6 +224,7 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 		}
 	}
 
+	let removeHome = false;
 	const serveSession = await startServe({
 		webhands: opts.webhands,
 		home,
@@ -229,6 +243,17 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 	});
 
 	try {
+		const verbs = new VerbClient({
+			webhands: opts.webhands,
+			home,
+			...(opts.env !== undefined ? {env: opts.env} : {}),
+		});
+		// Anti-bot evals: prove the session is signal-free BEFORE the agent acts.
+		const automationBefore =
+			opts.entry.requireNoAutomationSignals === true
+				? await checkAutomationSignals(serveSession.pid, verbs)
+				: undefined;
+
 		const launch = await opts.agent.launch({
 			entry: opts.entry,
 			webhands: opts.webhands,
@@ -245,19 +270,39 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 			...(opts.env !== undefined ? {env: opts.env} : {}),
 		});
 
-		const verbs = new VerbClient({
-			webhands: opts.webhands,
-			home,
-			...(opts.env !== undefined ? {env: opts.env} : {}),
-		});
-
-		const outcome = await evaluateOutcome({
+		const measured = await evaluateOutcome({
 			entry: opts.entry,
 			verbs,
 			...(opts.maxAttempts !== undefined
 				? {maxAttempts: opts.maxAttempts}
 				: {}),
 		});
+
+		// ...and still signal-free AFTER it (the tree may have grown during the run).
+		const automationAfter =
+			opts.entry.requireNoAutomationSignals === true
+				? await checkAutomationSignals(serveSession.pid)
+				: undefined;
+		const automation =
+			automationBefore !== undefined && automationAfter !== undefined
+				? {
+						before: automationBefore,
+						after: automationAfter,
+						ok: automationBefore.ok && automationAfter.ok,
+					}
+				: undefined;
+		const outcome: Outcome =
+			automation !== undefined && !automation.ok && measured.kind === 'PASS'
+				? {
+						...measured,
+						kind: 'FAIL',
+						failReason: `automation signals present (${
+							[...automation.before.flags, ...automation.after.flags]
+								.map((f) => f.arg)
+								.join(', ') || 'navigator.webdriver === true'
+						})`,
+					}
+				: measured;
 
 		// Assert FIRST, clean SECOND (spec D2.2 -> D2.3/D2.4 strict order). The verdict
 		// is already decided above; ONLY a clean PASS triggers the best-effort
@@ -268,18 +313,20 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 
 		// Only a clean PASS removes the isolated home; a FAIL/INCONCLUSIVE KEEPS it
 		// for inspection. Destroying evidence on failure is the wrong default.
-		if (ownsHome && !opts.keepHome && outcome.kind === 'PASS') {
-			await rm(home, {recursive: true, force: true});
-		}
+		// (Removed AFTER the serve stops, below: a browser still flushing its
+		// profile would otherwise recreate files under a home we just deleted.)
+		removeHome = ownsHome && !opts.keepHome && outcome.kind === 'PASS';
 		return {
 			entry: opts.entry,
 			adapter: opts.agent.adapter,
 			launch,
 			outcome,
 			cleanedUp,
+			...(automation !== undefined ? {automation} : {}),
 		};
 	} finally {
 		await serveSession.stop();
+		if (removeHome) await rm(home, {recursive: true, force: true});
 	}
 }
 

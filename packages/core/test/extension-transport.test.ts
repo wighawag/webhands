@@ -55,6 +55,7 @@ function topPage(innerOrigin: string): string {
 <p id="keys">no-keys</p>
 <iframe id="xo" src="${innerOrigin}/inner" width="400" height="120"></iframe>
 <div id="late"></div>
+<div style="position:relative;width:200px"><span id="under">under an overlay</span><div style="position:absolute;inset:0;background:white"></div></div>
 <div style="height:2500px"></div>
 <button id="far" onclick="this.textContent='far:'+event.isTrusted">Far</button>
 <script>
@@ -92,6 +93,19 @@ async function processesMentioning(needle: string): Promise<string[]> {
 }
 
 describe('buildExtensionBrowserArgs', () => {
+	it('refuses an operator arg that would bring a debugging port back', () => {
+		expect(() =>
+			buildExtensionBrowserArgs({
+				userDataDir: '/tmp/p',
+				extensionDir: '/tmp/e',
+				size: {width: 800, height: 600},
+				env: {
+					WEBHANDS_CHROME_ARGS: '--no-sandbox --remote-debugging-port=9222',
+				},
+			}),
+		).toThrow(/remote-debugging-port/);
+	});
+
 	it('starts a plain browser: no debugging port, no automation flag', () => {
 		const args = buildExtensionBrowserArgs({
 			userDataDir: '/tmp/p',
@@ -224,6 +238,18 @@ describe.runIf(canRun)('ExtensionTransport (no CDP, trusted OS input)', () => {
 		expect(
 			await session.page.isVisible(locator(`page.locator('#late-btn')`)),
 		).toBe(true);
+		// `wait` is a READ (attached + visible), not an actionability check: an
+		// element under an overlay satisfies it, and an ambiguous locator is refused.
+		await session.page.wait({
+			kind: 'locator',
+			target: locator(`page.locator('#under')`),
+		});
+		await expect(
+			session.page.wait({
+				kind: 'locator',
+				target: locator(`page.locator('button')`),
+			}),
+		).rejects.toThrow(/strict mode violation/);
 		await session.page.navigate(`${base}/second`);
 		const snap = await session.page.snapshot();
 		expect(snap.url).toBe(`${base}/second`);
@@ -268,5 +294,11 @@ describe.runIf(canRun)('ExtensionTransport (no CDP, trusted OS input)', () => {
 		await session.close();
 		await new Promise((r) => setTimeout(r, 500));
 		expect(await processesMentioning(profileDir)).toEqual([]);
+		// The extension is left INERT, so a later plain start does not dial a port
+		// that is no longer ours.
+		const config = JSON.parse(
+			await readFile(join(root, 'extension', 'config.json'), 'utf8'),
+		) as {port: number; token: string};
+		expect(config).toEqual({port: 0, token: ''});
 	});
 });

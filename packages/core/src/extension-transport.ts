@@ -18,6 +18,7 @@ import {
 	EXTENSION_ID,
 	resolveExtensionDir,
 	writeExtension,
+	writeExtensionConfig,
 } from './extension-files.js';
 import {
 	matchesCookieFilter,
@@ -37,7 +38,7 @@ import {
 	resolveScreenshotsDir,
 	type ProfileLocationOptions,
 } from './profile-location.js';
-import {captureTail, envArgs} from './real-chrome.js';
+import {captureTail, envArgs, REAL_CHROME_ARGS_ENV} from './real-chrome.js';
 import {
 	liveSingletonHolder,
 	resolveSetupProfileExecutable,
@@ -178,6 +179,10 @@ export class ExtensionTransport implements Transport {
 			cleanups.push(() => bridge.close());
 			const extensionDir = this.extensionDir();
 			await writeExtension(extensionDir, {port: bridge.port, token});
+			// On teardown (after the browser is gone: cleanups run in reverse), leave an
+			// INERT config, so a later plain start of this profile does not keep
+			// dialling a port that is no longer ours.
+			cleanups.push(() => writeExtensionConfig(extensionDir));
 
 			const args = buildExtensionBrowserArgs({
 				userDataDir: loc.profileDir,
@@ -278,6 +283,19 @@ export function buildExtensionBrowserArgs(options: {
 	/** The first page (the bridge's inert wake-up page). Default `about:blank`. */
 	readonly startUrl?: string;
 }): string[] {
+	// The operator's extra args are honoured (a container may need --no-sandbox),
+	// but never one that would bring back what this transport exists to remove.
+	const extra = envArgs(options.env ?? process.env);
+	const forbidden = extra.filter((arg) =>
+		/^--(remote-debugging-|enable-automation|headless)/.test(arg),
+	);
+	if (forbidden.length > 0) {
+		throw new UnsupportedByTransportError(
+			forbidden.join(' '),
+			TRANSPORT,
+			`${REAL_CHROME_ARGS_ENV} may not add a debugging, automation or headless flag here`,
+		);
+	}
 	return [
 		`--user-data-dir=${options.userDataDir}`,
 		'--no-first-run',
@@ -287,7 +305,7 @@ export function buildExtensionBrowserArgs(options: {
 		`--load-extension=${options.extensionDir}`,
 		'--window-position=0,0',
 		`--window-size=${options.size.width},${options.size.height}`,
-		...envArgs(options.env ?? process.env),
+		...extra,
 		options.startUrl ?? 'about:blank',
 	];
 }
@@ -669,7 +687,7 @@ class ExtensionPage implements WebHandsPage {
 		);
 		await this.#pointTo(t, point);
 		await this.#input.click('left');
-		const focused = await this.#until('type: focus', 2_000, async () =>
+		await this.#until('type: focus', 2_000, async () =>
 			(await this.#frame<boolean>(t.frameId, {
 				op: 'isFocused',
 				selector: t.selector,
@@ -677,7 +695,6 @@ class ExtensionPage implements WebHandsPage {
 				? {value: true}
 				: {reason: 'the field did not take focus after the click'},
 		);
-		void focused;
 		// `fill` semantics (what the Playwright transports do): replace the content.
 		await this.#input.key('Control+a');
 		if (value === '') {
@@ -743,9 +760,34 @@ class ExtensionPage implements WebHandsPage {
 				this.#calibration = undefined;
 				return;
 			case 'locator': {
-				// Playwright's `waitFor()` default: attached AND visible.
+				// Playwright's `waitFor()` default: attached AND visible. A pure READ:
+				// no scrolling, no stability or hit-test check (an element under an
+				// overlay is still "visible"), unlike the actionability check.
 				const selector = compileLocator(condition.target);
-				await this.#actionable('wait', selector, 'visible', 30_000);
+				const outcome = await this.#until(
+					`wait ${selector}`,
+					30_000,
+					async () => {
+						const target = await this.#resolveFrames(selector);
+						const state = await this.#frame<{count: number; visible: boolean}>(
+							target.frameId,
+							{op: 'isVisibleNow', selector: target.selector},
+						);
+						if (state.count > 1) return {value: state.count};
+						return state.visible
+							? {value: 1}
+							: {
+									reason:
+										state.count === 0 ? 'no match yet' : 'not visible yet',
+								};
+					},
+				);
+				if (outcome > 1) {
+					// Strict, like Playwright's waitFor(): never wait on a guess.
+					throw new Error(
+						`wait: strict mode violation: ${selector} resolved to ${outcome} elements`,
+					);
+				}
 				return;
 			}
 		}

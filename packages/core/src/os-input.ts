@@ -43,6 +43,9 @@ const BUTTON: Readonly<Record<MouseButtonName, string>> = {
 	right: '3',
 };
 
+/** Milliseconds between typed keystrokes (a human-ish cadence). */
+const TYPE_DELAY_MS = 35;
+
 /** Env var naming the `xdotool` executable, for an install off `PATH`. */
 export const XDOTOOL_ENV = 'WEBHANDS_XDOTOOL';
 /** Env var naming the `Xvfb` executable, for an install off `PATH`. */
@@ -182,7 +185,42 @@ export class XdotoolBackend implements InputBackend {
 	type(text: string): Promise<void> {
 		// A human-ish cadence; xdotool remaps keysyms for characters outside the
 		// keymap, so non-ASCII text types too.
-		return this.#x('type', '--delay', '35', '--', text);
+		//
+		// The text goes in on STDIN (`--file -`), never as an argument: `type`
+		// resolves `{ENV:NAME}` secrets before this point, and an argument is
+		// readable by every local process in /proc/<pid>/cmdline. The timeout
+		// grows with the text, so long input is never cut off half-typed.
+		const timeout = 30_000 + text.length * (TYPE_DELAY_MS + 20);
+		return new Promise<void>((resolve, reject) => {
+			const child = spawn(
+				this.#exe,
+				['type', '--delay', String(TYPE_DELAY_MS), '--file', '-'],
+				{env: this.#env, stdio: ['pipe', 'ignore', 'pipe']},
+			);
+			let stderr = '';
+			child.stderr?.on('data', (d: Buffer) => {
+				stderr = (stderr + d.toString()).slice(-1000);
+			});
+			const timer = setTimeout(() => {
+				child.kill('SIGKILL');
+				reject(new Error(`xdotool type timed out after ${timeout}ms`));
+			}, timeout);
+			child.once('error', (cause) => {
+				clearTimeout(timer);
+				reject(cause);
+			});
+			child.once('exit', (code) => {
+				clearTimeout(timer);
+				if (code === 0) resolve();
+				else
+					reject(
+						new Error(
+							`xdotool type exited with code ${String(code)}: ${stderr}`,
+						),
+					);
+			});
+			child.stdin?.end(text);
+		});
 	}
 	key(chord: string): Promise<void> {
 		return this.#x('key', '--', toXdotoolChord(chord));
@@ -244,8 +282,14 @@ export async function startXvfb(options: {
 	});
 	const display = await new Promise<string>((resolve, reject) => {
 		const timer = setTimeout(() => {
+			// Never leave a half-started display behind.
+			child.kill('SIGKILL');
 			reject(new Error(`Xvfb did not report a display within 10s: ${stderr}`));
 		}, 10_000);
+		child.once('error', (cause) => {
+			clearTimeout(timer);
+			reject(cause);
+		});
 		const fd = child.stdio[3] as NodeJS.ReadableStream | null;
 		let text = '';
 		fd?.on('data', (d: Buffer) => {

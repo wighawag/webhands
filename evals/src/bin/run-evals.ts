@@ -399,6 +399,14 @@ function formatRunLine(result: EvalRunResult): string {
 		`(milestones ${outcome.score.milestonesReached.length}/${outcome.score.milestoneTotal}` +
 		`${outcome.score.milestonesReached.length > 0 ? ': ' + outcome.score.milestonesReached.join(', ') : ''})` +
 		`${outcome.inconclusiveReason !== undefined ? ` [${outcome.inconclusiveReason}]` : ''}` +
+		`${outcome.failReason !== undefined ? ` [${outcome.failReason}]` : ''}` +
+		`${
+			result.automation !== undefined
+				? ` [no-automation ${result.automation.ok ? 'OK' : 'VIOLATED'}: ` +
+					`${result.automation.before.processes}/${result.automation.after.processes} processes, ` +
+					`webdriver=${String(result.automation.before.webdriver)}]`
+				: ''
+		}` +
 		` [${formatUsage(result.launch.usage)}]`
 	);
 }

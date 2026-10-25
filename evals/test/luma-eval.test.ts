@@ -30,6 +30,7 @@ describe('luma-register-turnstile eval (offline)', () => {
 		expect(entry.tier).toBe('anti-bot');
 		expect(entry.serve).toEqual({profile: 'luma', transport: 'extension'});
 		expect(entry.seedProfileDir).toBe('/tmp/some-profile');
+		expect(entry.requireNoAutomationSignals).toBe(true);
 		const branded = buildLumaRegisterTurnstileEval({
 			...ENV,
 			WEBHANDS_EVAL_LUMA_REAL_CHROME: '1',

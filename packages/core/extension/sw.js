@@ -25,6 +25,38 @@ async function readConfig() {
 	return response.json();
 }
 
+/** HMAC-SHA256(token, "webhands-bridge:<role>:<nonce>"), base64url (see bridgeProof). */
+async function proof(token, role, nonce) {
+	const key = await crypto.subtle.importKey(
+		'raw',
+		new TextEncoder().encode(token),
+		{name: 'HMAC', hash: 'SHA-256'},
+		false,
+		['sign'],
+	);
+	const mac = await crypto.subtle.sign(
+		'HMAC',
+		key,
+		new TextEncoder().encode(`webhands-bridge:${role}:${nonce}`),
+	);
+	let binary = '';
+	for (const byte of new Uint8Array(mac)) binary += String.fromCharCode(byte);
+	return btoa(binary)
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=+$/, '');
+}
+
+function randomNonce() {
+	const bytes = crypto.getRandomValues(new Uint8Array(24));
+	let binary = '';
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary)
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=+$/, '');
+}
+
 async function connect() {
 	if (socket && socket.readyState <= 1) return;
 	let config;
@@ -33,14 +65,52 @@ async function connect() {
 	} catch {
 		return;
 	}
+	// An inert config (written when no session is serving) means: do not dial.
 	if (!config || !config.port || !config.token) return;
 	if (socket && socket.readyState <= 1) return;
 	const ws = new WebSocket(`ws://127.0.0.1:${config.port}/`);
 	socket = ws;
-	ws.onopen = () => ws.send(JSON.stringify({hello: config.token}));
-	ws.onmessage = (event) => {
-		retryDelay = 500;
-		void onMessage(ws, event.data);
+	// MUTUAL handshake: the token never crosses the wire, and nothing is obeyed
+	// until the SERVER has proved it holds the token too. Whatever else is
+	// listening on a stale port learns nothing and commands nothing.
+	const nonce = randomNonce();
+	let state = 'hello';
+	ws.onopen = () => ws.send(JSON.stringify({hello: nonce}));
+	ws.onmessage = async (event) => {
+		if (state === 'ready') {
+			retryDelay = 500;
+			void onMessage(ws, event.data);
+			return;
+		}
+		let message;
+		try {
+			message = JSON.parse(event.data);
+		} catch {
+			ws.close();
+			return;
+		}
+		if (state === 'hello' && message && typeof message.challenge === 'string') {
+			const expected = await proof(config.token, 'server', nonce);
+			if (message.proof !== expected) {
+				state = 'refused';
+				ws.close();
+				return;
+			}
+			state = 'answered';
+			ws.send(
+				JSON.stringify({
+					auth: await proof(config.token, 'client', message.challenge),
+				}),
+			);
+			return;
+		}
+		if (state === 'answered' && message && message.welcome === true) {
+			state = 'ready';
+			retryDelay = 500;
+			return;
+		}
+		state = 'refused';
+		ws.close();
 	};
 	ws.onerror = () => {};
 	ws.onclose = () => {
@@ -57,7 +127,12 @@ async function onMessage(ws, data) {
 	} catch {
 		return;
 	}
-	if (typeof message.id !== 'number' || typeof message.op !== 'string') return;
+	if (
+		!message ||
+		typeof message.id !== 'number' ||
+		typeof message.op !== 'string'
+	)
+		return;
 	let reply;
 	try {
 		reply = {id: message.id, ok: true, result: await handle(message)};
@@ -223,6 +298,9 @@ async function handle(m) {
 					resolve(frameId);
 				});
 			});
+			// If the parent call fails first, the probe still settles later; never let
+			// that become an unhandled rejection.
+			reported.catch(() => {});
 			const box = await toFrame(
 				m.tabId,
 				m.frameId ?? 0,

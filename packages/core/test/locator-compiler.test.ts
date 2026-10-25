@@ -115,6 +115,13 @@ describe('splitFrameHops', () => {
 		]);
 	});
 
+	it('refuses a hop hidden inside a nested selector instead of mis-splitting', () => {
+		const selector = compileLocator(
+			`page.locator('li').filter({ has: page.frameLocator('iframe').getByRole('button') })`,
+		);
+		expect(() => splitFrameHops(selector)).toThrow(/nested selector/);
+	});
+
 	it('leaves a selector with no hop whole', () => {
 		expect(splitFrameHops('internal:text="x"i >> nth=0')).toEqual([
 			'internal:text="x"i >> nth=0',

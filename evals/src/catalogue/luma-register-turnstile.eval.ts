@@ -84,6 +84,8 @@ export function buildLumaRegisterTurnstileEval(
 			...(env[REAL_CHROME_ENV] === '1' ? {realChrome: true} : {}),
 		},
 		seedProfileDir: profile,
+		// The point of the eval: a PASS only counts with no CDP anywhere.
+		requireNoAutomationSignals: true,
 		health: [
 			{
 				describe: 'the event page rendered its title (an h1)',

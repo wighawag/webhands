@@ -158,4 +158,12 @@ export interface EvalEntry {
 	 * harness cannot perform). The source is only read, never modified.
 	 */
 	readonly seedProfileDir?: string;
+	/**
+	 * Require a session with NO automation signals (ADR-0018): no remote-debugging
+	 * or automation flag on any process under `serve` (checked before the agent
+	 * starts and again after it ends), and `navigator.webdriver === false`. A PASS
+	 * with a signal present is reported as a FAIL, because it would prove nothing
+	 * about the transport under test.
+	 */
+	readonly requireNoAutomationSignals?: boolean;
 }

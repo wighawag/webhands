@@ -31,6 +31,8 @@ export interface Outcome {
 	readonly score: ScoreResult;
 	/** Why INCONCLUSIVE (the failed health probe), when applicable. */
 	readonly inconclusiveReason?: string;
+	/** Why a run that met its end state was still judged FAIL, when applicable. */
+	readonly failReason?: string;
 	/** How many attempts were made (1 + the number of INCONCLUSIVE retries). */
 	readonly attempts: number;
 }
