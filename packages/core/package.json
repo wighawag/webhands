@@ -30,6 +30,7 @@
 	},
 	"files": [
 		"dist",
+		"extension",
 		"src",
 		"README.md",
 		"LICENSE"

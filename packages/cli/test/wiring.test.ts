@@ -1484,6 +1484,82 @@ describe('incur CLI wiring', () => {
 			expect(warnings[0]).toMatch(/--stealth/);
 		});
 
+		it('`serve --transport extension` forwards the transport and keeps exposeCdp off', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				['serve', '--profile', 'work', '--transport', 'extension'],
+				{serveSession: serve},
+			);
+			expect(env.ok).toBe(true);
+			expect(policies[0]).toMatchObject({transport: 'extension'});
+			expect(policies[0]).not.toHaveProperty('exposeCdp');
+			expect(env.data).not.toHaveProperty('warnings');
+		});
+
+		it('`serve --transport extension --expose-cdp` is REFUSED (it would re-add the CDP the mode removes)', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				['serve', '--transport', 'extension', '--expose-cdp'],
+				{serveSession: serve},
+			);
+			expect(env.ok).toBe(false);
+			expect(JSON.stringify(env)).toMatch(/unsupported-by-transport/);
+			// Refused BEFORE any browser was brought up.
+			expect(policies).toHaveLength(0);
+		});
+
+		it('`serve --transport extension --stealth --proxy` WARNS that they do not apply', async () => {
+			const {provider} = stubProvider();
+			const {serve} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				[
+					'serve',
+					'--transport',
+					'extension',
+					'--stealth',
+					'--proxy',
+					'socks5h://127.0.0.1:1080',
+				],
+				{serveSession: serve},
+			);
+			const warnings = (env.data as {warnings?: string[]}).warnings ?? [];
+			expect(warnings.join(' ')).toMatch(/--transport extension/);
+			expect(warnings.join(' ')).toMatch(/--stealth/);
+			expect(warnings.join(' ')).toMatch(/--proxy/);
+		});
+
+		it('`serve --real-chrome --hide-webdriver` forwards it with no warning', async () => {
+			const {provider} = stubProvider();
+			const {serve, policies} = fakeServe();
+			const env = await runEnvelope(
+				provider,
+				['serve', '--real-chrome', '--hide-webdriver'],
+				{serveSession: serve},
+			);
+			expect(policies[0]).toMatchObject({
+				realChrome: true,
+				hideWebdriver: true,
+			});
+			expect(env.data).not.toHaveProperty('warnings');
+		});
+
+		it('`serve --hide-webdriver` without --real-chrome WARNS that it is inert', async () => {
+			const {provider} = stubProvider();
+			const {serve} = fakeServe();
+			const env = await runEnvelope(provider, ['serve', '--hide-webdriver'], {
+				serveSession: serve,
+			});
+			const warnings = (env.data as {warnings?: string[]}).warnings ?? [];
+			expect(warnings.join(' ')).toMatch(
+				/--hide-webdriver only applies to --real-chrome/,
+			);
+		});
+
 		it('`serve --stealth` alone carries no warnings', async () => {
 			const {provider} = stubProvider();
 			const {serve} = fakeServe();

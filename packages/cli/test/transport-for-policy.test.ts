@@ -83,6 +83,16 @@ describe('transportForPolicy (which browser a policy brings up)', () => {
 			expect(opened).toEqual([{mode: 'launch', profile: 'default'}]);
 		});
 
+		it('forwards hideWebdriver only when asked', () => {
+			const {factories, realChrome} = recording();
+			transportForPolicy(
+				home,
+				{realChrome: true, hideWebdriver: true},
+				factories,
+			);
+			expect(realChrome).toEqual([{hideWebdriver: true}]);
+		});
+
 		it('forwards NEITHER flag when unset (minimal options, core decides)', async () => {
 			const {factories, realChrome} = recording();
 			transportForPolicy(home, {realChrome: true}, factories);
@@ -122,6 +132,38 @@ describe('transportForPolicy (which browser a policy brings up)', () => {
 			expect(opened).toEqual([
 				{mode: 'attach', endpoint: 'http://127.0.0.1:9222'},
 			]);
+		});
+	});
+
+	describe('--transport extension', () => {
+		it('builds ONLY the extension transport, forwarding realChrome', async () => {
+			const {factories, realChrome, launch, attach} = recording();
+			const extension: unknown[] = [];
+			const opened: OpenTarget[] = [];
+			const {transport, cdpEndpoint} = transportForPolicy(
+				home,
+				{transport: 'extension', realChrome: true},
+				{
+					...factories,
+					extension: (_home, options) => {
+						extension.push(options);
+						return {
+							async open(t: OpenTarget) {
+								opened.push(t);
+								return {} as Session;
+							},
+						};
+					},
+				},
+			);
+			expect(extension).toEqual([{realChrome: true}]);
+			// No Playwright transport of any kind, and no CDP endpoint to advertise.
+			expect(realChrome).toHaveLength(0);
+			expect(launch).toHaveLength(0);
+			expect(cdpEndpoint).toBeUndefined();
+			await transport.open({mode: 'launch', profile: 'default'});
+			expect(opened).toEqual([{mode: 'launch', profile: 'default'}]);
+			expect(attach).toHaveLength(0);
 		});
 	});
 

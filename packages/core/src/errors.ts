@@ -35,7 +35,10 @@ export type ControllerErrorCode =
 	| 'real-chrome-not-found'
 	| 'real-chrome-start-failed'
 	| 'real-chrome-reuse-conflict'
-	| 'proxy-auth-unsupported';
+	| 'proxy-auth-unsupported'
+	| 'unsupported-by-transport'
+	| 'extension-not-connected'
+	| 'os-input-unavailable';
 
 /**
  * Base class for every identifiable `core` error. Branch on {@link code}.
@@ -719,6 +722,87 @@ export class UnresolvedEnvPlaceholderError extends ControllerError {
 		// class name); the referenced env var is `envName`.
 		this.envName = envName;
 		this.verb = verb;
+	}
+}
+
+/**
+ * The ACTIVE transport cannot perform this verb (or this part of a locator
+ * expression), so it refuses instead of degrading silently.
+ *
+ * Raised by the extension transport (ADR-0018) for the verbs it does not offer
+ * yet (`eval`, `script`, `hover`, ...) and for a locator method that does not
+ * build a selector. The message names WHAT is unsupported and the transport that
+ * does support it, because the useful reaction is "use the Playwright transport
+ * for this step", not "retry".
+ */
+export class UnsupportedByTransportError extends ControllerError {
+	readonly code = 'unsupported-by-transport';
+	/** What was refused: a verb name (`eval`) or a locator method (`locator.click`). */
+	readonly what: string;
+	/** The transport that refused (`extension`). */
+	readonly transport: string;
+
+	constructor(
+		what: string,
+		transport: string,
+		detail?: string,
+		options?: {cause?: unknown},
+	) {
+		super(
+			`${what} is not supported by the ${transport} transport` +
+				(detail !== undefined ? `: ${detail}` : '') +
+				`. Use the default Playwright transport (serve without --transport ${transport}) for this step.`,
+			options,
+		);
+		this.what = what;
+		this.transport = transport;
+	}
+}
+
+/**
+ * The browser came up but the webhands extension never connected to the bridge
+ * (or the connection dropped mid-command), so there is nothing to drive.
+ *
+ * The common cause is BRANDED Google Chrome: since Chrome 137 it ignores
+ * `--load-extension` (finding `branded-chrome-extension-install-paths`), so the
+ * extension must be installed once per profile with "Load unpacked". The error
+ * carries the extension directory so the CLI can print the exact steps.
+ */
+export class ExtensionNotConnectedError extends ControllerError {
+	readonly code = 'extension-not-connected';
+	/** The stable extension directory a human loads unpacked. */
+	readonly extensionDir: string;
+
+	constructor(
+		detail: string,
+		extensionDir: string,
+		options?: {cause?: unknown},
+	) {
+		super(
+			`the webhands extension is not connected: ${detail}. If this is ` +
+				`branded Google Chrome (which ignores --load-extension), install the ` +
+				`extension into this profile ONCE: open chrome://extensions, turn on ` +
+				`Developer mode, click "Load unpacked" and choose ${extensionDir}.`,
+			options,
+		);
+		this.extensionDir = extensionDir;
+	}
+}
+
+/**
+ * No OS-level input backend is usable, so a trusted click or keystroke cannot be
+ * performed. The extension transport REFUSES rather than falling back to
+ * untrusted in-page events, because those are exactly what an anti-bot check
+ * reads (ADR-0018). Carries what was looked for so the fix is an install.
+ */
+export class OsInputUnavailableError extends ControllerError {
+	readonly code = 'os-input-unavailable';
+	/** The tool that was needed (e.g. `xdotool`, `Xvfb`). */
+	readonly tool: string;
+
+	constructor(tool: string, detail: string, options?: {cause?: unknown}) {
+		super(`OS-level input is unavailable: ${detail}`, options);
+		this.tool = tool;
 	}
 }
 

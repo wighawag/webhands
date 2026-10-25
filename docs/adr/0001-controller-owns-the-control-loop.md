@@ -1,5 +1,7 @@
 # The CLI controller owns the long-lived control loop; the browser is attached to
 
+> Built by [ADR-0018](0018-extension-transport-no-cdp-os-level-input.md): the extension transport keeps this rule (the controller is the bridge SERVER and the extension a stateless executor).
+
 The controller (the `core`/CLI process) holds the persistent control loop and connection, and the browser is the thing it launches or attaches to, rather than a browser extension driving everything and calling out to the CLI. We chose this because Manifest V3 extension service workers are killed on a 30-second idle / 5-minute hard limit and lose all in-memory state and sockets, so an extension is an unreliable place to hold a long-running session; a CLI process has no such lifecycle constraint. The extension is therefore demoted to a future *transport* (a stealthier content-script bridge the controller attaches to), not the foundation.
 
 ## Considered Options

@@ -527,7 +527,10 @@ export const cookiesHand: Hand = ({context, ensureOpen}) => ({
  * removal itself is Playwright's, and this must agree with it. `names` is the one
  * OR in the filter ("clear these four"), which is why it is an `includes`.
  */
-function matchesCookieFilter(cookie: Cookie, filter: CookieFilter): boolean {
+export function matchesCookieFilter(
+	cookie: Cookie,
+	filter: CookieFilter,
+): boolean {
 	if (filter.names !== undefined && !filter.names.includes(cookie.name)) {
 		return false;
 	}
@@ -1705,7 +1708,7 @@ export async function takeScreenshot(
  * how we report the image's REAL pixel dimensions without decoding the whole
  * PNG or assuming a viewport size.
  */
-function pngDimensions(
+export function pngDimensions(
 	buffer: Buffer,
 	path: string,
 ): {width: number; height: number} {
@@ -1731,7 +1734,7 @@ function pngDimensions(
  * lands outside it is refused with {@link ScreenshotPathError} — webhands never
  * writes a screenshot to an arbitrary location.
  */
-async function resolveScreenshotPath(
+export async function resolveScreenshotPath(
 	screenshotsDir: string,
 	out?: string,
 ): Promise<string> {

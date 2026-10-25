@@ -95,7 +95,7 @@ describe('RealChromeTransport (spawn the user\u2019s own Chrome, then attach)', 
 	 */
 	function makeTransport(
 		root: string,
-		options: {keepBrowser?: boolean} = {},
+		options: {keepBrowser?: boolean; hideWebdriver?: boolean} = {},
 	): {transport: RealChromeTransport; spawns: RealChrome[]} {
 		const spawns: RealChrome[] = [];
 		const transport = new RealChromeTransport({root}, [], {
@@ -401,5 +401,65 @@ describe('RealChromeTransport (spawn the user\u2019s own Chrome, then attach)', 
 
 		expect(spawnedChrome).toBeDefined();
 		expect(await isLiveDevToolsEndpoint(spawnedChrome!.endpoint)).toBe(false);
+	});
+	describe('--hide-webdriver', () => {
+		it('keeps navigator.webdriver FALSE despite the debugging port, and only when asked', async () => {
+			// The bit Cloudflare Turnstile refused on (finding
+			// `turnstile-passes-cdp-with-automation-controlled-disabled`). Read by the
+			// PAGE itself over the attached session, with and without the option.
+			const root = await tempRoot();
+			const hidden = makeTransport(root, {hideWebdriver: true});
+			const a = await hidden.transport.open({
+				mode: 'launch',
+				profile: 'hidden',
+			});
+			sessions.push(a);
+			await a.page.navigate(server.url);
+			expect(await a.page.eval('navigator.webdriver')).toBe(false);
+			await a.close();
+
+			const plain = makeTransport(root);
+			const b = await plain.transport.open({mode: 'launch', profile: 'plain'});
+			sessions.push(b);
+			await b.page.navigate(server.url);
+			expect(await b.page.eval('navigator.webdriver')).toBe(true);
+		});
+
+		it('REFUSES to reuse a running browser that still reports webdriver, leaving it alone', async () => {
+			const root = await tempRoot();
+			const loc = resolveProfileLocation('shown', {root});
+			await mkdir(loc.profileDir, {recursive: true});
+			const existing = await spawnTestChrome({userDataDir: loc.profileDir});
+			strays.push(existing);
+
+			const {transport, spawns} = makeTransport(root, {hideWebdriver: true});
+			const err = await transport.open({mode: 'launch', profile: 'shown'}).then(
+				() => {
+					throw new Error('expected open to refuse');
+				},
+				(e: unknown) => e,
+			);
+			expect(err).toBeInstanceOf(RealChromeReuseConflictError);
+			expect((err as RealChromeReuseConflictError).unhonourableOptions).toEqual(
+				['hideWebdriver'],
+			);
+			expect(spawns).toHaveLength(0);
+			expect(await isLiveDevToolsEndpoint(existing.endpoint)).toBe(true);
+		});
+
+		it('REUSES a kept browser that was started with it (the --keep-browser flow)', async () => {
+			const root = await tempRoot();
+			const {transport, spawns} = makeTransport(root, {
+				keepBrowser: true,
+				hideWebdriver: true,
+			});
+			const first = await transport.open({mode: 'launch', profile: 'kept'});
+			await first.close();
+			const second = await transport.open({mode: 'launch', profile: 'kept'});
+			sessions.push(second);
+			await second.page.navigate(server.url);
+			expect(await second.page.eval('navigator.webdriver')).toBe(false);
+			expect(spawns).toHaveLength(1);
+		});
 	});
 });

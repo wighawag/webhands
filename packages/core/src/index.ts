@@ -118,9 +118,29 @@ export {
 	ProxyAuthUnsupportedError,
 	SocketUnsupportedError,
 	InvalidSocketPathError,
+	UnsupportedByTransportError,
+	ExtensionNotConnectedError,
+	OsInputUnavailableError,
 	isControllerError,
 	type ControllerErrorCode,
 } from './errors.js';
+
+// The extension transport (ADR-0018): no CDP, trusted OS-level input.
+export {
+	ExtensionTransport,
+	buildExtensionBrowserArgs,
+	type ExtensionTransportOptions,
+} from './extension-transport.js';
+export {
+	EXTENSION_ID,
+	EXTENSION_DIRNAME,
+	EXTENSION_DIR_ENV,
+	resolveExtensionDir,
+	writeExtension,
+	type ExtensionConfig,
+} from './extension-files.js';
+export {compileLocator, splitFrameHops} from './locator-compiler.js';
+export {XDOTOOL_ENV, XVFB_ENV, toXdotoolChord} from './os-input.js';
 
 export {
 	RealChromeTransport,
@@ -134,6 +154,7 @@ export {
 	discoverChromeExecutable,
 	isLiveDevToolsEndpoint,
 	REAL_CHROME_ENV,
+	HIDE_WEBDRIVER_ARG,
 	type RealChrome,
 	type SpawnRealChromeOptions,
 } from './real-chrome.js';

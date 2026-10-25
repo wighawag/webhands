@@ -20,6 +20,7 @@ import {saucedemoCoreFlowEval} from '../catalogue/saucedemo-core-flow.eval.js';
 import {saucedemoDiscoveryEval} from '../catalogue/saucedemo-discovery.eval.js';
 import {buildParabankTransferEval} from '../catalogue/parabank-transfer.eval.js';
 import {magentoCheckoutEval} from '../catalogue/magento-checkout.eval.js';
+import {buildLumaRegisterTurnstileEval} from '../catalogue/luma-register-turnstile.eval.js';
 import {buildCartThresholdCheckoutEval} from '../catalogue/cart-threshold-checkout.eval.js';
 import {buildMessyDomExploreEval} from '../catalogue/messy-dom-explore.eval.js';
 import {
@@ -49,6 +50,10 @@ const CATALOGUE: Readonly<Record<string, () => EvalEntry>> = {
 	'parabank-transfer': () => buildParabankTransferEval(),
 	// Tier-3 Magento (Luma): a STATIC, no-account guest flow on a messy real DOM.
 	[magentoCheckoutEval.id]: () => magentoCheckoutEval,
+	// ANTI-BOT Luma + Cloudflare Turnstile on the no-CDP extension transport
+	// (ADR-0018). Live and account-bound: configured from the environment, and the
+	// builder says what to set when it is not.
+	'luma-register-turnstile': () => buildLumaRegisterTurnstileEval(),
 };
 
 /**
@@ -218,6 +223,15 @@ Registered real-site evals:
                         runner starts/stops the fixture server itself; no engine
                         change. Replaces the head-to-head gap left by the
                         hard-down live magento-checkout tier-3.
+  luma-register-turnstile
+                        ANTI-BOT (live, account-bound, side-effecting): register
+                        for a free Luma event whose Register step is guarded by
+                        Cloudflare Turnstile, on serve --transport extension (no
+                        CDP, trusted OS input; ADR-0018). Configured from the env:
+                        WEBHANDS_EVAL_LUMA_EVENT, WEBHANDS_EVAL_LUMA_PROFILE, and
+                        for branded Chrome WEBHANDS_EVAL_LUMA_REAL_CHROME=1 plus
+                        WEBHANDS_CHROME and WEBHANDS_EXTENSION_DIR. Use only the
+                        webhands agent kinds (there is no CDP for a baseline).
 
 The deterministic machinery proof is the SEPARATE self-test (\`self-test\`).`;
 

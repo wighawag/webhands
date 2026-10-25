@@ -13,6 +13,7 @@
  * cheap to add (story 17) and reviewable as a flat record (story 2).
  */
 
+import type {ServeLaunchOptions} from './serve-lifecycle.js';
 import type {VerbClient} from './verb-client.js';
 
 /**
@@ -20,7 +21,13 @@ import type {VerbClient} from './verb-client.js';
  * entry so the scoreboard is legible by difficulty; the foundation ships only a
  * `self-test` tier (the local-fixture machinery proof, never a capability pass).
  */
-export type EvalTier = 'self-test' | 'tier-1' | 'tier-2' | 'tier-3';
+export type EvalTier =
+	| 'self-test'
+	| 'tier-1'
+	| 'tier-2'
+	| 'tier-3'
+	// A live anti-bot check the agent must pass the way a person does (ADR-0018).
+	| 'anti-bot';
 
 /**
  * A single end-state check the HARNESS makes via webhands' OWN read verbs
@@ -139,4 +146,16 @@ export interface EvalEntry {
 	 * on the nonce-tagged artifact instead.
 	 */
 	readonly cleanup?: EvalCleanup;
+	/**
+	 * OPTIONAL `serve` options the eval itself REQUIRES (merged under the runner's
+	 * own, e.g. `--headed`). An anti-bot eval needs `transport: 'extension'`; a
+	 * plain-site eval omits this and gets the default Playwright serve.
+	 */
+	readonly serve?: ServeLaunchOptions;
+	/**
+	 * OPTIONAL path of an existing, logged-in profile directory to COPY into the
+	 * isolated home's profile before `serve` (the eval needs a human login the
+	 * harness cannot perform). The source is only read, never modified.
+	 */
+	readonly seedProfileDir?: string;
 }

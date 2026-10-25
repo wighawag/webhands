@@ -1,4 +1,4 @@
-import {mkdtemp, mkdir, rm} from 'node:fs/promises';
+import {cp, mkdtemp, mkdir, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {
@@ -190,13 +190,25 @@ export interface RunEvalOptions {
 export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 	const ownsHome = opts.home === undefined;
 	const home = opts.home ?? (await mkdtemp(join(tmpdir(), 'webhands-eval-')));
+	// The eval's OWN serve requirements (e.g. the extension transport), with the
+	// runner's options (e.g. --headed) on top.
+	const serve: ServeLaunchOptions = {...opts.entry.serve, ...opts.serve};
 	if (ownsHome) {
 		// A warmed profile dir under the isolated home, so `serve --profile default`
-		// has somewhere to launch (the foundation warms an EMPTY profile; per-tier
-		// tasks may pre-seed a logged-in one).
-		await mkdir(join(home, 'profiles', opts.serve?.profile ?? 'default'), {
-			recursive: true,
-		});
+		// has somewhere to launch (the foundation warms an EMPTY profile; an eval
+		// that needs a human login seeds a COPY of a logged-in one).
+		const profileDir = join(home, 'profiles', serve.profile ?? 'default');
+		if (opts.entry.seedProfileDir !== undefined) {
+			await cp(opts.entry.seedProfileDir, profileDir, {
+				recursive: true,
+				// A copied lock or port file would make the browser think the profile
+				// is already open (or attachable), so they are left behind.
+				filter: (src) =>
+					!/(Singleton(Lock|Socket|Cookie)|DevToolsActivePort)$/.test(src),
+			});
+		} else {
+			await mkdir(profileDir, {recursive: true});
+		}
 	}
 
 	const serveSession = await startServe({
@@ -207,7 +219,12 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalRunResult> {
 		// later asserts on. `serve` does not open a remote-debugging port by default
 		// any more, so a run that did not ask would silently lose the baseline leg's
 		// attach target. A caller can still turn it off explicitly.
-		launch: {...opts.serve, exposeCdp: opts.serve?.exposeCdp ?? true},
+		// NOT for the extension transport: it has no CDP, and `serve` refuses the
+		// combination outright (a Playwright-only baseline cannot share it).
+		launch: {
+			...serve,
+			exposeCdp: serve.exposeCdp ?? serve.transport !== 'extension',
+		},
 		...(opts.env !== undefined ? {env: opts.env} : {}),
 	});
 

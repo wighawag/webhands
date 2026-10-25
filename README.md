@@ -316,7 +316,15 @@ npx webhands setup-profile --real-chrome --profile luma --url https://luma.com/
 npx webhands serve --real-chrome --profile luma
 ```
 
-**Its limit, measured:** the login carries over, but a site that re-challenges on an ACTION still sees `navigator.webdriver === true` in step 2 and can block it. On Luma, the event Register button re-runs Turnstile and was refused while attached over CDP. A human has to do such steps in a browser with no debugging port: `stop`, run `setup-profile` again on the same profile, do the step there, quit, and resume with `serve`. Clicking it yourself in the `serve --real-chrome` window is probably not enough (not measured), because the port, and so the flag, is still on. Details in `work/notes/findings/cloudflare-turnstile-refuses-any-browser-with-a-debugging-port.md`.
+**Its limit, measured:** the login carries over, but a site that re-challenges on an ACTION still sees `navigator.webdriver === true` in step 2 and can block it. On Luma, the event Register button re-runs Turnstile and was refused while attached over CDP. Details in `work/notes/findings/cloudflare-turnstile-refuses-any-browser-with-a-debugging-port.md`.
+
+**`--hide-webdriver` turns that bit off, opt-in.** It adds Chrome's `--disable-blink-features=AutomationControlled`, so the page reads `navigator.webdriver === false` while webhands still drives over CDP, with every verb, `script` and hands. Measured on 25 Oct 2026 on Luma: Turnstile passed at sign-in (the same setup without the flag was refused) and on an action-level re-check (Request to Join), with ordinary CDP clicks.
+
+```sh
+npx webhands serve --real-chrome --hide-webdriver --profile luma
+```
+
+The costs: Chrome shows an "unsupported command-line flag" bar (pages cannot read it, but it takes about 56px of viewport), and it hides exactly one signal. A check that detects CDP itself still sees CDP; for that, use the extension transport below. If a browser started without the flag is still running on the profile, `serve` refuses to reuse it instead of silently showing the bit. Details in `docs/adr/0014` (addendum 2) and `work/notes/findings/turnstile-passes-cdp-with-automation-controlled-disabled.md`.
 
 **Lifetime.** webhands spawned that browser, so `stop` terminates it, unlike plain
 `--endpoint` attach where the browser is yours and is left alone. `--keep-browser`
@@ -352,6 +360,34 @@ carry (Chromium: "SOCKSv5 is only used to proxy TCP-based URL requests"). webhan
 exposes no lever for this today: if it matters, start Chrome yourself with
 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` and attach with
 `serve --endpoint` instead of using `--real-chrome`.
+
+## Anti-bot, no CDP at all: the extension transport (`--transport extension`)
+
+Every mode above drives the browser over the Chrome DevTools Protocol. `--hide-webdriver` hides the most obvious trace of that, and a detector that looks for CDP itself is not fooled by it. `serve --transport extension` removes CDP entirely: the browser is started as a plain process, a small webhands extension does the in-page work (with Playwright's own selector engine, so locator strings mean the same thing), and every click and keystroke is TRUSTED OS-level input sent by webhands on a private X display. Measured on 25 Oct 2026: registering for a free Luma event, whose Register step runs Turnstile and which every CDP mode without `--hide-webdriver` failed, went through with one real click on the Turnstile checkbox, with no `--remote-debugging-*` flag anywhere in the process tree and `navigator.webdriver === false`. The design and its trade-offs are in [`docs/adr/0018`](docs/adr/0018-extension-transport-no-cdp-os-level-input.md).
+
+```sh
+# Needs Linux/X11 with Xvfb and xdotool (NixOS: the xvfb and xdotool packages;
+# Debian/Ubuntu: apt install xvfb xdotool). Or set WEBHANDS_XVFB / WEBHANDS_XDOTOOL.
+
+# With webhands' pinned Chrome for Testing (it loads the extension itself):
+npx webhands setup-profile --transport extension --profile luma --url https://luma.com/
+npx webhands serve --transport extension --profile luma
+
+# With YOUR branded Google Chrome: it ignores --load-extension, so load it ONCE.
+# setup-profile prints the directory; in that window open chrome://extensions,
+# turn on Developer mode, click Load unpacked and pick it. Then:
+npx webhands setup-profile --transport extension --real-chrome --profile luma --url https://luma.com/
+npx webhands serve --transport extension --real-chrome --profile luma
+```
+
+What to know before relying on it:
+
+- **A reduced verb set, refused loudly.** `goto`, `wait`, `snapshot` (refs included), `click`, `type`, `press`, `mouse`, `cookies`, `query` and its shorthands, and a viewport `screenshot` work. `eval`, `script`, `hover`, `select`, `scroll`, `drag`, `query --with-refs` and non-viewport screenshots fail with `unsupported-by-transport` rather than doing something weaker. It offers no hands (they need a Playwright page).
+- **`click` never silently becomes an untrusted click.** The Playwright transports fall back to a dispatched click when an element never becomes actionable; this one waits (10s by default) and fails instead, because an untrusted click is exactly what it exists to avoid. `--dom` still asks for one explicitly.
+- **Its own display by default.** OS input drives a whole display, so `serve` starts a private Xvfb and kills it on `stop`. `--headed` uses your display instead and WILL move your real mouse pointer.
+- **Linux/X11 only for now.** Wayland (uinput), macOS (Quartz events) and Windows input backends are designed behind the same interface, not built; elsewhere it fails with `os-input-unavailable`.
+- **Same trust as `serve` and `eval`.** The extension can act on every logged-in page of the profile it is installed in. It obeys only a loopback peer holding a per-session token (written to a 0600 file), its origin is pinned, and it is only ever installed in a dedicated webhands profile. `--expose-cdp` is refused in this mode.
+- **Turnstile's checkbox sits in an iframe inside a closed shadow root**, which no locator can reach. Use `screenshot` and then `mouse --x <n> --y <n>` on it (on the private display the device scale is 1, so viewport screenshot pixels map 1:1 to `mouse` coordinates).
 
 ## Recovering from a mid-session bot block
 

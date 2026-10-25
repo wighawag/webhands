@@ -9,6 +9,11 @@ import {
 	PlaywrightLaunchTransport,
 	RealChromeTransport,
 	REAL_CHROME_ENV,
+	ExtensionTransport,
+	UnsupportedByTransportError,
+	resolveExtensionDir,
+	writeExtension,
+	type ExtensionTransportOptions,
 	loadWebhandsEnv,
 	type PlaywrightLaunchTransportOptions,
 	type RealChromeTransportOptions,
@@ -174,6 +179,20 @@ export interface LaunchPolicy {
 	 * instead of terminating it (the next `serve --real-chrome` re-attaches to it).
 	 */
 	readonly keepBrowser?: boolean;
+	/**
+	 * With {@link realChrome}, keep `navigator.webdriver` false despite the
+	 * debugging port (`--disable-blink-features=AutomationControlled`). Opt-in; see
+	 * the `--hide-webdriver` flag for what it buys and costs.
+	 */
+	readonly hideWebdriver?: boolean;
+	/**
+	 * Which transport drives the browser. Omitted (or `'playwright'`) is the
+	 * default Playwright family (launch / attach / real-chrome). `'extension'` is
+	 * the no-CDP transport (ADR-0018): a plain browser driven through the webhands
+	 * extension with trusted OS-level input. With {@link realChrome} it drives the
+	 * system Chrome instead of the pinned build.
+	 */
+	readonly transport?: 'playwright' | 'extension';
 }
 
 // --- shared schema fragments ----------------------------------------------
@@ -320,6 +339,19 @@ const realChromeOptions = z.object({
 				'(default: webhands started it, so webhands stops it). Your tabs survive ' +
 				'`stop`, and the next --real-chrome serve re-attaches to them.',
 		),
+	'hide-webdriver': z
+		.boolean()
+		.default(false)
+		.describe(
+			'With --real-chrome, keep navigator.webdriver FALSE even though a ' +
+				'debugging port is open (adds --disable-blink-features=AutomationControlled). ' +
+				'Measured on Luma: Cloudflare Turnstile refused --real-chrome with the bit ' +
+				'on and passed it with the bit off, at sign-in and on an action, so hands ' +
+				'and script keep working there. Costs: Chrome shows an "unsupported ' +
+				'command-line flag" bar (pages cannot see it; it shrinks the viewport), and ' +
+				'it hides ONE signal: a check that detects CDP itself still sees it (use ' +
+				'--transport extension for that). Opt-in.',
+		),
 });
 
 /**
@@ -328,6 +360,24 @@ const realChromeOptions = z.object({
  * fragment rather than folded into {@link stealthOptions} because it is the OPPOSITE
  * of hardening: see the flag's own description.
  */
+const transportOptions = z.object({
+	transport: z
+		.enum(['playwright', 'extension'])
+		.default('playwright')
+		.describe(
+			'How webhands drives the browser. `playwright` (default): Playwright over ' +
+				'CDP. `extension`: NO CDP anywhere (no debugging port, so ' +
+				'navigator.webdriver is false), a plain browser driven through the ' +
+				'webhands extension, with every click and keystroke sent as TRUSTED ' +
+				'OS-level input on a private Xvfb (needs Xvfb + xdotool, Linux/X11). For ' +
+				'sites whose bot check reads the debugging signal (Cloudflare Turnstile). ' +
+				'Supports goto, wait, snapshot, click, type, press, mouse, cookies, query ' +
+				'and its shorthands, viewport screenshot; other verbs refuse with ' +
+				'unsupported-by-transport. With --real-chrome on branded Google Chrome the ' +
+				'extension must be loaded unpacked once (see setup-profile --transport extension).',
+		),
+});
+
 const exposeCdpOptions = z.object({
 	'expose-cdp': z
 		.boolean()
@@ -351,8 +401,16 @@ function launchPolicyFrom(options: {
 	'expose-cdp'?: boolean;
 	'real-chrome'?: boolean;
 	'keep-browser'?: boolean;
+	'hide-webdriver'?: boolean;
+	transport?: 'playwright' | 'extension';
 }): LaunchPolicy {
 	return {
+		...(options['hide-webdriver'] === true ? {hideWebdriver: true} : {}),
+		// Only the non-default transport is carried, so a default serve's policy is
+		// byte-identical to what it was before the flag existed.
+		...(options.transport === 'extension'
+			? {transport: 'extension' as const}
+			: {}),
 		// Opt-in only: absent flag => no remote-debugging port is opened at all.
 		...(options['expose-cdp'] === true ? {exposeCdp: true} : {}),
 		...(options['real-chrome'] === true ? {realChrome: true} : {}),
@@ -678,10 +736,26 @@ export function createCli(deps: CliDeps = {}) {
 						'log in from the same exit IP a later `serve --proxy` uses. No ' +
 						'credentials: Chrome supports no SOCKS5 auth (use `ssh -D 1080`).',
 				),
+			transport: z
+				.enum(['playwright', 'extension'])
+				.default('playwright')
+				.describe(
+					'The transport that will later drive this profile. `extension` writes the ' +
+						'webhands extension directory first and prints it: with --real-chrome ' +
+						'(branded Google Chrome ignores --load-extension) load it ONCE in this ' +
+						'window via chrome://extensions, Developer mode, Load unpacked.',
+				),
 			...ctaOptions.shape,
 		}),
 		output: z.object({
 			profile: z.string().describe('The profile that was set up.'),
+			extensionDir: z
+				.string()
+				.optional()
+				.describe(
+					'With --transport extension: the stable webhands extension directory ' +
+						'(what to choose in Load unpacked on branded Chrome).',
+				),
 			profileDir: z
 				.string()
 				.describe('Its dedicated user-data directory on disk.'),
@@ -713,6 +787,17 @@ export function createCli(deps: CliDeps = {}) {
 						? c.options['use-system-browser']
 						: undefined;
 				const stealth = c.options.stealth === true;
+				// The extension directory must exist BEFORE the window opens, so a human
+				// on branded Chrome can load it unpacked in that same session. Written
+				// with an inert config: nothing is serving yet.
+				const extensionDir =
+					c.options.transport === 'extension'
+						? resolveExtensionDir(deps.home ?? {})
+						: undefined;
+				if (extensionDir !== undefined) {
+					await writeExtension(extensionDir);
+					console.error(extensionSetupNote(extensionDir, realChrome));
+				}
 				const {browser, location} = await runSetupProfile({
 					profile: c.options.profile,
 					...(deps.home ?? {}),
@@ -734,6 +819,7 @@ export function createCli(deps: CliDeps = {}) {
 				return c.ok(
 					{
 						profile: location.profile,
+						...(extensionDir !== undefined ? {extensionDir} : {}),
 						profileDir: location.profileDir,
 						executablePath: browser.executablePath,
 						realChrome,
@@ -741,29 +827,40 @@ export function createCli(deps: CliDeps = {}) {
 						stealth,
 					},
 					ctaMeta(c, [
-						realChrome
+						extensionDir !== undefined
 							? {
 									command: 'serve',
-									options: {profile: location.profile, 'real-chrome': true},
-									description:
-										'Drive this profile with the same system Chrome it was set up with.',
-								}
-							: {
-									command: 'launch',
 									options: {
 										profile: location.profile,
-										// Carry the browser selection into the suggested next command:
-										// driving this profile with a DIFFERENT build is the mismatch
-										// the selection flags exist to avoid.
-										...(systemBrowser !== undefined
-											? {'use-system-browser': systemBrowser}
-											: {}),
-										...(stealth ? {stealth: true} : {}),
+										transport: 'extension',
+										...(realChrome ? {'real-chrome': true} : {}),
 									},
 									description:
-										'Launch this profile headless now that it is set up (keep the ' +
-										'same browser selection it was set up with).',
-								},
+										'Drive this profile with no CDP (the extension transport), on the same browser build.',
+								}
+							: realChrome
+								? {
+										command: 'serve',
+										options: {profile: location.profile, 'real-chrome': true},
+										description:
+											'Drive this profile with the same system Chrome it was set up with.',
+									}
+								: {
+										command: 'launch',
+										options: {
+											profile: location.profile,
+											// Carry the browser selection into the suggested next command:
+											// driving this profile with a DIFFERENT build is the mismatch
+											// the selection flags exist to avoid.
+											...(systemBrowser !== undefined
+												? {'use-system-browser': systemBrowser}
+												: {}),
+											...(stealth ? {stealth: true} : {}),
+										},
+										description:
+											'Launch this profile headless now that it is set up (keep the ' +
+											'same browser selection it was set up with).',
+									},
 					]),
 				);
 			} catch (cause) {
@@ -868,6 +965,7 @@ export function createCli(deps: CliDeps = {}) {
 			...stealthOptions.shape,
 			...realChromeOptions.shape,
 			...exposeCdpOptions.shape,
+			...transportOptions.shape,
 			...ctaOptions.shape,
 		}),
 		output: z.object({
@@ -947,10 +1045,53 @@ export function createCli(deps: CliDeps = {}) {
 				// it rides in the ENVELOPE where the caller that chose the flags can see
 				// it. Collected before the browser comes up so the reply is complete.
 				const warnings: string[] = [];
+				// The extension transport (ADR-0018) has NO CDP. Asking it to expose CDP,
+				// or to attach over a debugging endpoint, would reintroduce the exact
+				// signal the mode exists to remove, so both are refusals, not warnings.
+				if (policy.transport === 'extension') {
+					if (policy.exposeCdp === true) {
+						throw new UnsupportedByTransportError(
+							'--expose-cdp',
+							'extension',
+							'there is no CDP in this mode to expose, which is the point of it',
+						);
+					}
+					if (target.mode === 'attach') {
+						throw new UnsupportedByTransportError(
+							'--endpoint',
+							'extension',
+							'attaching over a remote-debugging endpoint means a debugging port',
+						);
+					}
+					const moot = [
+						...(policy.stealth === true ? ['--stealth'] : []),
+						...(policy.systemBrowser !== undefined
+							? ['--use-system-browser']
+							: []),
+						...(policy.noViewport === true ? ['--no-viewport'] : []),
+						...(policy.noViewport === false ? ['--viewport'] : []),
+						...(policy.proxy !== undefined ? ['--proxy'] : []),
+						...(policy.keepBrowser === true ? ['--keep-browser'] : []),
+					];
+					if (moot.length > 0) {
+						warnings.push(
+							`--transport extension starts a plain browser itself, so ` +
+								`${moot.join(', ')} do not apply (they configure a Playwright ` +
+								`launch or a debugging-port browser).`,
+						);
+					}
+					if (c.options.headed === true) {
+						warnings.push(
+							'--headed with --transport extension sends OS-level input to YOUR ' +
+								'display: webhands will move your real mouse pointer and type into ' +
+								'the focused window. Drop --headed to use a private Xvfb instead.',
+						);
+					}
+				}
 				// `--real-chrome` makes the Playwright LAUNCH-hardening flags moot: there
 				// is no Playwright launch to harden, so silently ignoring them would let a
 				// user believe stealth is active when the browser is a plain Chrome.
-				if (policy.realChrome === true) {
+				if (policy.realChrome === true && policy.transport !== 'extension') {
 					// `--proxy` is deliberately NOT in this list: it maps onto Chromium's own
 					// --proxy-server flag, so it DOES apply to a spawned real Chrome, and it
 					// is the only way to change the exit IP in this mode.
@@ -972,11 +1113,31 @@ export function createCli(deps: CliDeps = {}) {
 						);
 					}
 				}
-				if (policy.keepBrowser === true && policy.realChrome !== true) {
+				if (
+					policy.keepBrowser === true &&
+					policy.realChrome !== true &&
+					policy.transport !== 'extension'
+				) {
 					warnings.push(
 						'--keep-browser only applies to --real-chrome (a browser webhands ' +
 							'spawned); it has no effect here.',
 					);
+				}
+				// `--hide-webdriver` is a flag on the Chrome webhands spawns for
+				// `--real-chrome`. Elsewhere it would be silently inert, and an inert
+				// anti-bot flag is worse than none: the user would believe the bit is off.
+				if (policy.hideWebdriver === true && target.mode !== 'attach') {
+					if (policy.transport === 'extension') {
+						warnings.push(
+							'--hide-webdriver is unnecessary with --transport extension: there is ' +
+								'no debugging port, so navigator.webdriver is already false.',
+						);
+					} else if (policy.realChrome !== true) {
+						warnings.push(
+							'--hide-webdriver only applies to --real-chrome; this Playwright ' +
+								'launch still reports navigator.webdriver as true. Add --real-chrome.',
+						);
+					}
 				}
 				// `--endpoint` wins over every browser-bring-up flag, because naming a
 				// browser you started yourself is the more specific request. That is the
@@ -987,6 +1148,7 @@ export function createCli(deps: CliDeps = {}) {
 					const overridden = [
 						...(policy.realChrome === true ? ['--real-chrome'] : []),
 						...(policy.keepBrowser === true ? ['--keep-browser'] : []),
+						...(policy.hideWebdriver === true ? ['--hide-webdriver'] : []),
 						...(policy.proxy !== undefined ? ['--proxy'] : []),
 						...(policy.stealth === true ? ['--stealth'] : []),
 						...(policy.systemBrowser !== undefined
@@ -1029,11 +1191,20 @@ export function createCli(deps: CliDeps = {}) {
 				// Explicit teardown on signal: closing the browser + clearing the
 				// endpoint file is the server's `stop`. We DO NOT auto-spawn and we DO
 				// NOT auto-teardown on anything but an explicit stop/signal (ADR-0005).
+				//
+				// `on`, not `once`, with the repeat IGNORED: a second signal during
+				// teardown (the eval harness sends `stop` and then SIGTERMs its child)
+				// used to hit Node's default handler and kill the process mid-teardown,
+				// orphaning whatever the transport had not closed yet (measured: the
+				// extension transport's Xvfb, re-parented to PID 1).
+				let stopping = false;
 				const onSignal = () => {
+					if (stopping) return;
+					stopping = true;
 					void server.stop().finally(() => process.exit(0));
 				};
-				process.once('SIGINT', onSignal);
-				process.once('SIGTERM', onSignal);
+				process.on('SIGINT', onSignal);
+				process.on('SIGTERM', onSignal);
 				return c.ok(
 					{
 						ok: true as const,
@@ -2498,6 +2669,32 @@ export function createCli(deps: CliDeps = {}) {
 }
 
 /**
+ * What `setup-profile --transport extension` tells the human about the extension.
+ * Branded Chrome ignores `--load-extension`, so with `--real-chrome` the one-time
+ * unpacked install happens in the setup window; the pinned build needs nothing.
+ */
+export function extensionSetupNote(
+	extensionDir: string,
+	realChrome: boolean,
+): string {
+	return realChrome
+		? [
+				'',
+				'This profile will be driven by `serve --transport extension --real-chrome`.',
+				'Branded Google Chrome ignores --load-extension, so install the webhands',
+				'extension into this profile ONCE, in the window that is opening:',
+				'  1. Open chrome://extensions and turn on Developer mode (top right).',
+				`  2. Click Load unpacked and choose: ${extensionDir}`,
+				'It persists in the profile; serve rewrites that directory on each run.',
+			].join('\n')
+		: [
+				'',
+				'This profile will be driven by `serve --transport extension`, which loads',
+				`the webhands extension from ${extensionDir} itself (no install step).`,
+			].join('\n');
+}
+
+/**
  * The default {@link ServeSession}: bring up the ONE long-lived session through
  * `core`'s {@link startSessionServer}, wired to the v1 Playwright transports.
  * `launch` targets use the launch transport (raising the typed missing-profile /
@@ -2560,6 +2757,19 @@ export function transportForPolicy(
 	const makeRealChrome = transports.realChrome ?? defaultRealChromeFactory;
 	const makeLaunch = transports.launch ?? defaultLaunchFactory;
 	const makeAttach = transports.attach ?? defaultAttachFactory;
+	const makeExtension = transports.extension ?? defaultExtensionFactory;
+
+	// `--transport extension` (ADR-0018) replaces the WHOLE Playwright family: it
+	// starts its own plain browser and has no CDP to attach with, so there is no
+	// attach fallback here (the transport refuses an attach target itself, and the
+	// `serve` command refuses `--endpoint`/`--expose-cdp` before getting here).
+	if (launchPolicy.transport === 'extension') {
+		return {
+			transport: makeExtension(home, {
+				...(launchPolicy.realChrome === true ? {realChrome: true} : {}),
+			}),
+		};
+	}
 
 	// attach ALWAYS reuses the user's own browser, so it is built for every policy:
 	// an explicit `--endpoint` is the more specific request and must win, even under
@@ -2575,6 +2785,7 @@ export function transportForPolicy(
 	if (launchPolicy.realChrome === true) {
 		const realChrome = makeRealChrome(home, {
 			...(launchPolicy.keepBrowser === true ? {keepBrowser: true} : {}),
+			...(launchPolicy.hideWebdriver === true ? {hideWebdriver: true} : {}),
 			// The proxy DOES apply here (Chromium's own --proxy-server), and is the only
 			// lever on this mode's exit IP.
 			...(launchPolicy.proxy !== undefined ? {proxy: launchPolicy.proxy} : {}),
@@ -2637,7 +2848,16 @@ export interface TransportFactories {
 		root?: string;
 		env?: NodeJS.ProcessEnv;
 	}) => Pick<PlaywrightAttachTransport, 'open'>;
+	readonly extension?: (
+		home: {root?: string; env?: NodeJS.ProcessEnv},
+		options: ExtensionTransportOptions,
+	) => Pick<ExtensionTransport, 'open'>;
 }
+
+const defaultExtensionFactory: NonNullable<TransportFactories['extension']> = (
+	home,
+	options,
+) => new ExtensionTransport(home, options);
 
 const defaultRealChromeFactory: NonNullable<
 	TransportFactories['realChrome']

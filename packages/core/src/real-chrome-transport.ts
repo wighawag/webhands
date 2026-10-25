@@ -81,6 +81,13 @@ export interface RealChromeTransportOptions {
 	readonly proxy?: string;
 	/** Override the proxy's implied no-local-DNS behaviour; see the spawn option. */
 	readonly proxyNoLeak?: boolean;
+	/**
+	 * Keep `navigator.webdriver` false (see
+	 * {@link SpawnRealChromeOptions.hideWebdriver}). On the REUSE path the running
+	 * browser is CHECKED, and one that still reports `true` is a refusal, because
+	 * reusing it would show a site exactly the signal the caller asked to hide.
+	 */
+	readonly hideWebdriver?: boolean;
 	/** How long to wait for Chrome to publish its debugging port (ms). */
 	readonly readyTimeoutMs?: number;
 	/** Env for discovery + the spawned process. Defaults to `process.env`. */
@@ -198,7 +205,24 @@ export class RealChromeTransport implements Transport {
 			// asked for. SOMEONE ELSE owns this browser's lifetime, so this session must
 			// NOT kill it on close: plain attach semantics are right.
 			this.#cdpEndpoint = existing;
-			return this.#attach.open({mode: 'attach', endpoint: existing});
+			const reused = await this.#attach.open({
+				mode: 'attach',
+				endpoint: existing,
+			});
+			// `hideWebdriver` is a spawn-time flag we cannot read off a running
+			// process portably, but its EFFECT is observable, so check the effect: a
+			// browser started with it (an earlier `--keep-browser` run) is reused, one
+			// started without it is refused rather than silently showing the bit.
+			if (
+				this.#options.hideWebdriver === true &&
+				(await reused.page.eval('navigator.webdriver')) === true
+			) {
+				await reused.close();
+				throw new RealChromeReuseConflictError(loc.profileDir, existing, [
+					'hideWebdriver',
+				]);
+			}
+			return reused;
 		}
 
 		const spawnFn = this.#options.spawn ?? spawnRealChrome;
@@ -222,6 +246,7 @@ export class RealChromeTransport implements Transport {
 			...(this.#options.proxyNoLeak !== undefined
 				? {proxyNoLeak: this.#options.proxyNoLeak}
 				: {}),
+			...(this.#options.hideWebdriver === true ? {hideWebdriver: true} : {}),
 			...(this.#options.readyTimeoutMs !== undefined
 				? {readyTimeoutMs: this.#options.readyTimeoutMs}
 				: {}),

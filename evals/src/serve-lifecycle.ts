@@ -47,6 +47,10 @@ export interface ServeLaunchOptions {
 	 * measurement mechanism and it runs against local fixtures on an isolated home.
 	 */
 	readonly exposeCdp?: boolean;
+	/** `serve --transport extension` (ADR-0018): the no-CDP transport. */
+	readonly transport?: 'extension';
+	/** `serve --real-chrome`: drive the system Chrome (with the extension transport, branded Chrome). */
+	readonly realChrome?: boolean;
 }
 
 /** Config to start a harness-owned serve session. */
@@ -229,6 +233,8 @@ function serveFlags(launch: ServeLaunchOptions | undefined): string[] {
 	// Opt-in shared driving surface: without this flag `serve` advertises no
 	// cdpEndpoint, and the Playwright-baseline leg has no page to attach to.
 	if (launch.exposeCdp === true) flags.push('--expose-cdp');
+	if (launch.transport === 'extension') flags.push('--transport', 'extension');
+	if (launch.realChrome === true) flags.push('--real-chrome');
 	return flags;
 }
 

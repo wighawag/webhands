@@ -6,6 +6,7 @@ import {chromium} from 'playwright';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
 import {
 	buildRealChromeArgs,
+	HIDE_WEBDRIVER_ARG,
 	InvalidProxyError,
 	isControllerError,
 	ProxyAuthUnsupportedError,
@@ -41,6 +42,21 @@ import {
  *    is not the same claim as traffic actually going through the proxy, and only
  *    the second one is worth anything to a user.
  */
+describe('buildRealChromeArgs hide-webdriver flag (pure, no browser)', () => {
+	it('adds the AutomationControlled switch only when asked', () => {
+		expect(buildRealChromeArgs({userDataDir: '/tmp/p', env: {}})).not.toContain(
+			HIDE_WEBDRIVER_ARG,
+		);
+		expect(
+			buildRealChromeArgs({
+				userDataDir: '/tmp/p',
+				env: {},
+				hideWebdriver: true,
+			}),
+		).toContain(HIDE_WEBDRIVER_ARG);
+	});
+});
+
 describe('buildRealChromeArgs proxy flags (pure, no browser)', () => {
 	const base: SpawnRealChromeOptions = {userDataDir: '/tmp/profile'};
 

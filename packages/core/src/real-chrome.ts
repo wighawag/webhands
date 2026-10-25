@@ -46,6 +46,13 @@ import {
  * that profile's own reputation.
  */
 
+/**
+ * The Chromium switch that keeps `navigator.webdriver` false even with a
+ * debugging port open (see {@link SpawnRealChromeOptions.hideWebdriver}).
+ */
+export const HIDE_WEBDRIVER_ARG =
+	'--disable-blink-features=AutomationControlled';
+
 /** Chrome-family executables to look for, in PREFERENCE order, per platform. */
 const CANDIDATES: Readonly<Record<string, readonly string[]>> = {
 	linux: [
@@ -168,6 +175,23 @@ export interface SpawnRealChromeOptions {
 	 * proxy.
 	 */
 	readonly proxyNoLeak?: boolean;
+	/**
+	 * Turn OFF the `navigator.webdriver` bit Chrome sets whenever a debugging port is
+	 * open, by adding {@link HIDE_WEBDRIVER_ARG}. OPT-IN (`serve --real-chrome
+	 * --hide-webdriver`).
+	 *
+	 * Why it exists: measured on 25 Oct 2026, Cloudflare Turnstile on Luma refused
+	 * this mode with the bit on and passed it with the bit off, both at sign-in and
+	 * on an action-level re-check, with CDP clicks either way (finding
+	 * `turnstile-passes-cdp-with-automation-controlled-disabled`). So for that check
+	 * the bit was the whole signal, and hands and `script` keep working.
+	 *
+	 * What it costs, honestly: Chrome shows an "unsupported command-line flag"
+	 * infobar (pages cannot read it, but it takes about 56px of viewport), and it
+	 * hides ONE signal. A detector that reads CDP itself is not fooled; the
+	 * extension transport (ADR-0018) is the answer for that.
+	 */
+	readonly hideWebdriver?: boolean;
 	/**
 	 * How long to wait for Chrome to publish its debugging port, in ms. Default
 	 * 30s: a real Chrome opening a warm profile (extensions, restored session) is
@@ -568,6 +592,7 @@ export function buildRealChromeArgs(options: SpawnRealChromeOptions): string[] {
 		'--no-first-run',
 		'--no-default-browser-check',
 		...(options.headless === true ? ['--headless=new'] : []),
+		...(options.hideWebdriver === true ? [HIDE_WEBDRIVER_ARG] : []),
 		...proxyArgs,
 		...(options.args ?? []),
 		// Operator env args LAST (before the URL), so they can override anything above:

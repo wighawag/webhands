@@ -15,6 +15,8 @@ import {
 	StaleRefError,
 	REAL_CHROME_ENV,
 	type RealChromeReuseConflictError,
+	type ExtensionNotConnectedError,
+	type OsInputUnavailableError,
 	// (ProxyAuthUnsupportedError needs no runtime import: the fix command is
 	// composed from the binary name alone, and the code is matched as a string.)
 	type ControllerError,
@@ -176,6 +178,16 @@ export function fixCommandFor(error: ControllerError, binary: string): string {
 			// running Chrome (Chrome refuses a user-data dir twice), so the fix names
 			// both ways out: stop the session holding it, or use another profile.
 			return `${binary} stop  # then retry, or use a different profile: ${binary} serve --real-chrome --profile <name>`;
+		case 'unsupported-by-transport':
+			// The extension transport (ADR-0018) refuses what it does not build. The
+			// fix is to run that step on the default Playwright transport.
+			return `${binary} stop && ${binary} serve --profile <name>  # the default Playwright transport supports this step`;
+		case 'extension-not-connected':
+			// Almost always branded Chrome ignoring --load-extension: a one-time
+			// "Load unpacked" of the stable extension dir into the profile fixes it.
+			return `${binary} setup-profile --transport extension --real-chrome --profile <name>  # then in that window: chrome://extensions > Developer mode > Load unpacked > ${(error as ExtensionNotConnectedError).extensionDir}`;
+		case 'os-input-unavailable':
+			return `install ${(error as OsInputUnavailableError).tool} (NixOS: add xvfb and xdotool to your packages; Debian/Ubuntu: apt install xvfb xdotool), or point WEBHANDS_XVFB / WEBHANDS_XDOTOOL at them`;
 		default: {
 			// Exhaustiveness guard: a new ControllerErrorCode must add a fix command
 			// here rather than silently fall through to a generic message.

@@ -469,7 +469,9 @@ async function patchrightExecutablePath(): Promise<string> {
  * crashed browser points at a dead pid, which Chrome itself clears, so only a
  * LIVE holder counts.
  */
-async function liveSingletonHolder(dir: string): Promise<number | undefined> {
+export async function liveSingletonHolder(
+	dir: string,
+): Promise<number | undefined> {
 	let target: string;
 	try {
 		target = await readlink(join(dir, 'SingletonLock'));
