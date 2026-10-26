@@ -1,5 +1,32 @@
 # webhands
 
+## 0.9.0
+
+### Minor Changes
+
+- 5d77dd2: Add the extension transport, `serve --transport extension` (ADR-0018): a plain browser with no CDP anywhere (no debugging port, so `navigator.webdriver` is false), driven through a small webhands MV3 extension that runs Playwright's own selector engine, with every click and keystroke sent as trusted OS-level input (xdotool on a private Xvfb, Linux/X11). Locator strings mean the same thing as on the Playwright transport, including frame hops into cross-origin iframes. The slice supports goto, wait, snapshot (refs included), click, type, press, mouse, cookies, query and its shorthands, and a viewport screenshot; every other verb refuses with the typed `unsupported-by-transport`. `setup-profile --transport extension` writes the extension directory and prints the one-time "Load unpacked" steps for branded Google Chrome, which ignores `--load-extension`. New error codes: `unsupported-by-transport`, `extension-not-connected`, `os-input-unavailable`. Also: `serve` no longer dies mid-teardown when a second signal arrives while it is stopping.
+- 5d77dd2: Add `serve --real-chrome --hide-webdriver` (opt-in): the spawned Chrome gets `--disable-blink-features=AutomationControlled`, so pages read `navigator.webdriver === false` while webhands still drives over CDP, with every verb, `script` and hands. Measured on Luma: Cloudflare Turnstile refused `--real-chrome` with the bit on and passed it with the bit off, both at sign-in and on an action-level re-check. Chrome shows an "unsupported command-line flag" bar in this mode, and the flag hides only that one signal (use `--transport extension` against a check that detects CDP itself). Reusing a running browser that still reports `navigator.webdriver` is refused (`real-chrome-reuse-conflict`) rather than silently showing the bit, and the flag warns when used without `--real-chrome`.
+- 5a0b22d: **`setup-profile` opens a PLAIN browser, not one under automation, so the human login passes Cloudflare Turnstile and Google sign-in.**
+
+  It used to open its window through Playwright's `launchPersistentContext`, which adds Playwright's automation args and a remote-debugging pipe, so the page saw `navigator.webdriver === true`. Measured on 25 Oct 2026: Luma's sign-in looped on Turnstile's "Verifying your browser" and Google said "This browser or app may not be secure", so the human could not log in at all, in the one step whose only job is letting them log in. The same Chrome binary started with no debugging port passed Turnstile with one click.
+
+  - `setup-profile` now spawns the browser as an ordinary child process with only `--user-data-dir`, `--no-first-run`, `--no-default-browser-check` and the start URL (plus `--proxy-server` when `--proxy` is given, and the operator's `WEBHANDS_CHROME_ARGS`). No `--remote-debugging-port`/`--remote-debugging-pipe`, no `--enable-automation`, none of Playwright's defaults. It waits for the process to exit (the human quit the browser), then reports the profile saved. A crashing browser is an error, not a "saved".
+  - New `--url <url>` opens the window on the sign-in page (default `about:blank`).
+  - It starts the same build that will later drive the profile: the pinned Playwright Chromium by default (launched directly from its executable path), the system Chrome with the new `--real-chrome` or `--use-system-browser chrome` (resolved like `serve --real-chrome`: `WEBHANDS_CHROME`, then the PATH names), Patchright's Chromium with `--stealth`. Another `--use-system-browser` value needs `WEBHANDS_CHROME` pointing at it.
+  - `missing-display` and `missing-browser-binary` are unchanged. `--proxy` now refuses credentials (Chrome supports no SOCKS5 auth), as on `serve --real-chrome`. `--no-viewport`/`--viewport` are gone from `setup-profile`, since a plain window has no emulated viewport.
+  - Library API: `setupProfile()` returns `{browser, location}`, where `browser.waitForExit()` resolves when the human quits; it no longer returns a Playwright-backed `Session`.
+
+  The recommended flow for a protected site is now `setup-profile --real-chrome` (human logs in, quits), then `serve --real-chrome` on the same profile. Its limit is documented: a site that re-challenges on an action still sees `navigator.webdriver` under `serve`, and a human has to do that step.
+
+### Patch Changes
+
+- 77776c7: Extension transport hardening after review. The bridge handshake is now a mutual HMAC challenge: the token never crosses the wire, and the extension obeys nothing until the controller proves it holds the token. `serve` leaves an inert `config.json` on teardown, the config is written atomically at 0600, and a malformed frame can no longer crash `serve`. `type` passes text to xdotool on stdin (never in the process list, where `{ENV:...}` secrets would show) with a timeout that grows with the text. `wait` for a locator is now a pure read (strict, attached and visible), like Playwright's `waitFor()`. `WEBHANDS_CHROME_ARGS` may not add a debugging, automation or headless flag to the extension transport's browser. Requests in flight on a replaced connection fail fast. The `luma-register-turnstile` eval now asserts no automation flag anywhere under `serve` and `navigator.webdriver === false`, and a PASS with either signal is reported as FAIL.
+- Updated dependencies [5d77dd2]
+- Updated dependencies [77776c7]
+- Updated dependencies [5d77dd2]
+- Updated dependencies [5a0b22d]
+  - @webhands/core@0.10.0
+
 ## 0.8.0
 
 ### Minor Changes
